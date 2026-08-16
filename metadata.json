@@ -1,0 +1,6 @@
+{
+  "name": "CapsuleOS",
+  "description": "The Zero-DB, Pure-MIME Multimodal Workspace & Personal Knowledge Engine with Block Canvas, Live DataGrids, Whiteboards, In-Memory Fast Graph, and AI Co-Thinking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
