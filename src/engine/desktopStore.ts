@@ -120,3 +120,107 @@ export async function pathExists(path: string): Promise<boolean> {
     return false;
   }
 }
+
+/** Create directory (and parents). */
+export async function mkdirDir(path: string): Promise<boolean> {
+  if (!isDesktop()) return false;
+  try {
+    await invoke('mkdir_dir', { path });
+    return true;
+  } catch (e) {
+    console.warn('desktopStore: mkdir failed', e);
+    return false;
+  }
+}
+
+/** List file names in a directory (files only, sorted). */
+export async function listDir(path: string): Promise<string[]> {
+  if (!isDesktop()) return [];
+  try {
+    return await invoke<string[]>('list_dir', { path });
+  } catch (e) {
+    console.warn('desktopStore: list_dir failed', e);
+    return [];
+  }
+}
+
+/** Delete a file (ignores missing). */
+export async function deleteFile(path: string): Promise<boolean> {
+  if (!isDesktop()) return false;
+  try {
+    await invoke('delete_file', { path });
+    return true;
+  } catch (e) {
+    console.warn('desktopStore: delete failed', e);
+    return false;
+  }
+}
+
+// ── Folder vault (.eml per capsule) ─────────────────────────────────────────
+
+const VAULT_DIR = 'vault';
+let cachedDir: string | null = null;
+
+/** Resolve the vault directory (app data dir / vault) and create it. */
+export async function resolveVaultDir(): Promise<string | null> {
+  if (!isDesktop()) return null;
+  if (cachedDir) return cachedDir;
+  try {
+    const dir = await invoke<string>('app_data_dir');
+    const vaultDir = `${dir}/${VAULT_DIR}`;
+    await invoke('mkdir_dir', { path: vaultDir });
+    cachedDir = vaultDir;
+    return vaultDir;
+  } catch (e) {
+    console.warn('desktopStore: cannot resolve vault dir', e);
+    return null;
+  }
+}
+
+/** Scan the vault folder: returns [{fileName, rawEml}] for every *.eml. */
+export async function scanVaultFolder(): Promise<Array<{ fileName: string; rawEml: string }>> {
+  const vaultDir = await resolveVaultDir();
+  if (!vaultDir) return [];
+  const files = (await listDir(vaultDir)).filter((f) => f.toLowerCase().endsWith('.eml'));
+  const out: Array<{ fileName: string; rawEml: string }> = [];
+  for (const f of files) {
+    try {
+      const rawEml = await invoke<string>('read_text_file', { path: `${vaultDir}/${f}` });
+      out.push({ fileName: f, rawEml });
+    } catch (e) {
+      console.warn(`desktopStore: cannot read ${f}`, e);
+    }
+  }
+  return out;
+}
+
+/** Sanitize a messageId/subject into a safe file name. */
+export function sanitizeFileName(raw: string): string {
+  const cleaned = raw
+    .replace(/[<>]/g, '')
+    .replace(/[^a-zA-Z0-9._-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 120);
+  return cleaned || 'capsule';
+}
+
+/** Write one capsule as an .eml file into the vault folder. */
+export async function writeCapsuleEml(messageId: string, rawEml: string): Promise<string | null> {
+  const vaultDir = await resolveVaultDir();
+  if (!vaultDir) return null;
+  const fileName = `${sanitizeFileName(messageId)}.eml`;
+  try {
+    await invoke('write_text_file', { path: `${vaultDir}/${fileName}`, content: rawEml });
+    return fileName;
+  } catch (e) {
+    console.warn('desktopStore: write capsule eml failed', e);
+    return null;
+  }
+}
+
+/** Remove a capsule's .eml file (if any matches). */
+export async function removeCapsuleEml(fileName: string): Promise<boolean> {
+  const vaultDir = await resolveVaultDir();
+  if (!vaultDir || !fileName) return false;
+  return deleteFile(`${vaultDir}/${fileName}`);
+}

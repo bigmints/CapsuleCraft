@@ -13,6 +13,7 @@ fn read_text_file(path: String) -> Result<String, String> {
 /// Write a UTF-8 text file to disk (atomic-ish: write to temp, then rename).
 #[tauri::command]
 fn write_text_file(path: String, content: String) -> Result<(), String> {
+    eprintln!("[CapsuleOS] write_text_file called: {}", path);
     let tmp = format!("{path}.tmp");
     fs::write(&tmp, content).map_err(|e| format!("write failed: {e}"))?;
     fs::rename(&tmp, &path).map_err(|e| format!("commit failed: {e}"))
@@ -22,6 +23,46 @@ fn write_text_file(path: String, content: String) -> Result<(), String> {
 #[tauri::command]
 fn path_exists(path: String) -> bool {
     std::path::Path::new(&path).exists()
+}
+
+/// Create a directory (and parents) if missing.
+#[tauri::command]
+fn mkdir_dir(path: String) -> Result<(), String> {
+    eprintln!("[CapsuleOS] mkdir_dir called: {}", path);
+    fs::create_dir_all(&path).map_err(|e| format!("mkdir failed: {e}"))
+}
+
+/// List file names (not dirs) in a directory. Returns empty vec if missing.
+#[tauri::command]
+fn list_dir(path: String) -> Result<Vec<String>, String> {
+    let entries = match fs::read_dir(&path) {
+        Ok(e) => e,
+        Err(_) => return Ok(vec![]),
+    };
+    let mut names = Vec::new();
+    for entry in entries.flatten() {
+        let ft = match entry.file_type() {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+        if ft.is_file() {
+            if let Some(name) = entry.file_name().to_str() {
+                names.push(name.to_string());
+            }
+        }
+    }
+    names.sort();
+    Ok(names)
+}
+
+/// Delete a file if it exists.
+#[tauri::command]
+fn delete_file(path: String) -> Result<(), String> {
+    match fs::remove_file(&path) {
+        Ok(_) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("delete failed: {e}")),
+    }
 }
 
 /// Write a binary file (base64 payload) to disk — used for EPUB/PDF exports.
@@ -65,6 +106,7 @@ async fn pick_open_path(
 /// Cross-platform app data directory (per-user, versioned). Creates it if missing.
 #[tauri::command]
 fn app_data_dir(app: AppHandle) -> Result<String, String> {
+    eprintln!("[CapsuleOS] app_data_dir called");
     let dir = app
         .path()
         .app_data_dir()
@@ -82,6 +124,9 @@ pub fn run() {
             write_text_file,
             write_binary_file,
             path_exists,
+            mkdir_dir,
+            list_dir,
+            delete_file,
             pick_save_path,
             pick_open_path,
             app_data_dir,

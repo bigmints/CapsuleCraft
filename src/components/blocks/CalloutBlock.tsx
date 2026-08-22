@@ -1,14 +1,18 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { CapsuleBlock, CalloutBlockData } from '../../types';
-import { Lightbulb, Info, AlertTriangle, Sparkles, Heart, Trash2 } from 'lucide-react';
+import { vaultStore } from '../../engine/vaultStore';
+import { renderMarkdownMultiLine } from '../../engine/markdown';
+import { Lightbulb, Info, AlertTriangle, Sparkles, Heart, Trash2, Eye, Pencil } from 'lucide-react';
 
 interface Props {
   block: CapsuleBlock & { type: 'callout' };
   onChange: (updatedData: CalloutBlockData) => void;
   onDelete: () => void;
+  onOpenCapsule?: (messageId: string) => void;
 }
 
-export const CalloutBlock: React.FC<Props> = ({ block, onChange, onDelete }) => {
+export const CalloutBlock: React.FC<Props> = ({ block, onChange, onDelete, onOpenCapsule }) => {
+  const [showPreview, setShowPreview] = useState(false);
   const tone = block.data.tone || 'emerald';
 
   const toneConfig = {
@@ -64,23 +68,47 @@ export const CalloutBlock: React.FC<Props> = ({ block, onChange, onDelete }) => 
             className={`w-full bg-transparent font-semibold text-sm outline-none border-none focus:ring-0 ${toneConfig.text}`}
           />
 
-          <textarea
-            rows={2}
-            value={block.data.content}
-            onChange={(e) => onChange({ ...block.data, content: e.target.value })}
-            placeholder="Callout message or invariant..."
-            className="w-full bg-transparent text-slate-300 text-xs leading-relaxed resize-none outline-none border-none focus:ring-0 placeholder:text-slate-500"
-          />
+          {showPreview ? (
+            <div
+              className="w-full text-slate-300 text-xs leading-relaxed cursor-text"
+              onDoubleClick={() => setShowPreview(false)}
+              title="Двойной клик — редактировать"
+            >
+              {renderMarkdownMultiLine(
+                block.data.content,
+                (q) => vaultStore.resolveBacklink(q),
+                onOpenCapsule
+              )}
+            </div>
+          ) : (
+            <textarea
+              rows={2}
+              value={block.data.content}
+              onChange={(e) => onChange({ ...block.data, content: e.target.value })}
+              placeholder="Callout message or invariant... [[для ссылки"
+              className="w-full bg-transparent text-slate-300 text-xs leading-relaxed resize-none outline-none border-none focus:ring-0 placeholder:text-slate-500"
+            />
+          )}
         </div>
 
-        <button
-          type="button"
-          onClick={onDelete}
-          className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-rose-400 p-1 rounded transition-opacity"
-          title="Delete Callout"
-        >
-          <Trash2 className="w-3.5 h-3.5" />
-        </button>
+        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            type="button"
+            onClick={() => setShowPreview((v) => !v)}
+            className="p-1 rounded text-slate-500 hover:text-cyan-300 transition"
+            title={showPreview ? 'Редактировать' : 'Предпросмотр (Markdown)'}
+          >
+            {showPreview ? <Pencil className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+          </button>
+          <button
+            type="button"
+            onClick={onDelete}
+            className="p-1 rounded text-slate-500 hover:text-rose-400 transition"
+            title="Delete Callout"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
     </div>
   );

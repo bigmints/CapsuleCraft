@@ -147,7 +147,7 @@ export interface NodeMetadata {
   byteOffsetBody?: number;
 }
 
-export type EdgeType = 'in_reply_to' | 'references' | 'tag_cluster';
+export type EdgeType = 'in_reply_to' | 'references' | 'tag_cluster' | 'backlink';
 
 export interface GraphEdge {
   id: string;

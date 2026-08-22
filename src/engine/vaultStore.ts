@@ -6,7 +6,15 @@ import {
   CapsuleBlock,
 } from '../types';
 import { assembleEml, parseEml } from './mime';
-import { loadVaultFromDisk, saveVaultToDisk } from './desktopStore';
+import {
+  loadVaultFromDisk,
+  saveVaultToDisk,
+  scanVaultFolder,
+  writeCapsuleEml,
+  removeCapsuleEml,
+  sanitizeFileName,
+} from './desktopStore';
+import { extractBacklinks } from './markdown';
 import JSZip from 'jszip';
 
 const STORAGE_KEY = 'capsule_os_vault_v2';
@@ -34,7 +42,7 @@ export const INITIAL_CAPSULES: CapsuleNode[] = [
         id: 'blk_01_p',
         type: 'paragraph',
         data: {
-          text: 'Текущая модель монетизации показывает устойчивый рост LTV/CAC при масштабировании каналов прямой дистрибуции. Проводим стресс-тестирование с когортами Q4.',
+          text: 'Текущая модель монетизации показывает устойчивый рост LTV/CAC при масштабировании каналов прямой дистрибуции. Проводим стресс-тестирование с когортами Q4. См. [[AI-Augmented Cognitive Architecture]] — там зафиксирован инвариант протокола, на котором строится эта модель.',
         },
       },
       {
@@ -186,7 +194,7 @@ Jun,92,590,0.55,310`,
         id: 'blk_cog_02',
         type: 'paragraph',
         data: {
-          text: 'Модель внешнего расширения рабочей памяти человека через графовые структуры MIME-сообщений. Вместо монолитной базы данных — децентрализованный лес автономных капсул.',
+          text: 'Модель внешнего расширения рабочей памяти человека через графовые структуры MIME-сообщений. Вместо монолитной базы данных — децентрализованный лес автономных капсул. Базовые правила закреплены в [[CapsuleOS Genesis: Инварианты Протокола]].',
         },
       },
       {
@@ -410,7 +418,10 @@ console.log({
 class VaultStore {
   private nodes: Map<string, CapsuleNode> = new Map();
   private invertedIndex: Map<string, Set<string>> = new Map(); // word -> Set<messageId>
+  private backlinks: Map<string, Set<string>> = new Map(); // messageId -> Set<target messageId>
   private listeners: Set<() => void> = new Set();
+  /** Last rawEml that was written to the folder vault (dirty tracking). */
+  private syncedEml: Map<string, string> = new Map();
   public scanStats = {
     totalFiles: 0,
     scanDurationMs: 0.8,
@@ -449,21 +460,47 @@ class VaultStore {
       this.nodes.set(c.messageId, c);
     }
     this.rebuildIndexes();
-    this.persist();
+    this.notify();
 
-    // Desktop shell: prefer the on-disk vault over localStorage/seed.
-    // If a vault.json exists it is authoritative (the freshest copy).
-    this.loadFromDisk().then((loaded) => {
+    // Desktop shell: load order is folder vault (.eml files) → vault.json → seed.
+    // The folder vault is authoritative when present (the freshest copy).
+    this.loadFromFolder().then((loaded) => {
       if (loaded && loaded.length > 0) {
-        this.nodes.clear();
-        for (const c of loaded) {
-          if (!c.rawEml) c.rawEml = assembleEml(c);
-          this.nodes.set(c.messageId, c);
-        }
-        this.rebuildIndexes();
-        this.notify();
+        this.applyLoadedCapsules(loaded);
+        return;
       }
+      return this.loadFromDisk().then((fromJson) => {
+        if (fromJson && fromJson.length > 0) {
+          this.applyLoadedCapsules(fromJson);
+          return;
+        }
+        // Nothing on disk yet — materialize the seed as real .eml files.
+        this.persist();
+      });
     });
+  }
+
+  private applyLoadedCapsules(list: CapsuleNode[]) {
+    this.nodes.clear();
+    this.syncedEml.clear();
+    for (const c of list) {
+      if (!c.rawEml) c.rawEml = assembleEml(c);
+      this.nodes.set(c.messageId, c);
+      this.syncedEml.set(c.messageId, c.rawEml);
+    }
+    this.rebuildIndexes();
+    this.notify();
+  }
+
+  private async loadFromFolder(): Promise<CapsuleNode[] | null> {
+    try {
+      const files = await scanVaultFolder();
+      if (!files || files.length === 0) return null;
+      return files.map((f) => parseEml(f.rawEml, f.fileName));
+    } catch (e) {
+      console.warn('Could not restore from folder vault:', e);
+      return null;
+    }
   }
 
   private async loadFromDisk(): Promise<CapsuleNode[] | null> {
@@ -476,6 +513,46 @@ class VaultStore {
     }
   }
 
+  /**
+   * Sync the folder vault: write only capsules whose .eml changed,
+   * remove .eml files whose capsules no longer exist.
+   */
+  private async syncEmlFiles() {
+    const existing = new Set<string>();
+    for (const node of this.nodes.values()) {
+      const raw = node.rawEml || assembleEml(node);
+      const prev = this.syncedEml.get(node.messageId);
+      if (prev === raw) {
+        // Unchanged — keep the known file name in the existing set.
+        if (node.fileName) existing.add(node.fileName);
+        continue;
+      }
+      const fileName = await writeCapsuleEml(node.messageId, raw);
+      if (fileName) {
+        this.syncedEml.set(node.messageId, raw);
+        existing.add(fileName);
+        // Remember the on-disk file name for later cleanup.
+        if (node.fileName !== fileName) {
+          node.fileName = fileName;
+        }
+      }
+    }
+    // Clean up orphaned .eml files (capsules deleted from the vault).
+    try {
+      const { listDir, resolveVaultDir } = await import('./desktopStore');
+      const vaultDir = await resolveVaultDir();
+      if (!vaultDir) return;
+      const files = await listDir(vaultDir);
+      for (const f of files) {
+        if (f.toLowerCase().endsWith('.eml') && !existing.has(f)) {
+          await removeCapsuleEml(f);
+        }
+      }
+    } catch (e) {
+      console.warn('vaultStore: orphan cleanup failed', e);
+    }
+  }
+
   private persist() {
     try {
       const list = Array.from(this.nodes.values());
@@ -484,6 +561,8 @@ class VaultStore {
       saveVaultToDisk(list).then((ok) => {
         if (!ok) console.warn('vaultStore: disk persist unavailable');
       });
+      // Folder vault: one .eml per capsule.
+      this.syncEmlFiles();
     } catch (e) {
       console.warn('LocalStorage save failed:', e);
     }
@@ -530,6 +609,183 @@ class VaultStore {
       simdSpeedMBs: Number(((totalBytes / (1024 * 1024)) / (duration / 1000) || 350).toFixed(1)),
       lastScanTimestamp: Date.now(),
     };
+
+    this.rebuildBacklinks();
+  }
+
+  /** Extract [[wikilink]] references from all text blocks → backlink map. */
+  private rebuildBacklinks() {
+    this.backlinks.clear();
+    const textOf = (b: CapsuleBlock): string => {
+      switch (b.type) {
+        case 'heading':
+          return (b.data as any).text || '';
+        case 'paragraph':
+          return (b.data as any).text || '';
+        case 'callout':
+          return `${(b.data as any).title || ''} ${(b.data as any).content || ''}`;
+        case 'ai_opponent_block':
+          return (b.data as any).criticism || '';
+        case 'todo_list':
+          return (b.data as any).items?.map((i: any) => i.text).join(' ') || '';
+        default:
+          return '';
+      }
+    };
+
+    for (const [msgId, node] of this.nodes) {
+      const targets = new Set<string>();
+      for (const block of node.blocks) {
+        for (const query of extractBacklinks(textOf(block))) {
+          const resolved = this.resolveBacklink(query);
+          if (resolved && resolved !== msgId) targets.add(resolved);
+        }
+      }
+      if (targets.size > 0) this.backlinks.set(msgId, targets);
+    }
+  }
+
+  /**
+   * Resolve a [[query]] to a capsule messageId:
+   * 1) exact messageId (with or without <>)  2) messageId contains query
+   * 3) subject contains query (case-insensitive)  4) inverted index first hit.
+   */
+  public resolveBacklink(query: string): string | null {
+    if (!query) return null;
+    const q = query.trim();
+
+    // 1. exact messageId (handle both <id@host> and id@host)
+    const bareQ = q.replace(/^<|>$/g, '');
+    for (const [id] of this.nodes) {
+      const bareId = id.replace(/^<|>$/g, '');
+      if (bareId === bareQ || bareId === q) return id;
+    }
+
+    // 2. messageId contains query
+    const ql = q.toLowerCase();
+    for (const [id] of this.nodes) {
+      if (id.toLowerCase().includes(ql)) return id;
+    }
+
+    // 3. subject contains query (case-insensitive)
+    let best: { id: string; len: number } | null = null;
+    for (const [id, node] of this.nodes) {
+      const s = node.subject.toLowerCase();
+      if (s === ql) return id;
+      if (s.includes(ql) && (!best || ql.length > best.len)) best = { id, len: ql.length };
+    }
+    if (best) return best.id;
+
+    // 4. inverted index: first node matching all tokens
+    const tokens = ql.match(/[a-zа-я0-9_-]{2,}/gi) || [];
+    if (tokens.length > 0) {
+      const first = this.invertedIndex.get(tokens[0]);
+      if (first && first.size > 0) return Array.from(first)[0];
+    }
+
+    return null;
+  }
+
+  /** All backlink targets of a capsule (messageIds). */
+  public getBacklinks(messageId: string): string[] {
+    return Array.from(this.backlinks.get(messageId) || []);
+  }
+
+  /** Incoming backlinks: which capsules link TO this one. */
+  public getIncomingBacklinks(messageId: string): string[] {
+    const out: string[] = [];
+    for (const [fromId, targets] of this.backlinks) {
+      if (targets.has(messageId)) out.push(fromId);
+    }
+    return out;
+  }
+
+  /**
+   * Export a capsule to Markdown (option — .eml remains the source of truth).
+   */
+  public exportCapsuleToMarkdown(messageId: string): string {
+    const node = this.nodes.get(messageId);
+    if (!node) return '';
+    const lines: string[] = [];
+    lines.push(`# ${node.subject}`);
+    lines.push('');
+    lines.push(`- **From:** ${node.from}`);
+    lines.push(`- **Date:** ${node.date}`);
+    lines.push(`- **Tags:** ${node.tags.join(', ') || '—'}`);
+    lines.push(`- **Message-ID:** ${node.messageId}`);
+    if (node.inReplyTo) lines.push(`- **In-Reply-To:** ${node.inReplyTo}`);
+    lines.push('');
+
+    for (const block of node.blocks) {
+      switch (block.type) {
+        case 'heading': {
+          const d = block.data as any;
+          const level = Math.min(6, Math.max(1, d.level || 1));
+          lines.push(`${'#'.repeat(level)} ${d.text || ''}`);
+          lines.push('');
+          break;
+        }
+        case 'paragraph': {
+          lines.push((block.data as any).text || '');
+          lines.push('');
+          break;
+        }
+        case 'callout': {
+          const d = block.data as any;
+          if (d.title) lines.push(`> **${d.title}**`);
+          if (d.content) lines.push(`> ${(d.content || '').split('\n').join('\n> ')}`);
+          lines.push('');
+          break;
+        }
+        case 'todo_list': {
+          const items = ((block.data as any).items || []) as Array<{ text: string; done?: boolean }>;
+          for (const it of items) {
+            lines.push(`- [${it.done ? 'x' : ' '}] ${it.text}`);
+          }
+          lines.push('');
+          break;
+        }
+        case 'ai_opponent_block': {
+          const d = block.data as any;
+          lines.push(`> 💭 *${block.author || 'AI'}*: ${(d.criticism || '').split('\n').join('\n> ')}`);
+          lines.push('');
+          break;
+        }
+        case 'code_repl': {
+          const d = block.data as any;
+          lines.push(`\`\`\`${d.language || ''}`);
+          lines.push(d.code || '');
+          lines.push('```');
+          lines.push('');
+          break;
+        }
+        case 'data_grid_view': {
+          const d = block.data as any;
+          if (d.title) lines.push(`### ${d.title}`);
+          const att = node.attachments.find((a) => a.cid === d.source_cid);
+          if (att) {
+            try {
+              const rows = JSON.parse(att.content);
+              if (Array.isArray(rows) && rows.length > 0 && typeof rows[0] === 'object') {
+                const cols = Object.keys(rows[0]);
+                lines.push('| ' + cols.join(' | ') + ' |');
+                lines.push('|' + cols.map(() => '---').join('|') + '|');
+                for (const r of rows.slice(0, 50)) {
+                  lines.push('| ' + cols.map((c) => String(r[c] ?? '')).join(' | ') + ' |');
+                }
+              }
+            } catch {
+              /* skip non-JSON grid */
+            }
+          }
+          lines.push('');
+          break;
+        }
+        default:
+          break;
+      }
+    }
+    return lines.join('\n');
   }
 
   private extractBlockText(blocks: CapsuleBlock[]): string {
@@ -574,10 +830,15 @@ class VaultStore {
   }
 
   public deleteNode(messageId: string) {
+    const node = this.nodes.get(messageId);
     this.nodes.delete(messageId);
     this.rebuildIndexes();
     this.persist();
     this.notify();
+    // Remove the capsule's .eml file from the folder vault.
+    if (node?.fileName) {
+      removeCapsuleEml(node.fileName).catch(() => {});
+    }
   }
 
   public createNewCapsule(overrides?: Partial<CapsuleNode>): CapsuleNode {
@@ -776,6 +1037,24 @@ class VaultStore {
             });
             degreeMap.set(node.messageId, (degreeMap.get(node.messageId) || 0) + 1);
             degreeMap.set(refId, (degreeMap.get(refId) || 0) + 1);
+          }
+        }
+      }
+
+      // Backlink Edges ([[wikilinks]] found in text blocks)
+      const blTargets = this.backlinks.get(node.messageId);
+      if (blTargets) {
+        for (const targetId of blTargets) {
+          if (this.nodes.has(targetId)) {
+            graphEdges.push({
+              id: `edge_bl_${node.messageId}_${targetId}`,
+              source: node.messageId,
+              target: targetId,
+              type: 'backlink',
+              label: '↗',
+            });
+            degreeMap.set(node.messageId, (degreeMap.get(node.messageId) || 0) + 1);
+            degreeMap.set(targetId, (degreeMap.get(targetId) || 0) + 1);
           }
         }
       }

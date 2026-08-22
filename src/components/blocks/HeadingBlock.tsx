@@ -1,14 +1,18 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { CapsuleBlock, HeadingBlockData } from '../../types';
-import { Hash } from 'lucide-react';
+import { vaultStore } from '../../engine/vaultStore';
+import { renderMarkdownMultiLine } from '../../engine/markdown';
+import { Hash, Eye, Pencil } from 'lucide-react';
 
 interface Props {
   block: CapsuleBlock & { type: 'heading' };
   onChange: (updatedData: HeadingBlockData) => void;
   onDelete: () => void;
+  onOpenCapsule?: (messageId: string) => void;
 }
 
-export const HeadingBlock: React.FC<Props> = ({ block, onChange, onDelete }) => {
+export const HeadingBlock: React.FC<Props> = ({ block, onChange, onDelete, onOpenCapsule }) => {
+  const [showPreview, setShowPreview] = useState(false);
   const { level, text } = block.data;
 
   const fontClasses = {
@@ -32,15 +36,37 @@ export const HeadingBlock: React.FC<Props> = ({ block, onChange, onDelete }) => 
           <Hash className="w-3 h-3" />
           <span>{level}</span>
         </button>
+        <button
+          type="button"
+          onClick={() => setShowPreview((v) => !v)}
+          className="p-1 text-xs text-slate-500 hover:text-cyan-300 bg-slate-800/80 rounded border border-slate-700"
+          title={showPreview ? 'Редактировать' : 'Предпросмотр (Markdown)'}
+        >
+          {showPreview ? <Pencil className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+        </button>
       </div>
 
-      <input
-        type="text"
-        value={text}
-        onChange={(e) => onChange({ ...block.data, text: e.target.value })}
-        placeholder={`Heading ${level}...`}
-        className={`w-full bg-transparent border-none outline-none focus:ring-0 ${fontClasses} placeholder:text-slate-600`}
-      />
+      {showPreview ? (
+        <div
+          className={`w-full ${fontClasses} cursor-text`}
+          onDoubleClick={() => setShowPreview(false)}
+          title="Двойной клик — редактировать"
+        >
+          {renderMarkdownMultiLine(
+            text,
+            (q) => vaultStore.resolveBacklink(q),
+            onOpenCapsule
+          )}
+        </div>
+      ) : (
+        <input
+          type="text"
+          value={text}
+          onChange={(e) => onChange({ ...block.data, text: e.target.value })}
+          placeholder={`Heading ${level}...`}
+          className={`w-full bg-transparent border-none outline-none focus:ring-0 ${fontClasses} placeholder:text-slate-600`}
+        />
+      )}
     </div>
   );
 };

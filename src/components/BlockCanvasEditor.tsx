@@ -15,6 +15,8 @@ import { AudioNoteBlock } from './blocks/AudioNoteBlock';
 import { CalloutBlock } from './blocks/CalloutBlock';
 import { TodoBlock } from './blocks/TodoBlock';
 import { SlashCommandMenu } from './SlashCommandMenu';
+import { vaultStore } from '../engine/vaultStore';
+import { isDesktop, pickSavePath, writeTextFile } from '../engine/desktopStore';
 import {
   Sparkles,
   Plus,
@@ -41,6 +43,7 @@ interface Props {
   onOpenParent: (parentId: string) => void;
   onRequestAiAction: (action: 'critique' | 'continue' | 'reply_thread' | 'data_insight') => void;
   isAiLoading?: boolean;
+  onOpenCapsule?: (messageId: string) => void;
 }
 
 export const BlockCanvasEditor: React.FC<Props> = ({
@@ -50,11 +53,14 @@ export const BlockCanvasEditor: React.FC<Props> = ({
   onOpenParent,
   onRequestAiAction,
   isAiLoading,
+  onOpenCapsule,
 }) => {
   const [showMeta, setShowMeta] = useState(true);
   const [slashMenuOpen, setSlashMenuOpen] = useState(false);
   const [tagInput, setTagInput] = useState('');
   const [hoveredBlockIndex, setHoveredBlockIndex] = useState<number | null>(null);
+
+  const handleExportMarkdown = () => exportCapsuleMarkdown(capsule);
 
   // Keyboard shortcut listener: Alt+C -> Critique, Tab at empty block -> continue
   useEffect(() => {
@@ -421,9 +427,25 @@ export const BlockCanvasEditor: React.FC<Props> = ({
                 <CornerDownRight className="w-3.5 h-3.5" />
                 <span>Create Re: .eml</span>
               </button>
+
+              <button
+                type="button"
+                onClick={handleExportMarkdown}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800/80 text-emerald-300 hover:bg-emerald-950/40 border border-emerald-600/30 text-xs font-medium transition-all"
+                title="Экспорт капсулы в Markdown (опция — .eml остаётся источником истины)"
+              >
+                <FileCode className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Export .md</span>
+              </button>
             </div>
           </div>
         </div>
+
+        {/* Backlinks Panel */}
+        <RelatedCapsules
+          capsule={capsule}
+          onOpenCapsule={onOpenCapsule}
+        />
 
         {/* Blocks Flow Container */}
         <div className="space-y-4 pb-16">
@@ -470,6 +492,7 @@ export const BlockCanvasEditor: React.FC<Props> = ({
                   block={block}
                   onChange={(d) => updateBlock(index, { ...block, data: d })}
                   onDelete={() => deleteBlock(index)}
+                  onOpenCapsule={onOpenCapsule}
                 />
               )}
 
@@ -483,6 +506,7 @@ export const BlockCanvasEditor: React.FC<Props> = ({
                     }
                   }}
                   onDelete={() => deleteBlock(index)}
+                  onOpenCapsule={onOpenCapsule}
                 />
               )}
 
@@ -547,6 +571,7 @@ export const BlockCanvasEditor: React.FC<Props> = ({
                   block={block}
                   onChange={(d) => updateBlock(index, { ...block, data: d })}
                   onDelete={() => deleteBlock(index)}
+                  onOpenCapsule={onOpenCapsule}
                 />
               )}
 
@@ -579,6 +604,94 @@ export const BlockCanvasEditor: React.FC<Props> = ({
           onClose={() => setSlashMenuOpen(false)}
           onSelect={(type, extraData) => insertBlock(type, extraData)}
         />
+      </div>
+    </div>
+  );
+};
+
+// ── Export helper ────────────────────────────────────────────────────────────
+
+async function exportCapsuleMarkdown(capsule: CapsuleNode) {
+  const md = vaultStore.exportCapsuleToMarkdown(capsule.messageId);
+  if (!md) return;
+  const safe = capsule.subject.replace(/[^a-zA-Z0-9а-яА-ЯЁё_-]+/g, '_').slice(0, 60) || 'capsule';
+  const fileName = `${safe}.md`;
+  if (isDesktop()) {
+    const path = await pickSavePath(fileName);
+    if (path) await writeTextFile(path, md);
+  } else {
+    const blob = new Blob([md], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+}
+
+// ── Related capsules (backlinks) panel ───────────────────────────────────────
+
+const RelatedCapsules: React.FC<{
+  capsule: CapsuleNode;
+  onOpenCapsule?: (messageId: string) => void;
+}> = ({ capsule, onOpenCapsule }) => {
+  const outgoing = vaultStore.getBacklinks(capsule.messageId);
+  const incoming = vaultStore.getIncomingBacklinks(capsule.messageId);
+  if (outgoing.length === 0 && incoming.length === 0) return null;
+
+  const renderLink = (id: string, dir: 'out' | 'in') => {
+    const node = vaultStore.getNode(id);
+    if (!node) return null;
+    return (
+      <button
+        key={id}
+        type="button"
+        onClick={() => onOpenCapsule?.(id)}
+        className="group/link flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-slate-800/60 hover:bg-cyan-950/40 border border-slate-700/60 hover:border-cyan-500/40 text-left transition-all"
+        title={id}
+      >
+        <span className={`text-[10px] font-mono ${dir === 'out' ? 'text-cyan-400' : 'text-purple-400'}`}>
+          {dir === 'out' ? '→' : '←'}
+        </span>
+        <span className="text-xs text-slate-300 group-hover/link:text-cyan-200 truncate">
+          {node.subject}
+        </span>
+        <span className="ml-auto text-[10px] font-mono text-slate-500 shrink-0">
+          {node.blocks.length} blk
+        </span>
+      </button>
+    );
+  };
+
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-[#0f172a]/30 shadow-xl overflow-hidden backdrop-blur-md">
+      <div className="px-5 py-3 border-b border-slate-800/80 flex items-center gap-2">
+        <Layers className="w-4 h-4 text-cyan-400" />
+        <span className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
+          Связанные капсулы
+        </span>
+        <span className="text-[10px] font-mono text-slate-500 ml-auto">
+          {incoming.length} ← / → {outgoing.length}
+        </span>
+      </div>
+      <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <div className="space-y-1.5">
+          <div className="text-[10px] font-mono text-purple-400/80 uppercase tracking-wider mb-1">
+            Ссылаются на эту капсулу (incoming)
+          </div>
+          {incoming.length > 0 ? incoming.map((id) => renderLink(id, 'in')) : (
+            <div className="text-[11px] text-slate-600">— нет входящих ссылок</div>
+          )}
+        </div>
+        <div className="space-y-1.5">
+          <div className="text-[10px] font-mono text-cyan-400/80 uppercase tracking-wider mb-1">
+            Ссылки из этой капсулы (outgoing)
+          </div>
+          {outgoing.length > 0 ? outgoing.map((id) => renderLink(id, 'out')) : (
+            <div className="text-[11px] text-slate-600">— нет исходящих ссылок</div>
+          )}
+        </div>
       </div>
     </div>
   );

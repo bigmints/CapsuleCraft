@@ -305,6 +305,9 @@ export default function App() {
               }}
               onRequestAiAction={handleAiAction}
               isAiLoading={isAiLoading}
+              onOpenCapsule={(id) => {
+                if (id) setSelectedMessageId(id);
+              }}
             />
           )}
 
