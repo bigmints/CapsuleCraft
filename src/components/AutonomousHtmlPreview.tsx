@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { CapsuleNode } from '../types';
 import { generateAutonomousHtml } from '../engine/mime';
-import { Mail, Monitor, ShieldCheck, Globe, Download } from 'lucide-react';
+import { Mail, Monitor, ShieldCheck, Globe, Download, FileCode } from 'lucide-react';
+import { isDesktop, pickSavePath, writeTextFile } from '../engine/desktopStore';
 
 interface Props {
   capsule: CapsuleNode;
@@ -10,6 +11,27 @@ interface Props {
 
 export const AutonomousHtmlPreview: React.FC<Props> = ({ capsule, onDownloadEml }) => {
   const htmlContent = generateAutonomousHtml(capsule);
+  const [exported, setExported] = useState(false);
+
+  // Export the standalone dashboard as a single .html file (works in any browser).
+  const handleDownloadHtml = async () => {
+    const safe = capsule.subject.replace(/[^a-zA-Z0-9\u0400-\u04FF_-]+/g, '_').slice(0, 60) || 'capsule';
+    const fileName = safe + '.html';
+    if (isDesktop()) {
+      const path = await pickSavePath(fileName);
+      if (path) await writeTextFile(path, htmlContent);
+      setExported(true);
+      setTimeout(() => setExported(false), 2500);
+      return;
+    }
+    const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="w-full h-full bg-[#020617] flex flex-col overflow-hidden text-xs text-slate-300">
@@ -34,14 +56,25 @@ export const AutonomousHtmlPreview: React.FC<Props> = ({ capsule, onDownloadEml 
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={() => onDownloadEml(capsule.messageId)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-semibold transition-all shadow-[0_0_10px_rgba(6,182,212,0.3)] text-xs"
-        >
-          <Download className="w-3.5 h-3.5" />
-          <span>Download .eml File</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleDownloadHtml}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold transition-all shadow-[0_0_10px_rgba(16,185,129,0.3)] text-xs"
+            title="Сохранить автономный HTML5-дашборд одним файлом"
+          >
+            <FileCode className="w-3.5 h-3.5" />
+            <span>{exported ? 'Saved!' : 'Download .html'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => onDownloadEml(capsule.messageId)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-semibold transition-all shadow-[0_0_10px_rgba(6,182,212,0.3)] text-xs"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Download .eml File</span>
+          </button>
+        </div>
       </div>
 
       {/* Simulated Email Client Viewport */}

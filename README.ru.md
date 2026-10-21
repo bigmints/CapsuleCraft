@@ -1,76 +1,137 @@
+<div align="center">
+
 # 🧠 CapsuleOS
+
+### Ваша база знаний — это папка с письмами.
+
+**Мультимодальное рабочее пространство и персональный движок знаний без базы данных.**
+Каждая заметка, таблица, вайтборд и голосовая memorandum — обычное **RFC 5322 `.eml`-сообщение**:
+без SQL, без документных СУБД, без облака и vendor lock-in. Файлы, которые открываются в любом почтовом клиенте, ищутся `grep`-ом, диффятся и хранятся десятилетиями.
+
+[![Release](https://img.shields.io/github/v/release/kostyk348/capsuleos?sort=semver&color=0ea5e9&label=release)](https://github.com/kostyk348/capsuleos/releases)
+[![CI](https://github.com/kostyk348/capsuleos/actions/workflows/ci.yml/badge.svg)](https://github.com/kostyk348/capsuleos/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/тесты-17%20passing-22c55e)](https://github.com/kostyk348/capsuleos/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Tauri](https://img.shields.io/badge/Tauri-2-FFC131?logo=tauri&logoColor=black)](https://v2.tauri.app/)
+[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev/)
+[![No DB](https://img.shields.io/badge/БД-нет-orange)](#-почему)
+[![Offline](https://img.shields.io/badge/offline-first-success)](#-данные-и-приватность)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](CONTRIBUTING.md)
 
 [English](README.md) · **Русский**
 
-[![Release](https://img.shields.io/github/v/release/kostyk348/capsuleos?sort=semver&color=blue)](https://github.com/kostyk348/capsuleos/releases)
-[![CI](https://github.com/kostyk348/capsuleos/actions/workflows/ci.yml/badge.svg)](https://github.com/kostyk348/capsuleos/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)](#сборка-из-исходников)
+<img src="screenshots/capsuleos-editor.png" alt="Редактор CapsuleOS — RFC 5322 заголовки, теги, панель ИИ-соавтора" width="100%">
 
-> **Мультимодальное рабочее пространство и персональный движок знаний без базы данных.**
-> Каждая заметка, таблица, доска и аудиозаметка — обычное письмо **RFC 5322 `.eml`**.
-> Никакого SQL, документных хранилищ, облака и вендор-лока. Только файлы, которые открываются в любом почтовом клиенте.
-
-CapsuleOS — **нативное десктопное приложение** (Tauri 2 + Rust + React 19 + TypeScript): настоящее окно, реальная файловая система, без вкладки браузера и без серверного процесса.
-
-| Блочный редактор капсул | Граф хранилища |
-|---|---|
-| ![редактор](screenshots/capsuleos-editor.png) | ![граф](screenshots/capsuleos-graph.png) |
+</div>
 
 ---
 
-## Зачем
+## 🧭 Коротко
 
-Большинство заметочников держат ваши знания в проприетарной базе. Заметки ваши ровно до тех пор, пока живёт приложение и не поменялась схема.
+- 📦 **Zero-DB.** Одна капсула = один `.eml`-файл на диске. Thunderbird прочтёт ваши заметки, `grep` найдёт, `rsync` синхронизирует.
+- 🧱 **Больше, чем Markdown.** Блочный редактор: заголовки, callout'ы, TODO, живые DataGrid'ы из CSV/JSON с графиками, вайтборды, код-REPL, голосовые заметки — всё в одном MIME-контейнере.
+- 🤖 **Офлайн-соавтор.** Детерминированный локальный ИИ-оппонент критикует тезисы, продолжает мысли и анализирует датасеты. Без API-ключа, без сети.
+- ⚡ **Быстро.** Честный бенчмарк в браузере парсит **50 000 капсул примерно за 1.4 с** (~36k файлов/с) — измерено, а не заявлено.
+
+## 🆕 Что нового в v1.1.0
+
+> Релиз «сделать честно и заставить работать». [Полный changelog →](CHANGELOG.md)
+
+| | |
+|---|---|
+| 🔧 **13 багов исправлено** | Фантомные вложения, мёртвые режимы Co-Think, ложные срабатывания slash-меню, двойная решётка в тегах, мёртвый ⌘K, зависающий REPL, граф без зума, невидимые блоки в тредах… |
+| 🎙 **Настоящие аудиозаметки** | Голосовые мемо теперь реальные MIME-аудиовложения с waveform и перемоткой — бейдж `SIMULATED` наконец означает «не симуляция» |
+| 📊 **Честный бенчмарк** | Модалка «SIMD 50k» реально прогоняет 50k синтетических `.eml` через движок парсинга. Больше никаких фейковых цифр на setInterval |
+| 🧪 **17 тестов** | MIME round-trip, регрессия фантомных вложений, HTML-escaping, викилинки, правила каретки — подключены к CI |
+| 📤 **Экспорт в HTML** | Вид Preview экспортирует автономный `.html`-дашборд |
+
+## ❓ Почему
+
+Большинство заметочных приложений хранят знания в проприетарной базе. Ваши заметки принадлежат вам лишь до тех пор, пока живо приложение и не поменялась схема.
 
 CapsuleOS переворачивает это:
 
 | Обычный PKM | CapsuleOS |
 |---|---|
-| SQLite / закрытое хранилище | Обычные `.eml`-файлы на диске |
-| Экспорт = обеднённый Markdown-дамп | Экспорт = файл, который уже лежит у вас |
-| Треды и ссылки — внутренние для приложения | `In-Reply-To` / `References` — семантика RFC 5322 |
-| Вложения — вендорные блобы | Стандартные MIME-части с адресацией по `Content-ID` |
-| Облачная синхронизация, аккаунт, телеметрия | Локальное хранилище, офлайн по умолчанию |
+| SQLite / проприетарное хранилище | Обычные `.eml`-файлы на диске |
+| Экспорт = потери при конвертации в Markdown | Экспорт = файл, который у вас уже есть |
+| Треды и связи — внутренняя логика приложения | `In-Reply-To` / `References` — семантика RFC 5322 |
+| Вложения — вендорные бинарные блобы | Стандартные MIME-части, адресуемые через `Content-ID` |
+| Облачная синхронизация, аккаунт, телеметрия | Локальный vault, офлайн по умолчанию |
 
-Вся база знаний — это **папка писем**: грепается, дифается, бэкапится любым инструментом и остаётся читаемой десятилетиями.
+Вся база знаний — это **папка с сообщениями**: ищется grep-ом, диффится, резервируется любым инструментом, читается десятилетиями.
 
-## Возможности
+## ✨ Экскурсия по фичам
 
-### 📦 Архитектура Zero-DB (RFC 5322 EML)
-- Каждая капсула — полноценное MIME-письмо: `Message-ID`, `In-Reply-To`, `References`, `X-Capsule-Tags`, `X-Capsule-Status`, multipart-тело.
-- Граф-хранилище с **инвертированным индексом** — мгновенный полнотекстовый поиск по всем капсулам.
-- Импорт/экспорт `.eml` и `zip`-архивов, инспектор сырого MIME.
-- Папка хранилища — источник истины: при старте она пересканируется и приоритетнее JSON-снапшота.
+### 🧱 Блочный редактор
 
-### 🧱 Блочный канвас-редактор
-- Заголовки, параграфы, коллауты, TODO-списки.
-- **Живые DataGrid** — таблицы на основе CSV/JSON-вложений с представлениями «график» и «pivot».
-- **Whiteboard** — фигуры, стикеры, узлы mind-map и стрелки на канвасе.
-- **Code REPL** — исполнение JavaScript-блоков на месте, JSON-блоки валидируются.
-- **Аудиозаметки** — waveform и транскрипт как блоки капсулы.
-- **AI-оппонент** — блок-критика, спорящий с утверждением, к которому привязан.
+<table>
+<tr>
+<td><img src="screenshots/capsuleos-datagrid.png" alt="Живой DataGrid и интерактивный вайтборд"></td>
+</tr>
+<tr>
+<td align="center"><sub>Живой DataGrid (графики из CSV) · интерактивный вайтборд с майнд-блоками и стикерами</sub></td>
+</tr>
+</table>
 
-### 🕸 Граф связей и треды
-- Мгновенный граф отношений (`in_reply_to`, `references`, теги) с превью сателлитов.
-- Thought-треды: линейные и мультиветвящиеся цепочки рассуждений.
+- Заголовки, абзацы, callout'ы, TODO — с живым инлайн-Markdown.
+- **Живой DataGrid** — таблицы из CSV/JSON-вложений с видами «график» и «сводная».
+- **Вайтборд** — фигуры, стикеры, узлы майнд-карт и стрелки на холсте.
+- **Код-REPL** — JavaScript исполняется в изолированном Web Worker со сторожем на 3 с (бесконечный цикл не уронит приложение); JSON валидируется и форматируется.
+- **Аудиозаметки** — реальные аудиовложения, waveform с перемоткой, бейдж длительности.
+- **ИИ-оппонент** — блок критики, который спорит с тезисом, к которому прикреплён.
 
-### 🔗 Wikilinks и бэклики
-- Пишите `[[название капсулы]]` в любом текстовом блоке — с автокомплитом по живым капсулам.
-- Кликабельные ссылки в режиме предпросмотра и панель **Связанные капсулы** (входящие/исходящие).
-- Рёбра wikilinks рисуются в графе зелёным пунктиром.
+### 🕸 Граф и треды
 
-### ✍️ Markdown-рендер
-- `**жирный**`, `*курсив*`, `` `код` ``, `[ссылка](url)` — live-предпросмотр в блоках paragraph, callout и heading.
-- Экспорт капсулы в **Markdown** (`.eml` остаётся источником истины).
+<table>
+<tr>
+<td width="50%"><img src="screenshots/capsuleos-graph.png" alt="Граф связей с зумом"></td>
+<td width="50%"><img src="screenshots/capsuleos-threads.png" alt="Вид тредов"></td>
+</tr>
+<tr>
+<td align="center"><sub>DAG связей · зум · физика · палитра тегов</sub></td>
+<td align="center"><sub>Треды мыслей · цепочки RFC 5322 In-Reply-To</sub></td>
+</tr>
+</table>
+
+- Мгновенный граф связей (`in_reply_to`, `references`, викилинки) со спутниковыми превью.
+- Треды: линейные и ветвящиеся цепочки рассуждений, собранные из реальных блоков капсул.
+- `[[викилинки]]` с автодополнением, кликабельные обратные ссылки и панель **Связанных капсул**.
 
 ### 🤖 Офлайн Co-Thinker
+
+<table>
+<tr>
+<td><img src="screenshots/capsuleos-cothink.png" alt="Модалка Co-Think с четырьмя режимами"></td>
+</tr>
+<tr>
+<td align="center"><sub>Четыре режима: критика · синтез · контраргумент · анализ данных</sub></td>
+</tr>
+</table>
+
 - Детерминированный локальный ассистент: `critique`, `continue`, `reply_thread`, `data_insight`.
-- Без API-ключа и без сетевых вызовов — приложение полностью работает офлайн.
+- Без API-ключа и сетевых вызовов — приложение полностью офлайн.
+- Режим контраргумента порождает **дочернюю `.eml`-капсулу** с AI-блоками — ваш спор становится частью RFC 5322 DAG.
 
-## Формат капсулы
+### ⚡ Честный бенчмарк и MIME-инспектор
 
-Капсула — обычное письмо. Его можно открыть в Thunderbird, mutt или в бэкап-утилите:
+<table>
+<tr>
+<td width="50%"><img src="screenshots/capsuleos-benchmark.png" alt="Честный бенчмарк: 50000 капсул за 1371 мс"></td>
+<td width="50%"><img src="screenshots/capsuleos-mime.png" alt="Инспектор RFC 5322"></td>
+</tr>
+<tr>
+<td align="center"><sub>Честный бенчмарк — 50k капсул, 1371 мс, 36k файлов/с</sub></td>
+<td align="center"><sub>Инспектор RFC 5322 — каждый заголовок, каждая часть</sub></td>
+</tr>
+</table>
+
+- Модалка бенчмарка реально прогоняет N синтетических капсул через `parseEml` + построение графа и показывает фактические цифры.
+- MIME-инспектор показывает полное дерево и сырой исходник любой капсулы — можно скопировать или скачать точный `.eml`.
+
+## 📦 Формат капсулы
+
+Капсула — обычное письмо. Откройте его в Thunderbird, mutt или своём бэкап-инструменте:
 
 ```eml
 Message-ID: <capsule-1755000000000@vault.local>
@@ -109,30 +170,32 @@ Q4-A,1200,0.041
 --capsule-boundary--
 ```
 
-JSON-часть — структурированный блочный канвас, HTML-часть — читаемый фолбэк, остальные части — датасеты и вложения, на которые DataGrid-блоки ссылаются по `Content-ID`.
+JSON-часть — структурированный блочный холст; HTML-часть — человекочитаемый фолбэк; остальные части — датасеты и вложения, адресуемые через `Content-ID` из блоков DataGrid.
 
-## Загрузка
+## 🚀 Начало работы
 
-Готовые установщики **Windows x64** прикреплены к каждому [релизу](https://github.com/kostyk348/capsuleos/releases/latest):
+### Скачать (Windows)
+
+Готовые **Windows x64**-инсталляторы приложены к каждому [релизу](https://github.com/kostyk348/capsuleos/releases/latest):
 
 | Файл | Что это |
 |---|---|
 | `CapsuleOS_*_x64_en-US.msi` | Пакет Windows Installer |
-| `CapsuleOS_*_x64-setup.exe` | Установщик NSIS |
+| `CapsuleOS_*_x64-setup.exe` | Инсталлятор NSIS |
 
-- Нужен Microsoft Edge **WebView2 Runtime** (в Windows 10/11 уже есть; иначе [скачать](https://developer.microsoft.com/microsoft-edge/webview2/)).
-- Установщики пока **не подписаны**, поэтому SmartScreen может предупредить: *Подробнее → Выполнить в любом случае*.
-- Рядом с установщиками публикуется `SHA256SUMS.txt`.
+- Нужен **WebView2 Runtime** от Microsoft Edge (предустановлен в Windows 10/11; иначе [скачайте](https://developer.microsoft.com/microsoft-edge/webview2/)).
+- Инсталляторы пока **не подписаны** — SmartScreen может предупредить: *More info → Run anyway*.
+- `SHA256SUMS.txt` публикуется рядом с инсталляторами.
 
-Сборок под Linux и macOS пока нет — собирайте из исходников.
+Сборки для Linux и macOS пока не поставляются — соберите из исходников ниже.
 
-## Сборка из исходников
+### Сборка из исходников
 
 **Требования**
 
 - [Rust](https://rustup.rs/) 1.77.2+ (stable)
 - [Node.js](https://nodejs.org/) 20+ с npm
-- Только Linux: `webkit2gtk-4.1`, `gtk3`, `librsvg2`, `libayatana-appindicator3`, `patchelf`
+- Только для Linux: `webkit2gtk-4.1`, `gtk3`, `librsvg2`, `libayatana-appindicator3`, `patchelf`
 - Windows: MSVC build tools + WebView2 · macOS: Xcode command line tools
 
 ```bash
@@ -140,70 +203,99 @@ git clone https://github.com/kostyk348/capsuleos.git
 cd capsuleos
 npm ci
 npm run tauri:dev      # окно разработки с hot reload
-npm run tauri:build    # релизные установщики
+npm run tauri:build    # релизные инсталляторы
 ```
 
 Результат:
 
-- бинарь — `src-tauri/target/release/capsuleos` (`capsuleos.exe` на Windows);
-- пакеты — `src-tauri/target/release/bundle/` (`.msi`/`.exe` на Windows, `.deb`/`.rpm`/`.AppImage` на Linux, `.app` на macOS).
+- бинарник — `src-tauri/target/release/capsuleos` (`capsuleos.exe` на Windows)
+- пакеты — `src-tauri/target/release/bundle/` (`.msi`/`.exe` на Windows, `.deb`/`.rpm`/`.AppImage` на Linux, `.app` на macOS)
 
 ### Веб-режим (без десктоп-оболочки)
 
 ```bash
 npm ci
-npm run dev            # dev-сервер Vite на http://localhost:5173
-npm run build          # production-сборка в dist/
+npm run dev            # Vite dev-сервер на http://localhost:5173
+npm run build          # прод-сборка в dist/
 npm run preview        # раздача сборки
+npm test               # движок-тесты vitest (17 шт.)
 ```
 
-В обычном браузере хранилище деградирует до `localStorage`; нативный доступ к файлам есть только в Tauri.
+В обычном браузере vault падает на `localStorage`; нативный доступ к файлам — только через Tauri.
 
-## Структура проекта
+## 🏗 Архитектура
 
+```text
+┌──────────────────────────────────────────────────────────────────────┐
+│                        Десктоп-оболочка Tauri 2                      │
+│  src-tauri/src/lib.rs — файловый IO, диалоги, app-data dir (Rust)    │
+├──────────────────────────────────────────────────────────────────────┤
+│  React 19 UI                                                         │
+│  components/         канвас-редактор · DataGrid · граф · треды       │
+│  components/blocks/  по компоненту на тип блока                      │
+├──────────────────────────────────────────────────────────────────────┤
+│  Движок (чистый TypeScript, покрыт тестами)                          │
+│  engine/mime.ts          сборка / разбор RFC 5322, CIDs              │
+│  engine/vaultStore.ts    граф-хранилище, инвертированный индекс      │
+│  engine/desktopStore.ts  Tauri IPC-мост к реальной файловой системе  │
+│  engine/offlineAi.ts     детерминированный офлайн Co-Thinker         │
+│  engine/markdown.tsx     рендер инлайн-Markdown                      │
+├──────────────────────────────────────────────────────────────────────┤
+│  Хранилище = ваша папка                                              │
+│  vault/*.eml   одно текстовое сообщение на капсулу                   │
+│  vault.json    одноразовый снапшот индекса (папка главнее)           │
+└──────────────────────────────────────────────────────────────────────┘
 ```
+
+```text
 src/
-  engine/mime.ts            сборка/парсинг RFC 5322-капсул, вложения, CID
-  engine/vaultStore.ts      граф-хранилище, инвертированный индекс, индексы, персистентность
-  engine/desktopStore.ts    мост Tauri IPC к реальной файловой системе
-  engine/offlineAi.ts       детерминированный офлайн Co-Thinker
-  engine/markdown.tsx       инлайн-рендер markdown
-  components/               канвас-редактор, DataGrid, граф, треды, MIME-инспектор
-  components/blocks/        по компоненту на тип блока
-  types.ts                  типы капсул / блоков / графа
-src-tauri/
-  src/lib.rs                Rust-команды: файловый IO, диалоги, app data dir
-  tauri.conf.json           окно, бандлы, идентификатор
-  capabilities/             набор разрешений Tauri
-.github/workflows/
-  ci.yml                    typecheck + веб-сборка, cargo check/fmt/clippy
-  release.yml               релиз Windows x64 (msi + nsis) по тегу или вручную
+  engine/                 ядро zero-DB (MIME, хранилище, офлайн-ИИ)
+  components/             канвас-редактор, DataGrid, граф, треды, инспектор
+  components/blocks/      по компоненту на тип блока
+  types.ts                типы капсул / блоков / графа
+src-tauri/                Rust-оболочка: файловый IO, диалоги, конфиг пакета
+.github/workflows/        ci.yml · release.yml (Windows x64 msi + nsis)
 ```
 
-## Данные и приватность
+## 🔒 Данные и приватность
 
-Всё локально. Ничего не покидает машину: собственных сетевых вызовов у приложения нет.
+Всё локально. Ничего не покидает машину: приложение само не делает сетевых вызовов.
 
-| ОС | Каталог хранилища |
+| ОС | Расположение vault |
 |---|---|
 | Windows | `%APPDATA%\com.capsuleos.app\` |
 | Linux | `~/.local/share/com.capsuleos.app/` |
 | macOS | `~/Library/Application Support/com.capsuleos.app/` |
 
-Внутри: папка `vault/` с одним `.eml` на капсулу и `vault.json` — кэш-снапшот индекса. Удалите папку — удалите рабочее пространство. Скопируйте — унесёте всю базу знаний.
+Внутри: `vault/` с одним `.eml` на капсулу и `vault.json` как кэш-снапшот индекса. Удалите папку — удалите рабочее пространство. Скопируйте — унесите всю базу знаний с собой.
 
-## Статус
+## 🗺 Роадмап
 
-`v1.0.0` — десктопное приложение пригодно сквозным сценарием. Известные шероховатости:
+- ✅ v1.0 — блочный канвас, `.eml`-vault, граф, треды, оболочка Tauri
+- ✅ v1.1 — точность движка + тесты, настоящий звук, честный бенчмарк, HTML-экспорт
+- ⬜ Релевантность полнотекстового поиска (BM25 поверх инвертированного индекса)
+- ⬜ Слежение за папкой — живая синхронизация vault без перезапуска
+- ⬜ GPG-подпись капсул (подлинность мыслей)
+- ⬜ Python-ячейки через Pyodide, Rust-ячейки через WASM
+- ⬜ Сборки Linux (AppImage / deb) и macOS в релизном пайплайне
+- ⬜ Опциональная E2E-шифрованная синхронизация vault (папка `.eml` уже переносима)
 
-- установщики не подписаны (SmartScreen предупреждает);
-- автотестов пока нет (CI покрывает typecheck, веб-сборку, `cargo check`, fmt, clippy);
-- капсулы пересканируются из папки при старте — нормально для тысяч файлов, дальше не бенчмаркалось.
+## 📊 Статус
 
-## Участие
+`v1.1.0` — десктоп-приложение работоспособно от начала до конца. Движок покрыт suite'ом vitest (MIME round-trip, регрессия фантомных вложений, хелперы редактора). Известные шероховатости:
 
-Issues и PR приветствуются — см. [CONTRIBUTING.md](CONTRIBUTING.md). Изменения ведутся в [CHANGELOG.md](CHANGELOG.md).
+- инсталляторы не подписаны кодовой подписью (SmartScreen предупреждает);
+- Python/Rust-ячейки хранятся и версионируются, но не исполняются офлайн (WASM-интерпретаторы не вшиты);
+- браузерный бенчмарк парсит 50k синтетических капсул за ~1.3 с — реальный холодный скан папки медленнее.
 
-## Лицензия
+## 🤝 Участие в разработке
 
-[MIT](LICENSE) © CapsuleOS Contributors
+Issues и PR приветствуются — см. [CONTRIBUTING.md](CONTRIBUTING.md). Изменения отслеживаются в [CHANGELOG.md](CHANGELOG.md).
+
+<div align="center">
+
+**CapsuleOS** — ваши мысли, хранящиеся как почта.
+
+[Скачать](https://github.com/kostyk348/capsuleos/releases/latest) · [Changelog](CHANGELOG.md) · [Сообщить о баге](https://github.com/kostyk348/capsuleos/issues) · [Лицензия MIT](LICENSE)
+
+</div>

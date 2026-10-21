@@ -1,25 +1,51 @@
+<div align="center">
+
 # 🧠 CapsuleOS
+
+### Your knowledge base is a folder of emails.
+
+**A zero-database, multimodal workspace & personal knowledge engine.**
+Every note, table, whiteboard and voice memo is a plain **RFC 5322 `.eml` message** —
+no SQL, no document store, no cloud, no lock-in. Files you can open in any mail client, grep, diff and back up for decades.
+
+[![Release](https://img.shields.io/github/v/release/kostyk348/capsuleos?sort=semver&color=0ea5e9&label=release)](https://github.com/kostyk348/capsuleos/releases)
+[![CI](https://github.com/kostyk348/capsuleos/actions/workflows/ci.yml/badge.svg)](https://github.com/kostyk348/capsuleos/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-17%20passing-22c55e)](https://github.com/kostyk348/capsuleos/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Tauri](https://img.shields.io/badge/Tauri-2-FFC131?logo=tauri&logoColor=black)](https://v2.tauri.app/)
+[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev/)
+[![No DB](https://img.shields.io/badge/database-none-orange)](#-why)
+[![Offline](https://img.shields.io/badge/offline-first-success)](#-data--privacy)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](CONTRIBUTING.md)
 
 **English** · [Русский](README.ru.md)
 
-[![Release](https://img.shields.io/github/v/release/kostyk348/capsuleos?sort=semver&color=blue)](https://github.com/kostyk348/capsuleos/releases)
-[![CI](https://github.com/kostyk348/capsuleos/actions/workflows/ci.yml/badge.svg)](https://github.com/kostyk348/capsuleos/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)](#build-from-source)
+<img src="screenshots/capsuleos-editor.png" alt="CapsuleOS editor — RFC 5322 headers, tag chips, AI Co-Thinker panel, related capsules" width="100%">
 
-> **A zero-database multimodal workspace and personal knowledge engine.**
-> Every note, table, whiteboard and voice memo is a plain **RFC 5322 `.eml` message**.
-> No SQL, no document store, no cloud, no lock-in — just files you can open in any mail client.
-
-CapsuleOS is a **native desktop app** (Tauri 2 + Rust + React 19 + TypeScript): a real window, real filesystem, no browser tab, no server process.
-
-| Block canvas editor | Vault graph |
-|---|---|
-| ![editor](screenshots/capsuleos-editor.png) | ![graph](screenshots/capsuleos-graph.png) |
+</div>
 
 ---
 
-## Why
+## 🧭 TL;DR
+
+- 📦 **Zero-DB.** One capsule = one `.eml` file on disk. Thunderbird can read your notes. `grep` can search them. `rsync` can sync them.
+- 🧱 **Beyond Markdown.** A block canvas editor: headings, callouts, TODOs, live CSV/JSON DataGrids with charts, whiteboards, code REPL, voice notes — all inside one MIME container.
+- 🤖 **Offline co-thinker.** A deterministic local AI opponent critiques your claims, continues your threads and answers with datasets. No API key, no network.
+- ⚡ **Fast.** The real, in-browser benchmark parses **50 000 capsules in ~1.4 s** (~36k files/s) — measured, not marketing.
+
+## 🆕 What's new in v1.1.0
+
+> The "make it honest & make it work" release. [Full changelog →](CHANGELOG.md)
+
+| | |
+|---|---|
+| 🔧 **13 bugs fixed** | Phantom attachments, dead Co-Think modes, slash-menu false triggers, double-hash tag chips, dead ⌘K, stuck REPL, graph without zoom, invisible thread blocks… |
+| 🎙 **Real audio notes** | Voice memos are now actual MIME audio attachments with a click-to-seek waveform — the `SIMULATED` badge finally means something else |
+| 📊 **Real benchmark** | The "SIMD 50k" modal now really pushes 50k synthetic `.eml` files through the parse engine. No more fake setInterval numbers |
+| 🧪 **17-test suite** | MIME round-trip, phantom-attachment regression, HTML escaping, wikilinks, caret rules — wired into CI |
+| 📤 **Standalone HTML export** | Preview view exports a self-contained `.html` dashboard |
+
+## ❓ Why
 
 Most note apps keep your knowledge in a proprietary database. Your notes are only yours as long as the app exists and the schema does not change.
 
@@ -35,40 +61,75 @@ CapsuleOS inverts that:
 
 The whole knowledge base is a **folder of messages** — greppable, diffable, backed up by any tool, readable for decades.
 
-## Features
-
-### 📦 Zero-DB architecture (RFC 5322 EML)
-- Each capsule is a full MIME message: `Message-ID`, `In-Reply-To`, `References`, `X-Capsule-Tags`, `X-Capsule-Status`, multipart body.
-- Graph store with an **inverted index** — instant full-text search across every capsule.
-- Import/export of `.eml` files and `zip` archives, plus a raw-MIME inspector.
-- Vault folder is the source of truth: on startup the folder is re-scanned and wins over the JSON snapshot.
+## ✨ Feature tour
 
 ### 🧱 Block canvas editor
-- Headings, paragraphs, callouts, TODO lists.
+
+<table>
+<tr>
+<td><img src="screenshots/capsuleos-datagrid.png" alt="Live DataGrid chart and interactive whiteboard"></td>
+</tr>
+<tr>
+<td align="center"><sub>Live DataGrid (CSV-backed charts) · Interactive whiteboard with mind blocks & sticky notes</sub></td>
+</tr>
+</table>
+
+- Headings, paragraphs, callouts, TODO lists — with live inline Markdown.
 - **Live DataGrid** — tables backed by CSV/JSON attachments, with chart and pivot views.
 - **Whiteboard** — shapes, sticky notes, mind-map nodes and arrows on a canvas.
-- **Code REPL** — run JavaScript blocks in place; JSON blocks are validated.
-- **Audio notes** — waveform + transcript stored as capsule blocks.
+- **Code REPL** — JavaScript runs in a sandboxed Web Worker with a 3 s watchdog (infinite loops can't freeze the app); JSON blocks are validated and pretty-printed.
+- **Audio notes** — real audio attachments, click-to-seek waveform, duration badge.
 - **AI opponent** — a critique block that argues against the claim it is attached to.
 
 ### 🕸 In-memory graph & threads
-- Instant relationship graph (`in_reply_to`, `references`, tags) with satellite previews.
-- Thought threads: linear and multi-branch chains of reasoning.
 
-### 🔗 Wikilinks and backlinks
-- Type `[[capsule name]]` in any text block, with autocomplete over live capsules.
-- Clickable links in preview mode plus a **Related capsules** panel (incoming/outgoing).
-- Wikilink edges are drawn in the graph as dashed green links.
+<table>
+<tr>
+<td width="50%"><img src="screenshots/capsuleos-graph.png" alt="Relationship DAG with zoom controls"></td>
+<td width="50%"><img src="screenshots/capsuleos-threads.png" alt="Thought thread view"></td>
+</tr>
+<tr>
+<td align="center"><sub>Relationship DAG · zoom controls · physics · tag palette</sub></td>
+<td align="center"><sub>Thought threads · RFC 5322 In-Reply-To chains</sub></td>
+</tr>
+</table>
 
-### ✍️ Markdown rendering
-- `**bold**`, `*italic*`, `` `code` ``, `[link](url)` — live preview inside paragraph, callout and heading blocks.
-- Export a capsule to **Markdown** (the `.eml` stays the source of truth).
+- Instant relationship graph (`in_reply_to`, `references`, wikilinks) with satellite previews.
+- Thought threads: linear and multi-branch chains of reasoning, rendered from real capsule blocks.
+- `[[wikilinks]]` with autocomplete, clickable backlinks and a **Related capsules** panel.
 
 ### 🤖 Offline Co-Thinker
+
+<table>
+<tr>
+<td><img src="screenshots/capsuleos-cothink.png" alt="Co-Think modal with four cognitive modes"></td>
+</tr>
+<tr>
+<td align="center"><sub>Four cognitive modes: critique · synthesis · counter-argument · data insight</sub></td>
+</tr>
+</table>
+
 - Deterministic local assistant: `critique`, `continue`, `reply_thread`, `data_insight`.
 - No API key, no network calls — the app works fully offline.
+- Counter-argument mode spawns a **child `.eml` capsule** with AI blocks — your debate becomes part of the RFC 5322 DAG.
 
-## The capsule format
+### ⚡ Honest benchmark & MIME inspector
+
+<table>
+<tr>
+<td width="50%"><img src="screenshots/capsuleos-benchmark.png" alt="Real benchmark: 50000 capsules in 1371 ms"></td>
+<td width="50%"><img src="screenshots/capsuleos-mime.png" alt="Raw RFC 5322 MIME inspector"></td>
+</tr>
+<tr>
+<td align="center"><sub>Real parse benchmark — 50k capsules, 1371 ms, 36k files/s</sub></td>
+<td align="center"><sub>Raw RFC 5322 inspector — every header, every part</sub></td>
+</tr>
+</table>
+
+- The benchmark modal really runs N synthetic capsules through `parseEml` + graph build and shows the actual numbers.
+- The MIME inspector shows the full tree and raw source of any capsule — copy or download the exact `.eml`.
+
+## 📦 The capsule format
 
 A capsule is ordinary mail. Open it in Thunderbird, mutt or your backup tool:
 
@@ -111,7 +172,9 @@ Q4-A,1200,0.041
 
 The JSON part is the structured block canvas; the HTML part is a human-readable fallback; extra parts are datasets and attachments addressed by `Content-ID` from DataGrid blocks.
 
-## Download
+## 🚀 Getting started
+
+### Download (Windows)
 
 Prebuilt **Windows x64** installers are attached to every [release](https://github.com/kostyk348/capsuleos/releases/latest):
 
@@ -126,7 +189,7 @@ Prebuilt **Windows x64** installers are attached to every [release](https://gith
 
 Linux and macOS builds are not shipped yet — build from source below.
 
-## Build from source
+### Build from source
 
 **Requirements**
 
@@ -155,32 +218,46 @@ npm ci
 npm run dev            # Vite dev server on http://localhost:5173
 npm run build          # production build into dist/
 npm run preview        # serve the build
+npm test               # vitest engine suite (17 tests)
 ```
 
 In a plain browser the vault falls back to `localStorage`; native file access is Tauri-only.
 
-## Project layout
+## 🏗 Architecture
 
+```text
+┌──────────────────────────────────────────────────────────────────────┐
+│                          Tauri 2 desktop shell                       │
+│  src-tauri/src/lib.rs — file IO, dialogs, app-data dir (Rust)        │
+├──────────────────────────────────────────────────────────────────────┤
+│  React 19 UI                                                         │
+│  components/         canvas editor · DataGrid · graph · threads      │
+│  components/blocks/  one component per block type                    │
+├──────────────────────────────────────────────────────────────────────┤
+│  Engine (pure TypeScript, fully unit-tested)                         │
+│  engine/mime.ts          build / parse RFC 5322 capsules, CIDs       │
+│  engine/vaultStore.ts    graph store, inverted index, persistence    │
+│  engine/desktopStore.ts  Tauri IPC bridge to the real filesystem     │
+│  engine/offlineAi.ts     deterministic offline Co-Thinker            │
+│  engine/markdown.tsx     inline markdown renderer                    │
+├──────────────────────────────────────────────────────────────────────┤
+│  Storage = your folder                                               │
+│  vault/*.eml   one plain-text message per capsule                    │
+│  vault.json    disposable index snapshot (folder wins on startup)    │
+└──────────────────────────────────────────────────────────────────────┘
 ```
+
+```text
 src/
-  engine/mime.ts            build / parse RFC 5322 capsules, attachments, CIDs
-  engine/vaultStore.ts      graph store, inverted index, indexes, persistence
-  engine/desktopStore.ts    Tauri IPC bridge to the real filesystem
-  engine/offlineAi.ts       deterministic offline Co-Thinker
-  engine/markdown.tsx       inline markdown renderer
-  components/               canvas editor, DataGrid, graph, threads, MIME inspector
-  components/blocks/        one component per block type
-  types.ts                  capsule / block / graph types
-src-tauri/
-  src/lib.rs                Rust commands: file IO, dialogs, app data dir
-  tauri.conf.json           window, bundle and identifier config
-  capabilities/             Tauri permission set
-.github/workflows/
-  ci.yml                    typecheck + web build, cargo check/fmt/clippy
-  release.yml               Windows x64 release (msi + nsis) on tag or dispatch
+  engine/                 the zero-DB core (MIME, store, offline AI)
+  components/             canvas editor, DataGrid, graph, threads, inspector
+  components/blocks/      one component per block type
+  types.ts                capsule / block / graph types
+src-tauri/                Rust shell: file IO, dialogs, bundle config
+.github/workflows/        ci.yml · release.yml (Windows x64 msi + nsis)
 ```
 
-## Data & privacy
+## 🔒 Data & privacy
 
 Everything is local. Nothing leaves the machine: the app makes no network calls of its own.
 
@@ -192,18 +269,33 @@ Everything is local. Nothing leaves the machine: the app makes no network calls 
 
 Inside it: `vault/` with one `.eml` per capsule, and `vault.json` as a cached index snapshot. Delete the folder — you delete the workspace. Copy it — you carry the whole knowledge base.
 
-## Status
+## 🗺 Roadmap
 
-`v1.0.0` — desktop app is usable end-to-end. Known rough edges:
+- ✅ v1.0 — block canvas, `.eml` vault, graph, threads, Tauri shell
+- ✅ v1.1 — engine fidelity + tests, real audio, honest benchmark, HTML export
+- ⬜ Full-text search relevance ranking (BM25 over the inverted index)
+- ⬜ Folder watching — live vault sync without restart
+- ⬜ GPG signing of capsules (authenticity of thoughts)
+- ⬜ Python cells via Pyodide, Rust cells via WASM
+- ⬜ Linux (AppImage / deb) and macOS builds in the release pipeline
+- ⬜ Optional end-to-end-encrypted vault sync (the `.eml` folder is already portable)
+
+## 📊 Status
+
+`v1.1.0` — desktop app is usable end-to-end. The engine is covered by a vitest suite (MIME round-trip, phantom-attachment regression, editor helpers). Known rough edges:
 
 - no code signing of installers (Windows SmartScreen warns);
-- no automated test suite yet (CI covers typecheck, web build, `cargo check`, fmt, clippy);
-- capsules are re-scanned from the folder on startup — fine for thousands of files, not benchmarked beyond that.
+- Python/Rust code cells are stored and versioned but not executed offline (no WASM interpreters bundled);
+- the in-browser benchmark parses 50k synthetic capsules in ~1.3 s — a real cold folder scan is slower.
 
-## Contributing
+## 🤝 Contributing
 
 Issues and PRs are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Changes are tracked in [CHANGELOG.md](CHANGELOG.md).
 
-## License
+<div align="center">
 
-[MIT](LICENSE) © CapsuleOS Contributors
+**CapsuleOS** — your thoughts, stored as mail.
+
+[Download](https://github.com/kostyk348/capsuleos/releases/latest) · [Changelog](CHANGELOG.md) · [Report a bug](https://github.com/kostyk348/capsuleos/issues) · [MIT License](LICENSE)
+
+</div>

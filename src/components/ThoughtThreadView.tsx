@@ -12,8 +12,8 @@ import {
   FileSpreadsheet,
   Palette,
   ShieldAlert,
-  Calendar,
-  Layers,
+  Mic,
+  FileCode2,
 } from 'lucide-react';
 
 interface Props {
@@ -32,7 +32,6 @@ export const ThoughtThreadView: React.FC<Props> = ({
   onCreateReply,
 }) => {
   const [replyText, setReplyText] = useState('');
-  const [activeRootId, setActiveRootId] = useState<string | null>(null);
 
   // Find root nodes (nodes with no inReplyTo or roots of threads)
   const allNodes: CapsuleNode[] = Array.from(graphState.nodes.values());
@@ -97,10 +96,7 @@ export const ThoughtThreadView: React.FC<Props> = ({
               <button
                 key={root.messageId}
                 type="button"
-                onClick={() => {
-                  setActiveRootId(root.messageId);
-                  onSelectNode(root.messageId);
-                }}
+                onClick={() => onSelectNode(root.messageId)}
                 className={`w-full text-left p-3 rounded-xl border transition-all ${
                   isSelected
                     ? 'bg-cyan-500/10 border-cyan-500/40 text-cyan-100 shadow-[0_0_12px_rgba(6,182,212,0.15)]'
@@ -162,6 +158,7 @@ export const ThoughtThreadView: React.FC<Props> = ({
               capsule.from.toLowerCase().includes('agent') ||
               capsule.from.toLowerCase().includes('gemini');
             const isChild = !!capsule.inReplyTo;
+            const isSelectedCard = capsule.messageId === selectedMessageId;
 
             return (
               <div key={capsule.messageId} className="relative group">
@@ -172,6 +169,10 @@ export const ThoughtThreadView: React.FC<Props> = ({
 
                 <div
                   className={`rounded-2xl border p-5 shadow-xl transition-all ${
+                    isSelectedCard
+                      ? 'border-cyan-400/70 ring-1 ring-cyan-400/50 shadow-[0_0_18px_rgba(6,182,212,0.25)]'
+                      : ''
+                  } ${
                     isAI
                       ? 'bg-gradient-to-br from-slate-900/90 via-cyan-950/20 to-slate-900/90 border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.1)]'
                       : 'bg-[#0f172a]/40 border-slate-800'
@@ -260,6 +261,61 @@ export const ThoughtThreadView: React.FC<Props> = ({
                           >
                             <Palette className="w-3.5 h-3.5" />
                             <span>Whiteboard Scene ({b.data.scene_cid})</span>
+                          </div>
+                        );
+                      }
+                      if (b.type === 'callout') {
+                        const d = b.data;
+                        return (
+                          <div
+                            key={b.id}
+                            className="p-2.5 rounded-lg bg-emerald-950/30 border border-emerald-500/30 text-xs"
+                          >
+                            <span className="text-emerald-300 font-semibold">💡 {d.title}</span>
+                            <p className="text-slate-300 mt-0.5 leading-relaxed">{d.content}</p>
+                          </div>
+                        );
+                      }
+                      if (b.type === 'todo_list') {
+                        const items = b.data.items || [];
+                        const done = items.filter((i) => i.done).length;
+                        return (
+                          <div
+                            key={b.id}
+                            className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800 text-xs"
+                          >
+                            <span className="text-slate-300 font-semibold">
+                              ☑️ {b.data.title || 'Checklist'} — {done}/{items.length}
+                            </span>
+                            <div className="mt-1 space-y-0.5">
+                              {items.slice(0, 3).map((i) => (
+                                <div key={i.id} className={i.done ? 'text-slate-500 line-through' : 'text-slate-300'}>
+                                  • {i.text}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      }
+                      if (b.type === 'audio_note') {
+                        return (
+                          <div
+                            key={b.id}
+                            className="p-2 rounded bg-cyan-950/30 border border-cyan-500/30 text-cyan-300 flex items-center gap-2 font-mono text-[11px]"
+                          >
+                            <Mic className="w-3.5 h-3.5 shrink-0" />
+                            <span className="truncate">Voice note {b.data.duration} — {b.data.transcript}</span>
+                          </div>
+                        );
+                      }
+                      if (b.type === 'code_repl') {
+                        return (
+                          <div
+                            key={b.id}
+                            className="p-2 rounded bg-slate-950 border border-slate-800 text-emerald-400 flex items-center gap-2 font-mono text-[11px]"
+                          >
+                            <FileCode2 className="w-3.5 h-3.5 shrink-0" />
+                            <span className="truncate">{b.data.language}: {b.data.code.split('\n')[0]}</span>
                           </div>
                         );
                       }

@@ -8,6 +8,7 @@ import {
   Zap,
   Sparkles,
 } from 'lucide-react';
+import { APP_VERSION } from '../version';
 
 export type ActiveView = 'canvas' | 'graph' | 'thread' | 'mime' | 'html_preview';
 
@@ -17,6 +18,8 @@ interface Props {
   onOpenBenchmark: () => void;
   onOpenAiCoThink: () => void;
   totalCapsules: number;
+  /** Real rebuild time of the in-memory index (ms) from vaultStore.scanStats. */
+  scanDurationMs?: number;
 }
 
 export const Navbar: React.FC<Props> = ({
@@ -25,6 +28,7 @@ export const Navbar: React.FC<Props> = ({
   onOpenBenchmark,
   onOpenAiCoThink,
   totalCapsules,
+  scanDurationMs,
 }) => {
   return (
     <header className="h-14 border-b border-slate-800 bg-[#0f172a]/50 backdrop-blur-md px-6 flex items-center justify-between z-30 shrink-0 select-none">
@@ -35,7 +39,7 @@ export const Navbar: React.FC<Props> = ({
         </div>
         <div className="flex flex-col">
           <span className="text-sm font-bold tracking-tight text-white flex items-center">
-            CapsuleOS <span className="text-cyan-400 font-mono text-[10px] ml-1.5 opacity-80 font-normal">v0.8.2-alpha</span>
+            CapsuleOS <span className="text-cyan-400 font-mono text-[10px] ml-1.5 opacity-80 font-normal">v{APP_VERSION}</span>
           </span>
           <span className="text-[10px] text-slate-500 font-mono">~/vault/local-research</span>
         </div>
@@ -135,7 +139,9 @@ export const Navbar: React.FC<Props> = ({
         {/* Live In-Memory Telemetry */}
         <div className="hidden lg:flex flex-col items-end">
           <span className="text-emerald-400 font-semibold tracking-wide">RAM INDEX: ACTIVE</span>
-          <span className="text-slate-500 text-[10px]">{totalCapsules.toLocaleString()} nodes in 114ms</span>
+          <span className="text-slate-500 text-[10px]">
+            {totalCapsules.toLocaleString()} nodes in {scanDurationMs != null ? scanDurationMs : '—'}ms
+          </span>
         </div>
 
         {/* User Badge */}

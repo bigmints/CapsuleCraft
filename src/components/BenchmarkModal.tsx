@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { parseEml } from '../engine/mime';
 import { Zap, Play, CheckCircle2, Cpu, HardDrive, Timer, Layers } from 'lucide-react';
 
 interface Props {
@@ -21,35 +22,90 @@ export const BenchmarkModal: React.FC<Props> = ({ isOpen, onClose }) => {
 
   if (!isOpen) return null;
 
+  // Generate one synthetic ~4.7KB .eml capsule (headers + JSON canvas + CSV part).
+  const makeSyntheticEml = (i: number): string => {
+    const body = JSON.stringify({
+      version: '1.0',
+      messageId: '<bench-' + i + '@vault.local>',
+      blocks: [
+        { id: 'h', type: 'heading', data: { level: 1, text: 'Benchmark capsule ' + i } },
+        { id: 'p', type: 'paragraph', data: { text: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. '.repeat(6) } },
+      ],
+    });
+    return [
+      'From: Benchmark <bench@capsuleos.local>',
+      'To: Vault <vault@capsuleos.local>',
+      'Subject: Benchmark capsule ' + i,
+      'Date: Wed, 22 Oct 2025 10:00:00 +0000',
+      'Message-ID: <bench-' + i + '@vault.local>',
+      i % 3 === 0 ? '' : 'In-Reply-To: <bench-' + (i - 1) + '@vault.local>',
+      'X-Capsule-Tags: #benchmark',
+      'X-Capsule-Status: Active',
+      'MIME-Version: 1.0',
+      'Content-Type: multipart/mixed; boundary="BENCH_' + i + '"',
+      '',
+      '--BENCH_' + i,
+      'Content-Type: application/json; name="canvas_state.json"',
+      '',
+      body,
+      '',
+      '--BENCH_' + i,
+      'Content-Type: text/csv; name="metrics.csv"',
+      'Content-ID: <metrics_' + i + '>',
+      '',
+      'Month,CAC,LTV,Margin',
+      'Jan,120,450,0.42',
+      'Feb,115,480,0.45',
+      'Mar,111,510,0.47',
+      '--BENCH_' + i + '--',
+    ].join('\r\n');
+  };
+
+  // Real parse + graph build, batched so the UI can paint progress.
   const handleRunBenchmark = () => {
     setRunning(true);
     setProgress(0);
     setResult(null);
 
+    // Pre-generate the corpus outside the measured window.
+    const corpus: string[] = [];
+    for (let i = 0; i < fileCount; i++) corpus.push(makeSyntheticEml(i));
+    const totalBytes = corpus.reduce((s, e) => s + e.length, 0);
+
+    const edges = new Set<string>();
+    const parsedIds = new Set<string>();
     const startTime = performance.now();
-    let current = 0;
-    const interval = setInterval(() => {
-      current += 10;
-      setProgress(current);
+    let done = 0;
+    const BATCH = 2000;
 
-      if (current >= 100) {
-        clearInterval(interval);
-        const duration = Math.max(85, Math.round(performance.now() - startTime + (fileCount / 1000) * 1.8));
-        const totalMb = (fileCount * 1.8) / 1024; // avg 1.8KB per header chunk
-        const filesPerSec = Math.round((fileCount / duration) * 1000);
-        const mbPerSec = Math.round((totalMb / duration) * 1000);
-
-        setResult({
-          timeMs: duration,
-          throughputFilesPerSec: filesPerSec,
-          throughputMbPerSec: mbPerSec,
-          graphNodes: fileCount,
-          graphEdges: Math.round(fileCount * 1.42),
-          ramFootprintMb: parseFloat(((fileCount * 480) / (1024 * 1024)).toFixed(2)), // ~480 bytes per PetGraph node
-        });
-        setRunning(false);
+    const step = () => {
+      const until = Math.min(done + BATCH, fileCount);
+      for (let i = done; i < until; i++) {
+        const node = parseEml(corpus[i]);
+        parsedIds.add(node.messageId);
+        if (node.inReplyTo) edges.add(node.messageId + '->' + node.inReplyTo);
       }
-    }, 40);
+      done = until;
+      setProgress(Math.round((done / fileCount) * 100));
+
+      if (done < fileCount) {
+        setTimeout(step, 0);
+        return;
+      }
+
+      const duration = Math.max(1, Math.round(performance.now() - startTime));
+      setResult({
+        timeMs: duration,
+        throughputFilesPerSec: Math.round((fileCount / duration) * 1000),
+        throughputMbPerSec: parseFloat(((totalBytes / 1048576) / (duration / 1000)).toFixed(1)),
+        graphNodes: parsedIds.size,
+        graphEdges: edges.size,
+        ramFootprintMb: parseFloat(((JSON.stringify(corpus).length / 1048576) + (fileCount * 480) / 1048576).toFixed(1)),
+      });
+      setRunning(false);
+    };
+
+    setTimeout(step, 30);
   };
 
   return (
@@ -63,13 +119,13 @@ export const BenchmarkModal: React.FC<Props> = ({ isOpen, onClose }) => {
             </div>
             <div>
               <h3 className="font-bold text-base text-white flex items-center gap-2">
-                <span>SIMD Header Scanner & In-Memory DAG Benchmark</span>
+                <span>In-Browser Engine Benchmark — RFC 5322 Parse + DAG</span>
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-950/60 text-cyan-300 border border-cyan-800/60">
                   Zero-DB
                 </span>
               </h3>
               <p className="text-xs text-slate-400">
-                Evaluating parsing velocity of RFC 5322 headers via mmap + vector instructions (SIMD/AVX2).
+                Real measurements in this tab: N synthetic .eml capsules go through the actual parseEml engine and in-memory graph build. No SIMD/mmap claims — the desktop shell layers native acceleration on top.
               </p>
             </div>
           </div>
@@ -107,11 +163,12 @@ export const BenchmarkModal: React.FC<Props> = ({ isOpen, onClose }) => {
           </div>
 
           <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800 space-y-1.5 text-[11px] text-slate-400">
-            <div className="font-semibold text-slate-200">Architectural Invariant:</div>
+            <div className="font-semibold text-slate-200">What is measured:</div>
             <p>
-              • Reads only the first 4KB (RFC 5322 Header Block)
-              <br />• In-RAM DAG graph generation for <code className="text-cyan-300">In-Reply-To</code> & <code className="text-purple-300">References</code>
-              <br />• 0% disk database engine overhead
+              • Full RFC 5322 header + body scan of each capsule
+              <br />• canvas_state.json block extraction & attachment parsing
+              <br />• In-RAM DAG edges for <code className="text-cyan-300">In-Reply-To</code> chains
+              <br />• 0% disk database engine overhead — everything stays in RAM
             </p>
           </div>
         </div>
@@ -125,7 +182,7 @@ export const BenchmarkModal: React.FC<Props> = ({ isOpen, onClose }) => {
             className="w-full py-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-lg shadow-cyan-500/25 disabled:opacity-50 active:scale-[0.99]"
           >
             <Play className="w-4 h-4 fill-current" />
-            <span>{running ? `Scanning Vault (${progress}%)...` : `Run Stress Benchmark (${fileCount.toLocaleString()} .eml)`}</span>
+            <span>{running ? `Scanning Vault (${progress}%)...` : `Run Real Benchmark (${fileCount.toLocaleString()} .eml)`}</span>
           </button>
 
           {running && (
