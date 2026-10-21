@@ -194,11 +194,11 @@ Inside it: `vault/` with one `.eml` per capsule, and `vault.json` as a cached in
 
 ## Status
 
-`v1.0.0` — desktop app is usable end-to-end. Known rough edges:
+`v1.1.0` — desktop app is usable end-to-end. The engine is covered by a vitest suite (MIME round-trip, backlinks, editor helpers). Known rough edges:
 
 - no code signing of installers (Windows SmartScreen warns);
-- no automated test suite yet (CI covers typecheck, web build, `cargo check`, fmt, clippy);
-- capsules are re-scanned from the folder on startup — fine for thousands of files, not benchmarked beyond that.
+- Python/Rust code cells are stored and versioned but not executed offline (no WASM interpreters bundled);
+- capsules are re-scanned from the folder on startup — the in-browser benchmark parses 50k synthetic capsules in ~1.3s, folder scan is slower.
 
 ## Contributing
 
