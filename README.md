@@ -43,6 +43,8 @@ no SQL, no document store, no cloud, no lock-in. Files you can open in any mail 
 | 🐧 **Linux installers** | Releases now ship `AppImage` (portable) and `.deb` (Debian/Ubuntu) beside the Windows MSI/NSIS — a two-platform build matrix with SHA256 sums for every artifact |
 | 🧪 **30 engine tests** | 13 new tests cover the ranker: IDF, tf-saturation, length normalization, prefix terms, corpus bookkeeping |
 
+<img src="screenshots/capsuleos-bm25-search.png" alt="BM25-ranked search — relevance badges in the sidebar" width="100%">
+
 ## 🆕 What's new in v1.1.0
 
 > The "make it honest & make it work" release. [Full changelog →](CHANGELOG.md)
