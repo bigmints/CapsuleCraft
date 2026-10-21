@@ -19,6 +19,11 @@ import JSZip from 'jszip';
 
 const STORAGE_KEY = 'capsule_os_vault_v2';
 
+/**
+ * Sample vault (5 linked capsules, every block type) — no longer auto-seeded
+ * at startup. Loaded on demand via resetToStarterVault() from the empty-vault
+ * onboarding screen.
+ */
 export const INITIAL_CAPSULES: CapsuleNode[] = [
   {
     messageId: '<capsule-9f3a-4b21@vault.local>',
@@ -435,7 +440,8 @@ class VaultStore {
   }
 
   private init() {
-    // Try to load from localStorage or initialize with starter capsules
+    // Try to restore a previously saved vault; otherwise start EMPTY
+    // (no demo seed — see FAQ/onboarding).
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
@@ -454,15 +460,14 @@ class VaultStore {
       console.warn('Could not restore from localStorage:', e);
     }
 
-    // Default seed
-    for (const c of INITIAL_CAPSULES) {
-      c.rawEml = assembleEml(c);
-      this.nodes.set(c.messageId, c);
-    }
+    // No demo seed anymore: a fresh install starts with an EMPTY vault —
+    // the FAQ/onboarding page in the UI explains the workflow instead.
+    // The starter vault stays available on demand via resetToStarterVault()
+    // ("Загрузить демо-хранилище" on the empty-vault screen).
     this.rebuildIndexes();
     this.notify();
 
-    // Desktop shell: load order is folder vault (.eml files) → vault.json → seed.
+    // Desktop shell: load order is folder vault (.eml files) → vault.json → empty.
     // The folder vault is authoritative when present (the freshest copy).
     this.loadFromFolder().then((loaded) => {
       if (loaded && loaded.length > 0) {
@@ -474,7 +479,8 @@ class VaultStore {
           this.applyLoadedCapsules(fromJson);
           return;
         }
-        // Nothing on disk yet — materialize the seed as real .eml files.
+        // Nothing on disk yet — persist the (intentionally empty) vault
+        // so the storage layout exists from day one.
         this.persist();
       });
     });

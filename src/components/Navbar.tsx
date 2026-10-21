@@ -7,6 +7,7 @@ import {
   Mail,
   Zap,
   Sparkles,
+  HelpCircle,
 } from 'lucide-react';
 import { APP_VERSION } from '../version';
 
@@ -17,6 +18,7 @@ interface Props {
   onChangeView: (view: ActiveView) => void;
   onOpenBenchmark: () => void;
   onOpenAiCoThink: () => void;
+  onOpenFaq: () => void;
   totalCapsules: number;
   /** Real rebuild time of the in-memory index (ms) from vaultStore.scanStats. */
   scanDurationMs?: number;
@@ -27,6 +29,7 @@ export const Navbar: React.FC<Props> = ({
   onChangeView,
   onOpenBenchmark,
   onOpenAiCoThink,
+  onOpenFaq,
   totalCapsules,
   scanDurationMs,
 }) => {
@@ -115,6 +118,17 @@ export const Navbar: React.FC<Props> = ({
 
       {/* Right Metrics & Profile */}
       <div className="flex items-center gap-4 text-[11px] font-mono">
+        {/* FAQ / Help Button */}
+        <button
+          type="button"
+          onClick={onOpenFaq}
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-cyan-300 border border-slate-700 hover:border-cyan-500/40 text-[11px] font-mono transition-all shadow"
+          title="FAQ — частые вопросы"
+        >
+          <HelpCircle className="w-3 h-3" />
+          <span>FAQ</span>
+        </button>
+
         {/* Benchmark Button */}
         <button
           type="button"

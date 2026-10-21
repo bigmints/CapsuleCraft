@@ -85,7 +85,9 @@ async fn pick_save_path(app: AppHandle, default_name: String) -> Result<Option<S
         .file()
         .set_file_name(&default_name)
         .blocking_save_file();
-    Ok(picked.and_then(|p| p.into_path().ok()).map(|p| p.display().to_string()))
+    Ok(picked
+        .and_then(|p| p.into_path().ok())
+        .map(|p| p.display().to_string()))
 }
 
 /// Native "Open…" dialog with an optional extension filter.
@@ -100,7 +102,9 @@ async fn pick_open_path(
         builder = builder.add_filter("Data", &[name.as_str()]);
     }
     let picked = builder.blocking_pick_file();
-    Ok(picked.and_then(|p| p.into_path().ok()).map(|p| p.display().to_string()))
+    Ok(picked
+        .and_then(|p| p.into_path().ok())
+        .map(|p| p.display().to_string()))
 }
 
 /// Cross-platform app data directory (per-user, versioned). Creates it if missing.
