@@ -1,0 +1,94 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      draft:
+        description: "Create the GitHub release as a draft"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    name: Windows x64 (msi + nsis)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: windows-x64
+
+      - name: Install frontend dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build Tauri app (Windows)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+          releaseName: ${{ startsWith(github.ref, 'refs/tags/v') && format('CapsuleOS {0}', github.ref_name) || '' }}
+          releaseBody: |
+            ## CapsuleOS ${{ github.ref_name }}
+
+            Zero-DB, pure-MIME multimodal workspace. Native desktop build (Tauri 2 + React 19).
+
+            ### Windows x64 installers
+            - `CapsuleOS_*_x64_en-US.msi` — Windows Installer package
+            - `CapsuleOS_*_x64-setup.exe` — NSIS installer
+
+            Requires Microsoft Edge WebView2 Runtime (preinstalled on Windows 10/11).
+
+            ### Data location
+            `%APPDATA%\com.capsuleos.app\vault\` — one `.eml` file per capsule.
+          releaseDraft: ${{ github.event_name == 'workflow_dispatch' && inputs.draft || false }}
+          prerelease: false
+
+      - name: Upload installers as workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: capsuleos-windows-x64
+          if-no-files-found: error
+          path: |
+            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/nsis/*.exe
+
+      - name: Checksums
+        shell: pwsh
+        run: |
+          Get-ChildItem src-tauri/target/release/bundle -Recurse -Include *.msi,*.exe |
+            ForEach-Object { "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)" } |
+            Set-Content -Path src-tauri/target/release/bundle/SHA256SUMS.txt
+          Get-Content src-tauri/target/release/bundle/SHA256SUMS.txt
+
+      - name: Upload checksums
+        uses: actions/upload-artifact@v4
+        with:
+          name: capsuleos-windows-x64-checksums
+          path: src-tauri/target/release/bundle/SHA256SUMS.txt
