@@ -228,8 +228,12 @@ export default function App() {
 
       // Offline deterministic Co-Thinker — no server, no API key needed.
       // (Original implementation called the Gemini-backed /api/ai/co-think endpoint.)
+      // The engine reads the REAL capsule content (blocks, claims, CSV attachments)
+      // and gets the vault context for honest related-capsule suggestions.
       await new Promise((r) => setTimeout(r, 350)); // keep spinner visible for UX
-      const data = offlineAiResponse(mode, currentCapsule, promptToSend, persona);
+      const data = offlineAiResponse(mode, currentCapsule, promptToSend, persona, {
+        vaultNodes: Array.from(graphState.nodes.values()),
+      });
       const aiReply =
         data.reply ||
         data.text ||
@@ -284,7 +288,7 @@ export default function App() {
           author: persona,
           data: {
             criticism: aiReply,
-            confidence: 0.94,
+            confidence: data.result?.confidence ?? 0.94,
             sourceClaim: currentCapsule.subject,
           },
         };
@@ -315,7 +319,7 @@ export default function App() {
       setIsAiLoading(false);
       setIsAiModalOpen(false);
     }
-  }, [currentCapsule, handleCreateReply, handleUpdateCapsule]);
+  }, [currentCapsule, graphState.nodes, handleCreateReply, handleUpdateCapsule]);
 
   return (
     <div className="w-screen h-screen flex flex-col bg-slate-950 text-slate-100 overflow-hidden font-sans select-none">
