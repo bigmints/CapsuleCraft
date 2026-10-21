@@ -40,7 +40,8 @@ no SQL, no document store, no cloud, no lock-in. Files you can open in any mail 
 | | |
 |---|---|
 | 🔧 **13 bugs fixed** | Phantom attachments, dead Co-Think modes, slash-menu false triggers, double-hash tag chips, dead ⌘K, stuck REPL, graph without zoom, invisible thread blocks… |
-| 🎙 **Real audio notes** | Voice memos are now actual MIME audio attachments with a click-to-seek waveform — the `SIMULATED` badge finally means something else |
+| 🎙 **Real audio notes** | Voice memos are now actual MIME audio attachments with a click-to-seek waveform — recorded straight from the microphone, `SIMULATED` badge finally means something else |
+| 🗺 **Empty-vault onboarding** | First launch no longer seeds demo notes: you get a clean vault with a built-in FAQ instead. The five-capsule sample vault is one click away |
 | 📊 **Real benchmark** | The "SIMD 50k" modal now really pushes 50k synthetic `.eml` files through the parse engine. No more fake setInterval numbers |
 | 🧪 **17-test suite** | MIME round-trip, phantom-attachment regression, HTML escaping, wikilinks, caret rules — wired into CI |
 | 📤 **Standalone HTML export** | Preview view exports a self-contained `.html` dashboard |
@@ -189,6 +190,12 @@ Prebuilt **Windows x64** installers are attached to every [release](https://gith
 
 Linux and macOS builds are not shipped yet — build from source below.
 
+### First launch
+
+CapsuleOS starts with an **empty vault** — no demo notes. A built-in onboarding page takes the stage instead: it explains the `.eml` concept, answers the frequent questions and offers three actions — create a capsule, import an `.eml`, or load a five-capsule sample vault (every block type included). The FAQ stays reachable anytime via the **FAQ** button in the top bar.
+
+<img src="screenshots/capsuleos-faq.png" alt="CapsuleOS first launch — empty vault with built-in FAQ" width="100%">
+
 ### Build from source
 
 **Requirements**
@@ -272,7 +279,7 @@ Inside it: `vault/` with one `.eml` per capsule, and `vault.json` as a cached in
 ## 🗺 Roadmap
 
 - ✅ v1.0 — block canvas, `.eml` vault, graph, threads, Tauri shell
-- ✅ v1.1 — engine fidelity + tests, real audio, honest benchmark, HTML export
+- ✅ v1.1 — engine fidelity + tests, real audio, honest benchmark, HTML export, empty-vault onboarding with FAQ
 - ⬜ Full-text search relevance ranking (BM25 over the inverted index)
 - ⬜ Folder watching — live vault sync without restart
 - ⬜ GPG signing of capsules (authenticity of thoughts)
@@ -287,6 +294,29 @@ Inside it: `vault/` with one `.eml` per capsule, and `vault.json` as a cached in
 - no code signing of installers (Windows SmartScreen warns);
 - Python/Rust code cells are stored and versioned but not executed offline (no WASM interpreters bundled);
 - the in-browser benchmark parses 50k synthetic capsules in ~1.3 s — a real cold folder scan is slower.
+
+## ⁇ FAQ
+
+**What is CapsuleOS, in two sentences?**
+A local workbench for thinking. Every thought is a real RFC 5322 message (`.eml` file): a block editor instead of Markdown, mail-style threads, a link graph and an offline co-thinker. No database — a folder of `.eml` files is the entire knowledge base.
+
+**Where are my notes stored, physically?**
+In the desktop app — the `vault/` folder inside the app data directory: one `.eml` per capsule, with `vault.json` as a disposable cache. In the browser — `localStorage`. Drop a foreign `.eml` into the folder and it appears in the vault; delete the file and the capsule is gone.
+
+**How do threads and links work?**
+A reply is a child `.eml` carrying `In-Reply-To` / `References` headers — exactly like email. [[wikilinks]] produce backlinks, and the Graph DAG and Thought Threads views render the whole reasoning tree.
+
+**How do I record a voice note?**
+Type `/` in the editor, pick *Audio note* and hit record: the take is captured straight from the microphone (MediaRecorder), stored as a webm/opus MIME attachment with real duration and waveform. Fully offline.
+
+**Where does my data go?**
+Nowhere. MIME parsing, search, the benchmark and the Co-Thinker run locally — no network, no telemetry, no API keys. Pull the plug; everything keeps working.
+
+**How do I back up the vault?**
+Hit *Export Vault* in the sidebar for a ZIP of all `.eml` files — or just copy the `vault/` folder, that is the entire database.
+
+**Why `.eml` instead of a database?**
+`.eml` is an open standard older than most NoSQL fashions: any mail client can read it, git can diff it, no migrations are ever needed. A database dies with the app; mail does not.
 
 ## 🤝 Contributing
 

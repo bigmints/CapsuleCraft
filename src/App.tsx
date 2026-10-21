@@ -13,6 +13,7 @@ import { RawMimeInspector } from './components/RawMimeInspector';
 import { AutonomousHtmlPreview } from './components/AutonomousHtmlPreview';
 import { BenchmarkModal } from './components/BenchmarkModal';
 import { AiCoThinkModal } from './components/AiCoThinkModal';
+import { EmptyVaultState, FaqModal } from './components/FaqOnboarding';
 
 export default function App() {
   const [graphState, setGraphState] = useState<VaultGraphState>(() => vaultStore.getState());
@@ -20,6 +21,7 @@ export default function App() {
   const [activeView, setActiveView] = useState<ActiveView>('canvas');
   const [isBenchmarkOpen, setIsBenchmarkOpen] = useState(false);
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
+  const [isFaqOpen, setIsFaqOpen] = useState(false);
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -39,6 +41,17 @@ export default function App() {
   const currentCapsule = selectedMessageId
     ? graphState.nodes.get(selectedMessageId) || Array.from(graphState.nodes.values())[0]
     : Array.from(graphState.nodes.values())[0];
+
+  // Fresh installs start with an empty vault — the FAQ/onboarding page takes
+  // the stage until the first capsule exists (no demo seed anymore).
+  const isVaultEmpty = graphState.nodes.size === 0;
+
+  const handleLoadSampleVault = useCallback(() => {
+    vaultStore.resetToStarterVault();
+    const first = Array.from(vaultStore.getState().nodes.keys())[0];
+    if (first) setSelectedMessageId(first);
+    showToast('Демо-хранилище загружено: 5 связанных капсул');
+  }, []);
 
   // Update capsule in memory
   const handleUpdateCapsule = useCallback((updated: CapsuleNode) => {
@@ -312,6 +325,7 @@ export default function App() {
         onChangeView={setActiveView}
         onOpenBenchmark={() => setIsBenchmarkOpen(true)}
         onOpenAiCoThink={() => setIsAiModalOpen(true)}
+        onOpenFaq={() => setIsFaqOpen(true)}
         totalCapsules={graphState.graphNodes.length}
         scanDurationMs={graphState.scanStats.scanDurationMs}
       />
@@ -333,7 +347,15 @@ export default function App() {
 
         {/* Center Main Stage View */}
         <main className="flex-1 h-full overflow-hidden bg-slate-950 flex flex-col">
-          {activeView === 'canvas' && currentCapsule && (
+          {isVaultEmpty && (
+            <EmptyVaultState
+              onCreateNew={handleCreateNewCapsule}
+              onImportEml={handleImportEml}
+              onLoadSample={handleLoadSampleVault}
+            />
+          )}
+
+          {!isVaultEmpty && activeView === 'canvas' && currentCapsule && (
             <BlockCanvasEditor
               capsule={currentCapsule}
               allCapsules={Array.from(graphState.nodes.values())}
@@ -349,7 +371,7 @@ export default function App() {
             />
           )}
 
-          {activeView === 'graph' && (
+          {!isVaultEmpty && activeView === 'graph' && (
             <GraphView
               graphState={graphState}
               selectedMessageId={selectedMessageId}
@@ -363,7 +385,7 @@ export default function App() {
             />
           )}
 
-          {activeView === 'thread' && (
+          {!isVaultEmpty && activeView === 'thread' && (
             <ThoughtThreadView
               graphState={graphState}
               selectedMessageId={selectedMessageId}
@@ -376,14 +398,14 @@ export default function App() {
             />
           )}
 
-          {activeView === 'mime' && currentCapsule && (
+          {!isVaultEmpty && activeView === 'mime' && currentCapsule && (
             <RawMimeInspector
               capsule={currentCapsule}
               onDownloadEml={handleDownloadEml}
             />
           )}
 
-          {activeView === 'html_preview' && currentCapsule && (
+          {!isVaultEmpty && activeView === 'html_preview' && currentCapsule && (
             <AutonomousHtmlPreview
               capsule={currentCapsule}
               onDownloadEml={handleDownloadEml}
@@ -405,6 +427,9 @@ export default function App() {
         isOpen={isBenchmarkOpen}
         onClose={() => setIsBenchmarkOpen(false)}
       />
+
+      {/* FAQ / Help Modal */}
+      <FaqModal isOpen={isFaqOpen} onClose={() => setIsFaqOpen(false)} />
 
       {/* AI Co-Think Modal */}
       {currentCapsule && (
