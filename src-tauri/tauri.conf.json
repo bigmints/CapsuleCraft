@@ -37,9 +37,7 @@
       "icons/icon.ico"
     ],
     "macOS": {
-      "infoPlist": {
-        "NSMicrophoneUsageDescription": "CapsuleOS records voice thought notes with your microphone and stores them as audio attachments inside your local .eml capsules."
-      }
+      "infoPlist": "Info.plist"
     },
     "android": {
       "debugApplicationIdSuffix": ".debug"
