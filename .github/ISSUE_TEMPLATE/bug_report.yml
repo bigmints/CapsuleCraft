@@ -1,0 +1,71 @@
+name: Bug report
+description: Something is broken in CapsuleOS
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please remove private content from any `.eml` you attach.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: Expected behaviour vs. actual behaviour.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open vault
+        2. Create capsule with a DataGrid block
+        3. Export to .eml
+        4. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: CapsuleOS version
+      description: Release tag, or the commit hash for a source build.
+      placeholder: v1.0.0
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows 11
+        - Windows 10
+        - Linux
+        - macOS
+        - Browser (web mode)
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Runtime
+      options:
+        - Desktop (Tauri)
+        - Web mode (Vite dev / preview)
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / console output
+      description: DevTools console, terminal output, or `%APPDATA%\com.capsuleos.app\logs` if present.
+      render: shell
+    validations:
+      required: false
+  - type: textarea
+    id: capsule
+    attributes:
+      label: Sample capsule (optional)
+      description: Minimal `.eml` that reproduces the issue, with private content stripped.
+      render: text
+    validations:
+      required: false
