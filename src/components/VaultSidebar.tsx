@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { CapsuleNode, VaultGraphState } from '../types';
 import {
   Folder,
@@ -36,9 +36,23 @@ export const VaultSidebar: React.FC<Props> = ({
   onImportEml,
   onExportVaultZip,
 }) => {
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [collapsedFolders, setCollapsedFolders] = useState<Record<string, boolean>>({});
+
+  // Global Cmd/Ctrl+K shortcut: focus the vault search input
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   const allCapsules: CapsuleNode[] = Array.from(graphState.nodes.values());
 
@@ -113,6 +127,7 @@ export const VaultSidebar: React.FC<Props> = ({
         <div className="relative">
           <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-500" />
           <input
+            ref={searchInputRef}
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -149,7 +164,7 @@ export const VaultSidebar: React.FC<Props> = ({
                     : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
                 }`}
               >
-                #{t}
+                {t}
               </button>
             ))}
           </div>

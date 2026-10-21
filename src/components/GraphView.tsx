@@ -6,14 +6,22 @@ import {
   ZoomIn,
   ZoomOut,
   Maximize2,
-  RefreshCw,
   Sliders,
   Filter,
   Sparkles,
   ArrowRight,
-  FileText,
-  Tag,
 } from 'lucide-react';
+
+// Deterministic color per tag group — every tag gets a stable hue,
+// instead of the old hardcoded #finance/#ai-strategy special cases.
+const TAG_PALETTE = ['#38bdf8', '#10b981', '#a855f7', '#f59e0b', '#ec4899', '#22d3ee', '#f472b6', '#84cc16'];
+
+function tagColor(tag?: string | null): string {
+  if (!tag) return '#64748b';
+  let h = 0;
+  for (let i = 0; i < tag.length; i++) h = (h * 31 + tag.charCodeAt(i)) >>> 0;
+  return TAG_PALETTE.at(h % TAG_PALETTE.length) || '#64748b';
+}
 
 interface Props {
   graphState: VaultGraphState;
@@ -29,6 +37,7 @@ export const GraphView: React.FC<Props> = ({
   onOpenInCanvas,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
   const [tagFilter, setTagFilter] = useState<string>('all');
@@ -114,6 +123,7 @@ export const GraphView: React.FC<Props> = ({
         g.attr('transform', event.transform);
       });
 
+    zoomRef.current = zoomBehavior;
     svg.call(zoomBehavior);
 
     // D3 Force simulation
@@ -190,13 +200,7 @@ export const GraphView: React.FC<Props> = ({
       .append('circle')
       .attr('r', (d: GraphNode) => 18 + (d.degree || 0) * 3)
       .attr('fill', (d: GraphNode) => (d.id === selectedMessageId ? 'rgba(56, 189, 248, 0.25)' : 'rgba(30, 41, 59, 0.6)'))
-      .attr('stroke', (d: GraphNode) => {
-        if (d.id === selectedMessageId) return '#38bdf8';
-        if (d.tags.includes('#finance')) return '#10b981';
-        if (d.tags.includes('#ai-strategy')) return '#a855f7';
-        if (d.tags.includes('#architecture')) return '#38bdf8';
-        return '#64748b';
-      })
+      .attr('stroke', (d: GraphNode) => (d.id === selectedMessageId ? '#38bdf8' : tagColor(d.group)))
       .attr('stroke-width', (d: GraphNode) => (d.id === selectedMessageId ? 3 : 1.5))
       .attr('class', 'transition-all duration-200');
 
@@ -204,12 +208,7 @@ export const GraphView: React.FC<Props> = ({
     nodes
       .append('circle')
       .attr('r', 8)
-      .attr('fill', (d: GraphNode) => {
-        if (d.status === 'Synthesis') return '#a855f7';
-        if (d.tags.includes('#finance')) return '#10b981';
-        if (d.tags.includes('#ai-strategy')) return '#38bdf8';
-        return '#475569';
-      });
+      .attr('fill', (d: GraphNode) => (d.status === 'Synthesis' ? '#c084fc' : tagColor(d.group)));
 
     // Node Label
     nodes
@@ -242,6 +241,17 @@ export const GraphView: React.FC<Props> = ({
     };
   }, [graphState, selectedMessageId, tagFilter, chargeStrength, linkDistance]);
 
+
+  const zoomBy = (factor: number) => {
+    if (!zoomRef.current) return;
+    d3.select(svgRef.current).transition().duration(250).call(zoomRef.current.scaleBy, factor);
+  };
+
+  const resetZoom = () => {
+    if (!zoomRef.current) return;
+    d3.select(svgRef.current).transition().duration(350).call(zoomRef.current.transform, d3.zoomIdentity);
+  };
+
   const selectedNodeData = selectedMessageId ? graphState.nodes.get(selectedMessageId) : null;
 
   return (
@@ -270,6 +280,34 @@ export const GraphView: React.FC<Props> = ({
               </option>
             ))}
           </select>
+        </div>
+
+        {/* Zoom controls */}
+        <div className="flex items-center gap-0.5 bg-slate-800/80 rounded-lg p-0.5 border border-slate-700">
+          <button
+            type="button"
+            onClick={() => zoomBy(1.4)}
+            className="p-1.5 rounded-md text-slate-300 hover:text-cyan-300 hover:bg-slate-700 transition-colors"
+            title="Zoom In"
+          >
+            <ZoomIn className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => zoomBy(1 / 1.4)}
+            className="p-1.5 rounded-md text-slate-300 hover:text-cyan-300 hover:bg-slate-700 transition-colors"
+            title="Zoom Out"
+          >
+            <ZoomOut className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={resetZoom}
+            className="p-1.5 rounded-md text-slate-300 hover:text-cyan-300 hover:bg-slate-700 transition-colors"
+            title="Reset View"
+          >
+            <Maximize2 className="w-3.5 h-3.5" />
+          </button>
         </div>
 
         {/* Physics toggle */}
