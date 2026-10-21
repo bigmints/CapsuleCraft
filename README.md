@@ -7,9 +7,9 @@
 
 **Нативная десктопная сборка (Tauri + React 19 + TypeScript)** — реальное нативное окно, файловая система, без браузера и без серверов.
 
-| Редактор капсул (Block Canvas) | Граф связей (Graph DAG) |
+| Редактор капсул (Block Canvas) |  |
 |---|---|
-| ![editor](screenshots/capsuleos-editor.png) | ![graph](screenshots/capsuleos-graph.png) |
+| ![editor](screenshots/capsuleos-editor.png) | |
 
 ---
 
