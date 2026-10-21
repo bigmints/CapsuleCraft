@@ -355,6 +355,21 @@ export function generateAutonomousHtml(capsule: CapsuleNode): string {
               <div style="color: #cbd5e1; font-size: 14px; line-height: 1.5;">${escapeHtml(block.data.content)}</div>
             </div>
           `;
+        case 'audio_note': {
+          const att = capsule.attachments.find(
+            (a) => (block.data as any).audioCid && a.cid === (block.data as any).audioCid
+          );
+          const audioHtml = att
+            ? `<audio controls style="width: 100%;" src="data:${(block.data as any).audioMime || att.mimeType || 'audio/mpeg'};base64,${att.content}"></audio>`
+            : `<p style="color: #94a3b8; font-size: 13px; margin: 0;">Voice note — audio payload not attached (simulated)</p>`;
+          return `
+            <div style="background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 16px; margin: 20px 0;">
+              <div style="color: #22d3ee; font-weight: 600; font-size: 14px; margin-bottom: 8px;">🎤 Voice Thought Note ${escapeHtml((block.data as any).author || '')}</div>
+              ${audioHtml}
+              <p style="color: #cbd5e1; font-size: 14px; line-height: 1.5; margin: 12px 0 0;">${escapeHtml((block.data as any).transcript || '')}</p>
+            </div>
+          `;
+        }
         case 'todo_list':
           return `
             <div style="background: #1e293b; border-radius: 8px; padding: 14px; margin: 20px 0;">

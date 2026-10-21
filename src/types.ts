@@ -72,6 +72,10 @@ export interface AudioNoteBlockData {
   waveform: number[];
   author: string;
   isPlaying?: boolean;
+  /** CID of a real audio attachment (base64 payload) — enables actual playback. */
+  audioCid?: string;
+  /** MIME type of the attached audio (audio/webm, audio/mpeg, ...). */
+  audioMime?: string;
 }
 
 export interface CalloutBlockData {

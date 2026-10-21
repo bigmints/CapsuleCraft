@@ -236,21 +236,47 @@ export const BlockCanvasEditor: React.FC<Props> = ({
     onUpdateCapsule({ ...capsule, blocks: newBlocks });
   };
 
-  const handleUpdateAttachment = (cid: string, newContent: string) => {
+  const handleUpdateAttachment = (cid: string, newContent: string, mimeType?: string, name?: string) => {
     const updatedAttachments = capsule.attachments.map((att) =>
-      att.cid === cid ? { ...att, content: newContent, sizeBytes: newContent.length } : att
+      att.cid === cid
+        ? { ...att, content: newContent, mimeType: mimeType || att.mimeType, name: name || att.name, sizeBytes: newContent.length }
+        : att
     );
     // If not found, add
     if (!updatedAttachments.some((a) => a.cid === cid)) {
       updatedAttachments.push({
-        name: `${cid}.dat`,
+        name: name || `${cid}.dat`,
         cid,
-        mimeType: 'text/plain',
+        mimeType: mimeType || 'text/plain',
         content: newContent,
         sizeBytes: newContent.length,
       });
     }
     onUpdateCapsule({ ...capsule, attachments: updatedAttachments });
+  };
+
+  /**
+   * Atomic audio attachment: adds/updates the MIME attachment and the
+   * block's audioCid/audioMime in ONE capsule update (two sequential
+   * updates would clobber each other via the stale closure snapshot).
+   */
+  const handleAttachAudio = (
+    blockIndex: number,
+    blockBlock: CapsuleBlock & { type: 'audio_note' },
+    cid: string,
+    content: string,
+    mimeType: string,
+    name: string
+  ) => {
+    const exists = capsule.attachments.some((a) => a.cid === cid);
+    const attachments = exists
+      ? capsule.attachments.map((a) =>
+          a.cid === cid ? { ...a, content, mimeType, name, sizeBytes: content.length } : a
+        )
+      : [...capsule.attachments, { name, cid, mimeType, content, sizeBytes: content.length }];
+    const newBlocks = [...capsule.blocks];
+    newBlocks[blockIndex] = { ...blockBlock, data: { ...blockBlock.data, audioCid: cid, audioMime: mimeType } };
+    onUpdateCapsule({ ...capsule, attachments, blocks: newBlocks });
   };
 
   const handleAddTag = (e: React.KeyboardEvent) => {
@@ -569,6 +595,11 @@ export const BlockCanvasEditor: React.FC<Props> = ({
               {block.type === 'audio_note' && (
                 <AudioNoteBlock
                   block={block}
+                  attachments={capsule.attachments}
+                  onUpdateAttachment={handleUpdateAttachment}
+                  onAttachAudio={(cid, content, mimeType, name) =>
+                    handleAttachAudio(index, block, cid, content, mimeType, name)
+                  }
                   onChange={(d) => updateBlock(index, { ...block, data: d })}
                   onDelete={() => deleteBlock(index)}
                 />
