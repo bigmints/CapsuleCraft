@@ -133,6 +133,15 @@ export interface CapsuleNode {
   byteOffsetBody?: number;
 }
 
+/** One ranked result of full-text search (Okapi BM25 over the inverted index). */
+export interface ScoredSearchHit {
+  node: CapsuleNode;
+  /** BM25 score (+ subject/tag boosts). 0 for an empty query (= full listing). */
+  score: number;
+  /** Query tokens that actually matched this capsule. */
+  matchedTerms: string[];
+}
+
 export interface NodeMetadata {
   messageId: string;
   subject: string;

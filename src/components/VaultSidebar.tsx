@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { CapsuleNode, VaultGraphState } from '../types';
+import { CapsuleNode, ScoredSearchHit, VaultGraphState } from '../types';
+import { vaultStore } from '../engine/vaultStore';
 import {
   Folder,
   FileCode,
@@ -56,24 +57,18 @@ export const VaultSidebar: React.FC<Props> = ({
 
   const allCapsules: CapsuleNode[] = Array.from(graphState.nodes.values());
 
-  // Filter capsules by search & tag
-  const filteredCapsules = allCapsules.filter((cap: CapsuleNode) => {
-    const matchesTag = !activeTag || cap.tags.includes(activeTag);
-    if (!matchesTag) return false;
-    if (!searchQuery.trim()) return true;
+  // BM25-ranked full-text search (engine) — results come back sorted by
+  // relevance (Okapi BM25 over the inverted index, prefix terms included).
+  const searchHits: ScoredSearchHit[] | null = searchQuery.trim()
+    ? vaultStore.searchWithScores(searchQuery)
+    : null;
+  const hitInfo = new Map(searchHits?.map((h) => [h.node.messageId, h]) || []);
 
-    const query = searchQuery.toLowerCase();
-    return (
-      cap.subject.toLowerCase().includes(query) ||
-      cap.from.toLowerCase().includes(query) ||
-      cap.tags.some((t) => t.toLowerCase().includes(query)) ||
-      cap.blocks.some((b) => {
-        if ('text' in b.data && typeof b.data.text === 'string') return b.data.text.toLowerCase().includes(query);
-        if ('criticism' in b.data && typeof b.data.criticism === 'string') return b.data.criticism.toLowerCase().includes(query);
-        return false;
-      })
-    );
-  });
+  // Tag filter (UI-level) applied on top of the ranked results
+  const filteredCapsules: CapsuleNode[] = (searchHits
+    ? searchHits.map((h) => h.node)
+    : allCapsules
+  ).filter((cap: CapsuleNode) => !activeTag || cap.tags.includes(activeTag));
 
   // Group capsules by folder or virtual category
   const folderGroups: Record<string, CapsuleNode[]> = {};
@@ -138,6 +133,18 @@ export const VaultSidebar: React.FC<Props> = ({
             ⌘K
           </span>
         </div>
+
+        {/* BM25 relevance indicator */}
+        {searchHits && (
+          <div className="flex items-center justify-between px-1">
+            <span className="text-[10px] font-mono text-cyan-400/90">
+              {searchHits.length} match{searchHits.length === 1 ? '' : 'es'} · BM25 ranked
+            </span>
+            <span className="text-[9px] font-mono text-slate-600">
+              {vaultStore.searchStats().terms} terms indexed
+            </span>
+          </div>
+        )}
 
         {/* Tags filter badges */}
         {allTags.length > 0 && (
@@ -230,6 +237,14 @@ export const VaultSidebar: React.FC<Props> = ({
                               </span>
                             )}
                             <span>{cap.blocks.length} blocks</span>
+                            {hitInfo.has(cap.messageId) && (
+                              <span
+                                className="ml-auto text-cyan-400/80 text-[9px] tabular-nums"
+                                title={`BM25 relevance: ${hitInfo.get(cap.messageId)!.score.toFixed(2)} · matched: ${hitInfo.get(cap.messageId)!.matchedTerms.join(', ')}`}
+                              >
+                                Σ{hitInfo.get(cap.messageId)!.score.toFixed(1)}
+                              </span>
+                            )}
                           </div>
                         </div>
 

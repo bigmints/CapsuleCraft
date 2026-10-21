@@ -5,6 +5,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), ver
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-10-22
+
+### Added
+- **Okapi BM25 relevance ranking** for full-text search: the vault now scores results instead of listing "anything that matches". Ranking combines classic BM25 (IDF-weighted terms, term-frequency saturation, document-length normalization) with prefix-term matching for autocomplete-style queries and the legacy subject/tag substring boosts; ties break to the newer capsule. The sidebar shows the match count ("N matches · BM25 ranked"), the indexed-term count and a per-capsule relevance badge (Σ-score + matched terms on hover). `[[wikilink]]` autocomplete inherits the same ranking.
+- **Linux builds in the release pipeline**: tagged releases now also produce `CapsuleOS_*_amd64.AppImage` (portable) and `CapsuleOS_*_amd64.deb` (Debian/Ubuntu, built on Ubuntu 22.04 / glibc 2.35+) alongside the Windows MSI/NSIS installers, with per-OS SHA256SUMS artifacts. Release workflow is a two-platform matrix with fail-fast disabled.
+
+### Changed
+- Engine test suite grown from 17 to 30 tests (BM25 tokenizer, IDF, tf-saturation, length normalization, prefix matching, corpus bookkeeping).
+
 ## [1.1.0] — 2026-10-22
 
 ### Fixed

@@ -33,6 +33,16 @@ no SQL, no document store, no cloud, no lock-in. Files you can open in any mail 
 - 🤖 **Offline co-thinker.** A deterministic local AI opponent critiques your claims, continues your threads and answers with datasets. No API key, no network.
 - ⚡ **Fast.** The real, in-browser benchmark parses **50 000 capsules in ~1.4 s** (~36k files/s) — measured, not marketing.
 
+## 🆕 What's new in v1.2.0
+
+> The "search that knows what matters" release. [Full changelog →](CHANGELOG.md)
+
+| | |
+|---|---|
+| 🔍 **BM25-ranked search** | Full-text search now uses Okapi BM25 over the inverted index: rare terms weigh more, term frequency saturates, long capsules don't win just for being long. Prefix matching finds `юнит` inside `юнит-экономика`, ties break to newer capsules — and the sidebar shows the relevance score of every hit |
+| 🐧 **Linux installers** | Releases now ship `AppImage` (portable) and `.deb` (Debian/Ubuntu) beside the Windows MSI/NSIS — a two-platform build matrix with SHA256 sums for every artifact |
+| 🧪 **30 engine tests** | 13 new tests cover the ranker: IDF, tf-saturation, length normalization, prefix terms, corpus bookkeeping |
+
 ## 🆕 What's new in v1.1.0
 
 > The "make it honest & make it work" release. [Full changelog →](CHANGELOG.md)
@@ -175,20 +185,23 @@ The JSON part is the structured block canvas; the HTML part is a human-readable 
 
 ## 🚀 Getting started
 
-### Download (Windows)
+### Download (Windows & Linux)
 
-Prebuilt **Windows x64** installers are attached to every [release](https://github.com/kostyk348/capsuleos/releases/latest):
+Prebuilt installers are attached to every [release](https://github.com/kostyk348/capsuleos/releases/latest):
 
 | File | What it is |
 |---|---|
 | `CapsuleOS_*_x64_en-US.msi` | Windows Installer package |
 | `CapsuleOS_*_x64-setup.exe` | NSIS installer |
+| `CapsuleOS_*_amd64.AppImage` | Linux — portable, `chmod +x` and run |
+| `CapsuleOS_*_amd64.deb` | Linux — Debian / Ubuntu package |
 
-- Requires Microsoft Edge **WebView2 Runtime** (preinstalled on Windows 10/11; otherwise [download it](https://developer.microsoft.com/microsoft-edge/webview2/)).
+- Windows requires Microsoft Edge **WebView2 Runtime** (preinstalled on Windows 10/11; otherwise [download it](https://developer.microsoft.com/microsoft-edge/webview2/)).
+- Linux builds target **glibc 2.35+** (built on Ubuntu 22.04); WebKitGTK 4.1 is a runtime dependency (`sudo apt install libwebkit2gtk-4.1-0`), the AppImage bundles most libraries.
 - The installers are currently **unsigned**, so SmartScreen may warn: *More info → Run anyway*.
-- `SHA256SUMS.txt` is published next to the installers.
+- `SHA256SUMS.txt` is published for every artifact.
 
-Linux and macOS builds are not shipped yet — build from source below.
+macOS builds are not shipped yet — build from source below.
 
 ### First launch
 
@@ -280,16 +293,16 @@ Inside it: `vault/` with one `.eml` per capsule, and `vault.json` as a cached in
 
 - ✅ v1.0 — block canvas, `.eml` vault, graph, threads, Tauri shell
 - ✅ v1.1 — engine fidelity + tests, real audio, honest benchmark, HTML export, empty-vault onboarding with FAQ
-- ⬜ Full-text search relevance ranking (BM25 over the inverted index)
+- ✅ v1.2 — Okapi BM25 search ranking with relevance scores, Linux (AppImage / deb) builds in the release pipeline
 - ⬜ Folder watching — live vault sync without restart
 - ⬜ GPG signing of capsules (authenticity of thoughts)
 - ⬜ Python cells via Pyodide, Rust cells via WASM
-- ⬜ Linux (AppImage / deb) and macOS builds in the release pipeline
+- ⬜ macOS builds in the release pipeline
 - ⬜ Optional end-to-end-encrypted vault sync (the `.eml` folder is already portable)
 
 ## 📊 Status
 
-`v1.1.0` — desktop app is usable end-to-end. The engine is covered by a vitest suite (MIME round-trip, phantom-attachment regression, editor helpers). Known rough edges:
+`v1.2.0` — desktop app is usable end-to-end. The engine is covered by a vitest suite (MIME round-trip, BM25 ranking, phantom-attachment regression, editor helpers). Known rough edges:
 
 - no code signing of installers (Windows SmartScreen warns);
 - Python/Rust code cells are stored and versioned but not executed offline (no WASM interpreters bundled);
