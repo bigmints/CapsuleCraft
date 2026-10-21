@@ -1,27 +1,35 @@
 {
-  "name": "react-example",
+  "name": "capsuleos",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "CapsuleOS — Zero-DB, Pure-MIME multimodal workspace & personal knowledge engine (Tauri + React 19)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kostyk348/capsuleos.git"
+  },
+  "homepage": "https://github.com/kostyk348/capsuleos#readme",
+  "bugs": {
+    "url": "https://github.com/kostyk348/capsuleos/issues"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "start": "node dist/server.cjs",
     "preview": "vite preview",
-    "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit",
-    "tauri": "tauri"
+    "typecheck": "tsc --noEmit",
+    "lint": "npm run typecheck",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
   },
   "dependencies": {
-    "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.1.14",
     "@tauri-apps/api": "^2.11.1",
     "@types/d3": "^7.4.3",
-    "@types/jszip": "^3.4.1",
     "@vitejs/plugin-react": "^5.0.4",
     "d3": "^7.9.0",
-    "dotenv": "^17.2.3",
-    "express": "^4.21.2",
     "jszip": "^3.10.1",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
@@ -31,13 +39,9 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",
-    "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
     "autoprefixer": "^10.4.21",
-    "esbuild": "^0.25.0",
     "tailwindcss": "^4.1.14",
-    "tsx": "^4.21.0",
-    "typescript": "~5.8.2",
-    "vite": "^6.2.3"
+    "typescript": "~5.8.2"
   }
 }
