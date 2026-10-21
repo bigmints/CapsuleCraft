@@ -4,6 +4,7 @@ import {
   CapsuleBlock,
   BlockType,
   CapsuleAttachment,
+  AudioNoteBlockData,
 } from '../types';
 import { HeadingBlock } from './blocks/HeadingBlock';
 import { RichTextBlock } from './blocks/RichTextBlock';
@@ -266,7 +267,8 @@ export const BlockCanvasEditor: React.FC<Props> = ({
     cid: string,
     content: string,
     mimeType: string,
-    name: string
+    name: string,
+    extraData?: Partial<AudioNoteBlockData>
   ) => {
     const exists = capsule.attachments.some((a) => a.cid === cid);
     const attachments = exists
@@ -274,8 +276,14 @@ export const BlockCanvasEditor: React.FC<Props> = ({
           a.cid === cid ? { ...a, content, mimeType, name, sizeBytes: content.length } : a
         )
       : [...capsule.attachments, { name, cid, mimeType, content, sizeBytes: content.length }];
+    // Atomic: attachment + block link + optional block data (duration, waveform)
+    // merged in ONE capsule update — extra updates from stale block snapshots
+    // would silently drop the audioCid link.
     const newBlocks = [...capsule.blocks];
-    newBlocks[blockIndex] = { ...blockBlock, data: { ...blockBlock.data, audioCid: cid, audioMime: mimeType } };
+    newBlocks[blockIndex] = {
+      ...blockBlock,
+      data: { ...blockBlock.data, audioCid: cid, audioMime: mimeType, ...extraData },
+    };
     onUpdateCapsule({ ...capsule, attachments, blocks: newBlocks });
   };
 
@@ -597,8 +605,8 @@ export const BlockCanvasEditor: React.FC<Props> = ({
                   block={block}
                   attachments={capsule.attachments}
                   onUpdateAttachment={handleUpdateAttachment}
-                  onAttachAudio={(cid, content, mimeType, name) =>
-                    handleAttachAudio(index, block, cid, content, mimeType, name)
+                  onAttachAudio={(cid, content, mimeType, name, extraData) =>
+                    handleAttachAudio(index, block, cid, content, mimeType, name, extraData)
                   }
                   onChange={(d) => updateBlock(index, { ...block, data: d })}
                   onDelete={() => deleteBlock(index)}

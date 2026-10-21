@@ -78,7 +78,7 @@ The whole knowledge base is a **folder of messages** — greppable, diffable, ba
 - **Live DataGrid** — tables backed by CSV/JSON attachments, with chart and pivot views.
 - **Whiteboard** — shapes, sticky notes, mind-map nodes and arrows on a canvas.
 - **Code REPL** — JavaScript runs in a sandboxed Web Worker with a 3 s watchdog (infinite loops can't freeze the app); JSON blocks are validated and pretty-printed.
-- **Audio notes** — real audio attachments, click-to-seek waveform, duration badge.
+- **Audio notes** — record straight from the microphone or attach a file; real audio with a click-to-seek waveform and duration badge, stored as a MIME part of the same `.eml`.
 - **AI opponent** — a critique block that argues against the claim it is attached to.
 
 ### 🕸 In-memory graph & threads

@@ -19,6 +19,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), ver
 
 ### Added
 - Real audio for voice notes: attach an audio file — it is stored as a base64 MIME attachment, played back with a click-to-seek waveform, embedded into the autonomous HTML dashboard, and the block badge flips from `SIMULATED` to `REAL AUDIO`.
+- In-app microphone recording: the voice-note block records straight from the mic (MediaRecorder + live level meter), saves the take as a real MIME attachment, and uses the recorded envelope as its waveform — voice notes no longer require an external recorder.
 - Standalone `.html` dashboard export from the Preview view.
 - Honest in-browser benchmark: the modal really pushes N synthetic capsules through `parseEml` + graph build (previously it simulated 'SIMD/AVX2 mmap' numbers).
 - Vitest engine test suite (17 tests) and a `test` step in CI.

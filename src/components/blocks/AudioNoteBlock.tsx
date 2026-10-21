@@ -1,13 +1,19 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { CapsuleAttachment, CapsuleBlock, AudioNoteBlockData } from '../../types';
-import { Play, Pause, Mic, Paperclip, Trash2 } from 'lucide-react';
+import { Play, Pause, Mic, Paperclip, Trash2, Square, X } from 'lucide-react';
 
 interface Props {
   block: CapsuleBlock & { type: 'audio_note' };
   attachments?: CapsuleAttachment[];
   onUpdateAttachment?: (cid: string, content: string, mimeType?: string, name?: string) => void;
   /** Atomic: stores the audio attachment AND links it to this block in one update. */
-  onAttachAudio?: (cid: string, content: string, mimeType: string, name: string) => void;
+  onAttachAudio?: (
+    cid: string,
+    content: string,
+    mimeType: string,
+    name: string,
+    extraData?: Partial<AudioNoteBlockData>
+  ) => void;
   onChange: (updatedData: AudioNoteBlockData) => void;
   onDelete: () => void;
 }
@@ -19,14 +25,27 @@ function formatTime(sec: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-async function fileToBase64(file: File): Promise<string> {
-  const bytes = new Uint8Array(await file.arrayBuffer());
+async function blobToBase64(blob: Blob): Promise<string> {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
   let binary = '';
   const CHUNK = 0x8000;
   for (let i = 0; i < bytes.length; i += CHUNK) {
     binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
   }
   return btoa(binary);
+}
+
+async function fileToBase64(file: File): Promise<string> {
+  return blobToBase64(file);
+}
+
+/** Downsample a raw level array to at most n bars, keeping the envelope shape. */
+function downsample(arr: number[], n: number): number[] {
+  if (arr.length <= n) return arr;
+  const out: number[] = [];
+  const step = arr.length / n;
+  for (let i = 0; i < n; i++) out.push(arr[Math.floor(i * step)]);
+  return out;
 }
 
 export const AudioNoteBlock: React.FC<Props> = ({
@@ -46,6 +65,23 @@ export const AudioNoteBlock: React.FC<Props> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [progressIndex, setProgressIndex] = useState(0);
+
+  // ── In-app microphone recording (MediaRecorder → base64 MIME attachment) ─
+  const [recState, setRecState] = useState<'idle' | 'requesting' | 'recording'>('idle');
+  const [recSeconds, setRecSeconds] = useState(0);
+  const [recLevels, setRecLevels] = useState<number[]>([]);
+  const [micError, setMicError] = useState<string | null>(null);
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const streamRef = useRef<MediaStream | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const rafRef = useRef(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const cancelledRef = useRef(false);
+  const secondsRef = useRef(0);
+  const recLevelsRef = useRef<number[]>([]);
+  const frameCounterRef = useRef(0);
 
   // Real audio attached? (stored as a base64 MIME attachment — pure .eml)
   const audioAtt = attachments?.find((a) => a.cid === block.data.audioCid);
@@ -113,6 +149,146 @@ export const AudioNoteBlock: React.FC<Props> = ({
     }
   };
 
+  // ── Microphone recording helpers ─────────────────────────────────────
+  const cleanupRecording = () => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    rafRef.current = 0;
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = null;
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+    audioCtxRef.current?.close().catch(() => undefined);
+    audioCtxRef.current = null;
+    mediaRecorderRef.current = null;
+  };
+
+  // Stop mic + analyser when the block unmounts mid-recording
+  useEffect(() => cleanupRecording, []);
+
+  const pickRecorderMime = (): string => {
+    if (typeof MediaRecorder === 'undefined') return '';
+    const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'];
+    return candidates.find((c) => MediaRecorder.isTypeSupported(c)) || '';
+  };
+
+  const extensionFor = (mime: string): string =>
+    mime.includes('mp4') ? 'm4a' : mime.includes('ogg') ? 'ogg' : 'webm';
+
+  const handleRecordingStopped = async () => {
+    const mimeType = mediaRecorderRef.current?.mimeType || 'audio/webm';
+    const blob = new Blob(chunksRef.current, { type: mimeType });
+    const secs = Math.max(1, secondsRef.current);
+    const levels = recLevelsRef.current;
+    cleanupRecording();
+    setRecState('idle');
+
+    if (cancelledRef.current || blob.size === 0 || !onAttachAudio) return;
+
+    try {
+      const cid = `audio_${Date.now().toString(36)}`;
+      const b64 = await blobToBase64(blob);
+      const name = `voice-note-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.${extensionFor(mimeType)}`;
+      // Atomic: attachment + audioCid link + recorded duration/waveform in ONE
+      // update. A separate onChange() here would run from a stale block snapshot
+      // and silently drop the audioCid link (last-writer-wins).
+      const extra: Partial<AudioNoteBlockData> = { duration: formatTime(secs) };
+      if (levels.length >= 8) extra.waveform = downsample(levels, 96);
+      onAttachAudio(cid, b64, mimeType.split(';')[0], name, extra);
+    } catch {
+      setMicError('Recording captured, but encoding to a MIME attachment failed.');
+    }
+  };
+
+  const startRecording = async () => {
+    setMicError(null);
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setMicError('This environment does not expose a microphone API.');
+      return;
+    }
+    setRecState('requesting');
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      cancelledRef.current = false;
+      chunksRef.current = [];
+      secondsRef.current = 0;
+      recLevelsRef.current = [];
+      frameCounterRef.current = 0;
+      setRecSeconds(0);
+      setRecLevels([]);
+
+      // Live level meter — decorative during recording, saved as the waveform after
+      try {
+        const Ctx =
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        const ctx = new Ctx();
+        audioCtxRef.current = ctx;
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 512;
+        ctx.createMediaStreamSource(stream).connect(analyser);
+        const buf = new Uint8Array(analyser.fftSize);
+        const tick = () => {
+          if (!audioCtxRef.current) return;
+          analyser.getByteTimeDomainData(buf);
+          let sum = 0;
+          for (let i = 0; i < buf.length; i++) {
+            const v = (buf[i] - 128) / 128;
+            sum += v * v;
+          }
+          const rms = Math.sqrt(sum / buf.length);
+          const level = Math.min(100, Math.max(8, Math.round(rms * 320)));
+          // sample ~4 bars per second to keep long notes light
+          frameCounterRef.current += 1;
+          if (frameCounterRef.current % 15 === 0) {
+            const next = [...recLevelsRef.current.slice(-239), level];
+            recLevelsRef.current = next;
+            setRecLevels(next);
+          }
+          rafRef.current = requestAnimationFrame(tick);
+        };
+        rafRef.current = requestAnimationFrame(tick);
+      } catch {
+        /* analyser is decorative — recording still works without it */
+      }
+
+      const mime = pickRecorderMime();
+      const rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+      mediaRecorderRef.current = rec;
+      rec.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
+      };
+      rec.onstop = () => {
+        void handleRecordingStopped();
+      };
+      rec.start(250);
+
+      timerRef.current = setInterval(() => {
+        secondsRef.current += 1;
+        setRecSeconds(secondsRef.current);
+      }, 1000);
+      setRecState('recording');
+    } catch (err) {
+      setRecState('idle');
+      cleanupRecording();
+      setMicError(
+        err instanceof DOMException && err.name === 'NotAllowedError'
+          ? 'Microphone access denied — allow it in the browser or app settings.'
+          : 'No microphone is available.'
+      );
+    }
+  };
+
+  const stopRecording = (cancel = false) => {
+    cancelledRef.current = cancel;
+    const rec = mediaRecorderRef.current;
+    if (rec && rec.state === 'recording') rec.stop();
+    else {
+      cleanupRecording();
+      setRecState('idle');
+    }
+  };
+
   return (
     <div className="my-4 rounded-xl border border-cyan-500/30 bg-gradient-to-r from-[#0f172a] via-cyan-950/20 to-[#0f172a] p-4 shadow-lg shadow-cyan-950/20 group">
       {/* Top Header */}
@@ -145,11 +321,52 @@ export const AudioNoteBlock: React.FC<Props> = ({
 
         <div className="flex items-center gap-2">
           <span className="text-xs font-mono text-cyan-300/80 bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-800/40">
-            {hasRealAudio && audioRef.current?.duration
-              ? `${formatTime(audioRef.current.currentTime)} / ${formatTime(audioRef.current.duration)}`
-              : block.data.duration || '0:35'}
+            {recState === 'recording'
+              ? formatTime(recSeconds)
+              : hasRealAudio && audioRef.current?.duration
+                ? `${formatTime(audioRef.current.currentTime)} / ${formatTime(audioRef.current.duration)}`
+                : block.data.duration || '0:35'}
           </span>
-          {onAttachAudio && (
+          {onAttachAudio && recState === 'idle' && (
+            <button
+              type="button"
+              onClick={startRecording}
+              className="text-[10px] font-mono text-rose-400 hover:text-rose-300 p-1 rounded hover:bg-rose-950/40 transition-colors border border-rose-800/40"
+              title="Записать с микрофона — сохраняется в .eml как реальное MIME-вложение"
+            >
+              <Mic className="w-3.5 h-3.5" />
+            </button>
+          )}
+          {recState !== 'idle' && (
+            <span
+              className="flex items-center gap-1.5 text-[10px] font-mono text-rose-300 bg-rose-950/50 border border-rose-700/50 px-2 py-0.5 rounded"
+              title={recState === 'requesting' ? 'Ожидание доступа к микрофону' : 'Идёт запись с микрофона'}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+              {recState === 'requesting' ? 'MIC…' : 'REC'}
+            </span>
+          )}
+          {recState === 'recording' && (
+            <>
+              <button
+                type="button"
+                onClick={() => stopRecording(false)}
+                className="text-[10px] font-mono text-rose-300 hover:text-white p-1 rounded bg-rose-600/80 hover:bg-rose-500 transition-colors border border-rose-500/60"
+                title="Остановить и сохранить как MIME-вложение"
+              >
+                <Square className="w-3 h-3 fill-current" />
+              </button>
+              <button
+                type="button"
+                onClick={() => stopRecording(true)}
+                className="text-[10px] font-mono text-slate-400 hover:text-rose-300 p-1 rounded hover:bg-slate-800 transition-colors border border-slate-700/60"
+                title="Отменить запись"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </>
+          )}
+          {onAttachAudio && recState === 'idle' && (
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
@@ -177,34 +394,64 @@ export const AudioNoteBlock: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* Waveform Player */}
+      {/* Waveform Player / Live recording meter */}
       <div className="flex items-center gap-4 bg-slate-950/60 p-3 rounded-lg border border-slate-800/80">
         <button
           type="button"
           onClick={togglePlay}
-          className="w-9 h-9 rounded-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 flex items-center justify-center shadow-lg transition-transform active:scale-95 shrink-0"
-          title={hasRealAudio ? 'Play / Pause (real audio)' : 'Simulated playback'}
+          disabled={recState !== 'idle'}
+          className="w-9 h-9 rounded-full bg-cyan-500 hover:bg-cyan-400 disabled:bg-slate-700 disabled:cursor-not-allowed text-slate-950 flex items-center justify-center shadow-lg transition-transform active:scale-95 shrink-0"
+          title={
+            recState !== 'idle'
+              ? 'Идёт запись'
+              : hasRealAudio
+                ? 'Play / Pause (real audio)'
+                : 'Simulated playback'
+          }
         >
           {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current ml-0.5" />}
         </button>
 
-        {/* Waveform Bars */}
-        <div className="flex-1 flex items-center gap-1.5 h-10 px-2">
-          {waveform.map((val, idx) => {
-            const isPassed = idx <= progressIndex && isPlaying;
-            return (
-              <div
-                key={idx}
-                style={{ height: `${Math.max(15, val)}%` }}
-                onClick={() => handleSeek(idx)}
-                className={`flex-1 rounded-full transition-all duration-150 ${
-                  isPassed ? 'bg-cyan-400' : 'bg-slate-700 hover:bg-slate-600'
-                } ${hasRealAudio ? 'cursor-pointer' : ''}`}
-              />
-            );
-          })}
-        </div>
+        {recState !== 'idle' ? (
+          <div className="flex-1 flex items-center gap-1.5 h-10 px-2 overflow-hidden">
+            {recLevels.length === 0 ? (
+              <div className="w-full text-center text-[10px] font-mono text-slate-500">
+                {recState === 'requesting' ? 'ожидание доступа к микрофону…' : 'запись… говорите в микрофон'}
+              </div>
+            ) : (
+              recLevels.map((val, idx) => (
+                <div
+                  key={idx}
+                  style={{ height: `${val}%` }}
+                  className="flex-1 min-w-[2px] rounded-full bg-rose-400/90 transition-all duration-100"
+                />
+              ))
+            )}
+          </div>
+        ) : (
+          <div className="flex-1 flex items-center gap-1.5 h-10 px-2">
+            {waveform.map((val, idx) => {
+              const isPassed = idx <= progressIndex && isPlaying;
+              return (
+                <div
+                  key={idx}
+                  style={{ height: `${Math.max(15, val)}%` }}
+                  onClick={() => handleSeek(idx)}
+                  className={`flex-1 rounded-full transition-all duration-150 ${
+                    isPassed ? 'bg-cyan-400' : 'bg-slate-700 hover:bg-slate-600'
+                  } ${hasRealAudio ? 'cursor-pointer' : ''}`}
+                />
+              );
+            })}
+          </div>
+        )}
       </div>
+
+      {micError && (
+        <div className="mt-2 text-[10px] font-mono text-rose-400 bg-rose-950/30 border border-rose-900/40 rounded px-2 py-1">
+          {micError}
+        </div>
+      )}
 
       {/* Real audio element (hidden, drives the waveform) */}
       {hasRealAudio && (
