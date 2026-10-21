@@ -1,8 +1,49 @@
 import { CapsuleNode, CapsuleBlock, CapsuleAttachment } from '../types';
 
+/**
+ * Deterministic 8-char hash (FNV-1a based, base36).
+ * Used for MIME boundaries so that assembling an unchanged capsule twice
+ * produces byte-identical .eml (no needless folder-vault rewrites).
+ */
+function stableHash(input: string): string {
+  let h1 = 0x811c9dc5;
+  let h2 = 0x01000193;
+  for (let i = 0; i < input.length; i++) {
+    const c = input.charCodeAt(i);
+    h1 = (h1 ^ c) >>> 0;
+    h1 = (h1 * 16777619) >>> 0;
+    h2 = (h2 + c * (i + 7)) >>> 0;
+  }
+  return (h1.toString(36) + h2.toString(36)).toUpperCase().slice(0, 10).padEnd(8, '0');
+}
+
+/** True when a MIME part payload can survive raw (7bit-ish) transport. */
+function needsBase64(content: string): boolean {
+  // Boundary-like lines, CR/LF quirks or non-Latin1 chars would corrupt MIME framing.
+  return /[\u0080-\uffff]/.test(content) || /(^|\r?\n)--[A-Za-z0-9'_+-]+(\r?\n|$)/.test(content);
+}
+
+function toBase64(text: string): string {
+  const bytes = new TextEncoder().encode(text);
+  let binary = '';
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(binary);
+}
+
+function fromBase64(b64: string): string {
+  const binary = atob(b64.replace(/\s+/g, ''));
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+
 export function assembleEml(capsule: CapsuleNode): string {
-  const boundaryRoot = `BOUNDARY_ROOT_${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
-  const boundaryPayload = `BOUNDARY_PAYLOAD_${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
+  const seed = `${capsule.messageId}|${capsule.subject}|${capsule.blocks.length}|${capsule.attachments.length}`;
+  const boundaryRoot = `BOUNDARY_ROOT_${stableHash(seed)}`;
+  const boundaryPayload = `BOUNDARY_PAYLOAD_${stableHash(seed + '|payload')}`;
 
   const headers: string[] = [
     `From: ${capsule.from || 'Alexey <user@local>'}`,
@@ -73,13 +114,15 @@ export function assembleEml(capsule: CapsuleNode): string {
   if (capsule.attachments && capsule.attachments.length > 0) {
     for (const att of capsule.attachments) {
       const cleanCid = att.cid.replace(/^<|>$/g, '').replace(/^cid:/, '');
+      const encoded = needsBase64(att.content);
       const attPart = [
         `--${boundaryRoot}`,
         `Content-Type: ${att.mimeType || 'text/plain'}; name="${att.name}"`,
         `Content-ID: <${cleanCid}>`,
         `Content-Disposition: attachment; filename="${att.name}"`,
+        `Content-Transfer-Encoding: ${encoded ? 'base64' : '8bit'}`,
         '',
-        att.content,
+        encoded ? toBase64(att.content) : att.content,
       ].join('\r\n');
       parts.push(attPart);
     }
@@ -166,15 +209,30 @@ export function parseEml(rawEml: string, fileName?: string): CapsuleNode {
         const contentIdMatch = part.match(/Content-ID:\s*<([^>]+)>/i);
         const nameMatch = part.match(/filename=["']?([^"'\r\n]+)["']?|name=["']?([^"'\r\n]+)["']?/i);
         const mimeMatch = part.match(/Content-Type:\s*([^;\r\n]+)/i);
+        const encodingMatch = part.match(/Content-Transfer-Encoding:\s*([\w-]+)/i);
 
-        if (nameMatch && nameMatch[1] !== 'canvas_state.json') {
-          const name = nameMatch[1] || nameMatch[2] || 'attachment';
+        // Resolve the part name from either regex group, then skip the
+        // internal canvas_state.json / html alternative sub-parts.
+        const resolvedName = nameMatch ? nameMatch[1] || nameMatch[2] : undefined;
+        if (resolvedName && resolvedName.toLowerCase() === 'canvas_state.json') continue;
+
+        if (resolvedName) {
+          const name = resolvedName;
           const cid = contentIdMatch ? contentIdMatch[1] : name.replace(/[^a-zA-Z0-9_]/g, '_');
           const mimeType = mimeMatch ? mimeMatch[1].trim() : 'text/plain';
 
           // Extract content after double newline
           const bodySplit = part.indexOf('\r\n\r\n') !== -1 ? part.indexOf('\r\n\r\n') + 4 : part.indexOf('\n\n') + 2;
-          const content = bodySplit > 1 ? part.substring(bodySplit).trim() : '';
+          let content = bodySplit > 1 ? part.substring(bodySplit).trim() : '';
+
+          // Honor Content-Transfer-Encoding (base64 attachments, e.g. audio/binary data)
+          if (encodingMatch && encodingMatch[1].toLowerCase() === 'base64' && content) {
+            try {
+              content = fromBase64(content);
+            } catch {
+              console.warn(`parseEml: failed to decode base64 attachment "${name}"`);
+            }
+          }
 
           attachments.push({
             name,
