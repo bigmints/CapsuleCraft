@@ -80,13 +80,15 @@ export default function App() {
     showToast('Создана новая .eml капсула в оперативной памяти');
   }, []);
 
-  // Create In-Reply-To child capsule
-  const handleCreateReply = useCallback((parentId: string, title?: string) => {
+  // Create In-Reply-To child capsule. `blocks` lets the caller inject
+  // AI-generated content (offline Co-Thinker) instead of the default template.
+  const handleCreateReply = useCallback((parentId: string, title?: string, blocks?: CapsuleNode['blocks']) => {
     const parent = graphState.nodes.get(parentId);
     const newId = `msg-reply-${Date.now().toString(36)}@capsuleos.local`;
+    const finalTitle = title || (parent ? `Re: ${parent.subject}` : 'Re: Размышление');
     const newCapsule: CapsuleNode = {
       messageId: newId,
-      subject: title || (parent ? `Re: ${parent.subject}` : 'Re: Размышление'),
+      subject: finalTitle,
       from: 'Alexey <alexey@workspace.local>',
       to: 'CapsuleOS Knowledge Vault <vault@capsuleos.local>',
       date: new Date().toUTCString(),
@@ -95,11 +97,11 @@ export default function App() {
       references: parent ? [parentId, ...(parent.references || [])] : [parentId],
       status: 'Active',
       tags: parent ? [...parent.tags] : ['#dialogue'],
-      blocks: [
+      blocks: blocks || [
         {
           id: `blk_${Date.now()}_1`,
           type: 'heading',
-          data: { level: 2, text: title || `Re: ${parent?.subject || ''}` },
+          data: { level: 2, text: finalTitle },
         },
         {
           id: `blk_${Date.now()}_2`,
@@ -114,18 +116,22 @@ export default function App() {
     vaultStore.saveNode(newCapsule);
     setSelectedMessageId(newId);
     setActiveView('canvas');
-    showToast('Порождена дочерняя капсула со связью In-Reply-To');
+    showToast(`Порождена дочерняя капсула «${finalTitle}» со связью In-Reply-To`);
   }, [graphState.nodes]);
 
   // Delete Capsule
   const handleDeleteCapsule = useCallback((messageId: string) => {
+    const wasSelected = messageId === selectedMessageId;
     vaultStore.deleteNode(messageId);
-    const remaining = Array.from(vaultStore.getState().nodes.keys());
-    if (remaining.length > 0) {
-      setSelectedMessageId(remaining[0]);
+    // Only reset the selection when the deleted capsule was on screen.
+    if (wasSelected) {
+      const remaining = Array.from(vaultStore.getState().nodes.keys());
+      if (remaining.length > 0) {
+        setSelectedMessageId(remaining[0]);
+      }
     }
     showToast('Капсула удалена из RAM хранилища');
-  }, []);
+  }, [selectedMessageId]);
 
   // Import .eml file
   const handleImportEml = useCallback(async (file: File) => {
@@ -177,7 +183,9 @@ export default function App() {
     showToast(`Экспортирован архив Vault (${allNodes.length} .eml файлов)`);
   }, [graphState.nodes]);
 
-  // AI Co-Thinking trigger
+  // AI Co-Thinking trigger.
+  // Accepts both the editor's short actions and the Co-Think modal modes:
+  //   critique | counter_arg | synthesis | data_insight | continue | reply_thread
   const handleAiAction = useCallback(async (
     action: 'critique' | 'continue' | 'reply_thread' | 'data_insight' | string,
     customPrompt?: string,
@@ -187,12 +195,19 @@ export default function App() {
     setIsAiLoading(true);
     const persona = selectedPersona || 'Claude 3.5 Sonnet';
 
+    // Normalize modal mode names onto engine actions.
+    // counter_arg -> reply_thread (child capsule), synthesis -> continue (callout).
+    const mode =
+      action === 'synthesis' ? 'continue'
+      : action === 'counter_arg' ? 'reply_thread'
+      : action;
+
     try {
-      const defaultPrompt = action === 'critique'
+      const defaultPrompt = mode === 'critique'
         ? `Проведи критический анализ рисков и слабых мест для капсулы "${currentCapsule.subject}"`
-        : action === 'continue'
+        : mode === 'continue'
         ? `Предложи синтез и следующее логическое развитие мысли для капсулы "${currentCapsule.subject}"`
-        : action === 'reply_thread'
+        : mode === 'reply_thread'
         ? `Создай дочерний контраргумент для капсулы "${currentCapsule.subject}"`
         : `Проанализируй данные и метрики капсулы "${currentCapsule.subject}"`;
 
@@ -201,7 +216,7 @@ export default function App() {
       // Offline deterministic Co-Thinker — no server, no API key needed.
       // (Original implementation called the Gemini-backed /api/ai/co-think endpoint.)
       await new Promise((r) => setTimeout(r, 350)); // keep spinner visible for UX
-      const data = offlineAiResponse(action, currentCapsule, promptToSend, persona);
+      const data = offlineAiResponse(mode, currentCapsule, promptToSend, persona);
       const aiReply =
         data.reply ||
         data.text ||
@@ -210,9 +225,15 @@ export default function App() {
         (typeof data.result === 'string' ? data.result : '') ||
         'Анализ капсулы завершен.';
 
-      if (action === 'reply_thread') {
-        handleCreateReply(currentCapsule.messageId, `Re: ${currentCapsule.subject} (${persona})`);
-      } else if (action === 'continue') {
+      if (mode === 'reply_thread') {
+        // Reuse the AI-generated blocks instead of the default template.
+        const aiBlocks = data.result?.blocks;
+        handleCreateReply(
+          currentCapsule.messageId,
+          data.result?.subject || `Re: ${currentCapsule.subject} (${persona})`,
+          Array.isArray(aiBlocks) && aiBlocks.length > 0 ? aiBlocks : undefined
+        );
+      } else if (mode === 'continue') {
         const newCallout = {
           id: `blk_ai_cont_${Date.now()}`,
           type: 'callout' as const,
@@ -226,6 +247,22 @@ export default function App() {
           ...currentCapsule,
           blocks: [...currentCapsule.blocks, newCallout],
         });
+        showToast(`AI Synthesis добавлен в капсулу (${persona})`);
+      } else if (mode === 'data_insight') {
+        const newCallout = {
+          id: `blk_ai_data_${Date.now()}`,
+          type: 'callout' as const,
+          data: {
+            title: `Data Insight (${persona})`,
+            content: aiReply,
+            tone: 'blue' as const,
+          },
+        };
+        handleUpdateCapsule({
+          ...currentCapsule,
+          blocks: [...currentCapsule.blocks, newCallout],
+        });
+        showToast(`Data Insight добавлен в капсулу (${persona})`);
       } else {
         // Insert AI Opponent block
         const newBlock = {
@@ -242,8 +279,8 @@ export default function App() {
           ...currentCapsule,
           blocks: [...currentCapsule.blocks, newBlock],
         });
+        showToast(`AI Critique добавлен в капсулу (${persona})`);
       }
-      showToast(data.mode === 'live' ? `AI Co-Thinker (${persona}) сгенерировал анализ` : `Co-Thinker: ответ сформирован (${persona})`);
     } catch (err: any) {
       console.warn('AI API error, using client fallback:', err);
       const fallbackBlock = {
@@ -276,6 +313,7 @@ export default function App() {
         onOpenBenchmark={() => setIsBenchmarkOpen(true)}
         onOpenAiCoThink={() => setIsAiModalOpen(true)}
         totalCapsules={graphState.graphNodes.length}
+        scanDurationMs={graphState.scanStats.scanDurationMs}
       />
 
       {/* Main Workspace Frame */}

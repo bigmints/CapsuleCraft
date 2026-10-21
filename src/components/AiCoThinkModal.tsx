@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { CapsuleNode } from '../types';
-import { Sparkles, Bot, ShieldAlert, Zap, Layers, Send, Brain, Cpu } from 'lucide-react';
+import { Sparkles, Bot, ShieldAlert, Zap, Layers, Send, Brain, Cpu , CornerDownRight } from 'lucide-react';
 
 interface Props {
   isOpen: boolean;
@@ -26,7 +26,12 @@ export const AiCoThinkModal: React.FC<Props> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const promptToSend = customPrompt.trim() || `Проведи ${mode === 'critique' ? 'глубокий критический анализ рисков' : mode === 'counter_arg' ? 'поиск контраргументов и слабых мест' : 'синтез и выводы'} для капсулы "${currentCapsule.subject}"`;
+    const modePrompt =
+      mode === 'critique' ? 'глубокий критический анализ рисков'
+      : mode === 'counter_arg' ? 'поиск контраргументов и слабых мест'
+      : mode === 'data_insight' ? 'анализ данных и метрик'
+      : 'синтез и выводы';
+    const promptToSend = customPrompt.trim() || `Проведи ${modePrompt} для капсулы "${currentCapsule.subject}"`;
     onExecuteAi(promptToSend, mode, persona);
   };
 
@@ -111,6 +116,30 @@ export const AiCoThinkModal: React.FC<Props> = ({
                 <div>
                   <div className="font-semibold text-xs">Синтез и продолжение (Tab)</div>
                   <div className="text-[10px] text-slate-500">Построение решений на базе тезисов</div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setMode('counter_arg')}
+                className={`p-2.5 rounded-xl border text-left flex items-start gap-2 ${mode === 'counter_arg' ? 'bg-emerald-950/40 border-emerald-500 text-emerald-200' : 'bg-slate-950/60 border-slate-800 text-slate-400'}`}
+              >
+                <CornerDownRight className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-semibold text-xs">Контраргумент (Re: .eml)</div>
+                  <div className="text-[10px] text-slate-500">Порождения дочерней капсулы с возражениями</div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setMode('data_insight')}
+                className={`p-2.5 rounded-xl border text-left flex items-start gap-2 ${mode === 'data_insight' ? 'bg-emerald-950/40 border-emerald-500 text-emerald-200' : 'bg-slate-950/60 border-slate-800 text-slate-400'}`}
+              >
+                <Layers className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-semibold text-xs">Data Insight (метрики)</div>
+                  <div className="text-[10px] text-slate-500">Анализ датасетов и метрик капсулы</div>
                 </div>
               </button>
             </div>
