@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), ver
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-10-22
+
 ### Fixed
 - `parseEml` no longer leaks the internal `canvas_state.json` part into the attachment list of every imported capsule; attachments with boundary-like or non-Latin1 payloads now round-trip via `Content-Transfer-Encoding: base64`.
 - MIME boundaries are deterministic (FNV hash) — re-assembling an unchanged capsule produces byte-identical `.eml`, so the folder vault stops rewriting files on every save.
@@ -20,11 +22,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), ver
 - Standalone `.html` dashboard export from the Preview view.
 - Honest in-browser benchmark: the modal really pushes N synthetic capsules through `parseEml` + graph build (previously it simulated 'SIMD/AVX2 mmap' numbers).
 - Vitest engine test suite (17 tests) and a `test` step in CI.
-
-
-
-### Added
-- Bilingual documentation: `README.md` (English) and `README.ru.md` (Russian).
+- Bilingual documentation: `README.md` (English) and `README.ru.md` (Russian) with a full screenshot tour.
 - `CONTRIBUTING.md`, `CHANGELOG.md`, issue and PR templates.
 
 ## [1.0.0] — 2026-10-21
@@ -46,5 +44,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), ver
 - GitHub Actions: Windows x64 release pipeline (MSI + NSIS, `SHA256SUMS.txt`) on tags and manual dispatch.
 - CI: TypeScript typecheck, Vite build, `cargo check`, `cargo fmt --check`, `cargo clippy -D warnings`.
 
-[Unreleased]: https://github.com/kostyk348/capsuleos/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/kostyk348/capsuleos/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/kostyk348/capsuleos/releases/tag/v1.1.0
 [1.0.0]: https://github.com/kostyk348/capsuleos/releases/tag/v1.0.0
