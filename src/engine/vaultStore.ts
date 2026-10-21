@@ -1027,6 +1027,25 @@ class VaultStore {
     return this.bm25.stats();
   }
 
+  /**
+   * Semantically related capsules: tf-idf cosine similarity over the same
+   * inverted index (no LLM, fully deterministic). Direct backlink targets
+   * are excluded — they are already shown in the links panel.
+   */
+  public relatedCapsules(messageId: string, limit = 3): Array<{ node: CapsuleNode; similarity: number }> {
+    if (!this.nodes.has(messageId)) return [];
+    const linked = new Set<string>(this.getBacklinks(messageId));
+    const out: Array<{ node: CapsuleNode; similarity: number }> = [];
+
+    for (const [id, node] of this.nodes) {
+      if (id === messageId || linked.has(id)) continue;
+      const sim = this.bm25.similarity(messageId, id);
+      if (sim > 0.02) out.push({ node, similarity: sim });
+    }
+
+    return out.sort((a, b) => b.similarity - a.similarity).slice(0, limit);
+  }
+
   public getState(): VaultGraphState {
     return this.getVaultGraphState();
   }

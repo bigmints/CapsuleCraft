@@ -685,7 +685,9 @@ const RelatedCapsules: React.FC<{
 }> = ({ capsule, onOpenCapsule }) => {
   const outgoing = vaultStore.getBacklinks(capsule.messageId);
   const incoming = vaultStore.getIncomingBacklinks(capsule.messageId);
-  if (outgoing.length === 0 && incoming.length === 0) return null;
+  // tf-idf cosine over the same inverted index — deterministic "similar by meaning".
+  const similar = vaultStore.relatedCapsules(capsule.messageId, 3);
+  if (outgoing.length === 0 && incoming.length === 0 && similar.length === 0) return null;
 
   const renderLink = (id: string, dir: 'out' | 'in') => {
     const node = vaultStore.getNode(id);
@@ -720,6 +722,7 @@ const RelatedCapsules: React.FC<{
         </span>
         <span className="text-[10px] font-mono text-slate-500 ml-auto">
           {incoming.length} ← / → {outgoing.length}
+          {similar.length > 0 ? ` · ~${similar.length} пох.` : ''}
         </span>
       </div>
       <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -740,6 +743,32 @@ const RelatedCapsules: React.FC<{
           )}
         </div>
       </div>
+      {similar.length > 0 && (
+        <div className="px-4 pb-4">
+          <div className="text-[10px] font-mono text-emerald-400/80 uppercase tracking-wider mb-1.5">
+            Похожие по смыслу (tf-idf, без ИИ)
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {similar.map(({ node, similarity }) => (
+              <button
+                key={node.messageId}
+                type="button"
+                onClick={() => onOpenCapsule?.(node.messageId)}
+                className="group/link flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-emerald-950/20 hover:bg-emerald-950/40 border border-emerald-900/40 hover:border-emerald-500/40 text-left transition-all"
+                title={`tf-idf косинусная близость: ${(similarity * 100).toFixed(1)}%`}
+              >
+                <span className="text-[10px] font-mono text-emerald-400">≈</span>
+                <span className="text-xs text-slate-300 group-hover/link:text-emerald-200 truncate">
+                  {node.subject}
+                </span>
+                <span className="ml-auto text-[10px] font-mono text-emerald-400/90 shrink-0 tabular-nums">
+                  {Math.round(similarity * 100)}%
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

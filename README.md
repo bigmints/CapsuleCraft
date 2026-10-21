@@ -33,6 +33,18 @@ no SQL, no document store, no cloud, no lock-in. Files you can open in any mail 
 - 🤖 **Offline co-thinker.** A deterministic local AI opponent critiques your claims, continues your threads and answers with datasets. No API key, no network.
 - ⚡ **Fast.** The real, in-browser benchmark parses **50 000 capsules in ~1.4 s** (~36k files/s) — measured, not marketing.
 
+## 🆕 What's new in v1.3.0
+
+> The "the AI finally reads your notes" release. [Full changelog →](CHANGELOG.md)
+
+| | |
+|---|---|
+| 🤖 **Honest offline AI** | The Co-Thinker no longer recites canned LTV/CAC text: it quotes your real numeric claims, extracts actual keyword themes, runs rule-based risk scans and computes real statistics from attached CSVs — and openly refuses to invent numbers when there are none. Deterministic, offline, persona-styled |
+| ≈ **Related by meaning** | New "Похожие по смыслу" section: tf-idf cosine similarity over the search index ranks every capsule against the current one, with % badges. No LLM, no embeddings — just math on the index you already have |
+| 🧪 **57 engine tests** | CSV math, claim mining, risk rules, anti-canned regression, similarity |
+
+<img src="screenshots/capsuleos-honest-ai.png" alt="Content-aware AI critique with honest confidence and real CSV statistics" width="100%">
+
 ## 🆕 What's new in v1.2.0
 
 > The "search that knows what matters" release. [Full changelog →](CHANGELOG.md)
@@ -304,7 +316,7 @@ Inside it: `vault/` with one `.eml` per capsule, and `vault.json` as a cached in
 
 ## 📊 Status
 
-`v1.2.0` — desktop app is usable end-to-end. The engine is covered by a vitest suite (MIME round-trip, BM25 ranking, phantom-attachment regression, editor helpers). Known rough edges:
+`v1.3.0` — desktop app is usable end-to-end. The engine is covered by a vitest suite (MIME round-trip, BM25 ranking, content-aware offline AI, CSV analytics, phantom-attachment regression, editor helpers). Known rough edges:
 
 - no code signing of installers (Windows SmartScreen warns);
 - Python/Rust code cells are stored and versioned but not executed offline (no WASM interpreters bundled);

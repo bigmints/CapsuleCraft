@@ -181,4 +181,30 @@ export class Bm25Index {
 
     return Array.from(scores, ([id, score]) => ({ id, score })).sort((a, b) => b.score - a.score);
   }
+
+  /**
+   * Cosine similarity between two documents' tf-idf vectors (0..1).
+   * Weight = idf(term) × (1 + ln tf) — classic SMART weighting.
+   * Used for "related capsules" (semantic relatedness without an LLM).
+   */
+  public similarity(idA: string, idB: string): number {
+    const a = this.docTf.get(idA);
+    const b = this.docTf.get(idB);
+    if (!a || !b) return 0;
+
+    let dot = 0;
+    let na = 0;
+    let nb = 0;
+    for (const [term, f] of a) {
+      const w = this.idf(term) * (1 + Math.log(f));
+      na += w * w;
+      const fb = b.get(term);
+      if (fb) dot += w * this.idf(term) * (1 + Math.log(fb));
+    }
+    for (const [term, f] of b) {
+      const w = this.idf(term) * (1 + Math.log(f));
+      nb += w * w;
+    }
+    return na && nb ? dot / Math.sqrt(na * nb) : 0;
+  }
 }

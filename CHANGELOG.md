@@ -5,6 +5,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), ver
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-10-22
+
+### Fixed
+- **Offline Co-Thinker was canned — now it actually reads the capsule.** The previous "AI" returned hardcoded text about LTV/CAC no matter what the capsule contained (even `data_insight` invented "Средний CAC: $117.50" out of thin air). The rewritten engine (`offlineAi.ts`) is content-aware and honest: it mines the capsule's real numeric claims and quotes them, extracts actual keyword themes (RU+EN stopwords filtered), runs rule-based risk scans (absolute claims, missing downside, thin extrapolation, deadline pressure), computes **real statistics from attached CSVs** (mean/min/max, trend by OLS slope, first→last delta %, Pearson correlation with a "correlation ≠ causation" caveat) and **refuses to invent numbers** when there is no data. Fully deterministic: same capsule → same analysis; personas (Claude/Gemini/DeepSeek) change the framing and honest confidence, not the facts.
+
+### Added
+- **"Похожие по смыслу" (related capsules)**: new `relatedCapsules()` in the vault store ranks every other capsule by **tf-idf cosine similarity** over the same inverted index that powers BM25 search (weight = idf × (1 + ln tf), SMART-style). The editor's links panel gained a third section with similarity-percentage badges; direct backlink targets are excluded (already listed). No LLM, no embeddings — just the index.
+- `Bm25Index.similarity(a, b)` — tf-idf cosine over indexed documents.
+- Engine test suite grown from 30 to **57 tests**: CSV parsing/math (incl. the demo dataset's real CAC mean 106.67 and CAC↔LTV correlation < −0.95), claim mining, risk rules, keyword extraction, anti-canned regression ("two different capsules → two different analyses"), determinism, related-capsule similarity.
+
 ## [1.2.0] — 2026-10-22
 
 ### Added
