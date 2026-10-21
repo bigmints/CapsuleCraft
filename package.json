@@ -1,7 +1,7 @@
 {
   "name": "capsuleos",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "CapsuleOS — Zero-DB, Pure-MIME multimodal workspace & personal knowledge engine (Tauri + React 19)",
   "license": "MIT",
   "repository": {

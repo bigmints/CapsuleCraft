@@ -4,6 +4,7 @@ import {
   GraphNode,
   GraphEdge,
   CapsuleBlock,
+  ScoredSearchHit,
 } from '../types';
 import { assembleEml, parseEml } from './mime';
 import {
@@ -15,6 +16,7 @@ import {
   sanitizeFileName,
 } from './desktopStore';
 import { extractBacklinks } from './markdown';
+import { Bm25Index, tokenize } from './bm25';
 import JSZip from 'jszip';
 
 const STORAGE_KEY = 'capsule_os_vault_v2';
@@ -423,6 +425,7 @@ console.log({
 class VaultStore {
   private nodes: Map<string, CapsuleNode> = new Map();
   private invertedIndex: Map<string, Set<string>> = new Map(); // word -> Set<messageId>
+  private bm25 = new Bm25Index(); // Okapi BM25 relevance ranking over the same tokens
   private backlinks: Map<string, Set<string>> = new Map(); // messageId -> Set<target messageId>
   private listeners: Set<() => void> = new Set();
   /** Last rawEml that was written to the folder vault (dirty tracking). */
@@ -594,17 +597,19 @@ class VaultStore {
       const raw = node.rawEml || assembleEml(node);
       totalBytes += raw.length;
 
-      // Extract tokens for inverted index
-      const searchableText = `${node.subject} ${node.from} ${node.to} ${node.tags.join(' ')} ${this.extractBlockText(node.blocks)}`.toLowerCase();
-      const tokens = searchableText.match(/[a-zа-я0-9_-]{2,}/gi) || [];
+      // Extract tokens once — they feed BOTH the boolean inverted index
+      // ("which capsules contain the term") and the BM25 ranker
+      // ("which of them is the most relevant").
+      const searchableText = `${node.subject} ${node.from} ${node.to} ${node.tags.join(' ')} ${this.extractBlockText(node.blocks)}`;
+      const tokens = tokenize(searchableText);
 
       for (const token of tokens) {
-        const clean = token.toLowerCase();
-        if (!this.invertedIndex.has(clean)) {
-          this.invertedIndex.set(clean, new Set());
+        if (!this.invertedIndex.has(token)) {
+          this.invertedIndex.set(token, new Set());
         }
-        this.invertedIndex.get(clean)!.add(msgId);
+        this.invertedIndex.get(token)!.add(msgId);
       }
+      this.bm25.add(msgId, tokens);
     }
 
     const duration = Math.max(0.1, performance.now() - startTime);
@@ -956,40 +961,70 @@ class VaultStore {
   }
 
   public search(query: string): CapsuleNode[] {
+    return this.searchWithScores(query).map((hit) => hit.node);
+  }
+
+  /**
+   * BM25-ranked full-text search.
+   *
+   * Score = Σ Okapi BM25 over query tokens (exact + prefix terms)
+   *       + flat boosts for subject/tag substring hits (keeps the legacy
+   *         "fuzzy" behavior; BM25 stays the dominant ranking signal).
+   * Tie-break: newer capsule first. `#tag` queries keep exact-tag semantics.
+   */
+  public searchWithScores(query: string): ScoredSearchHit[] {
     const q = query.trim().toLowerCase();
-    if (!q) return this.getNodes();
+    if (!q) {
+      return this.getNodes().map((node) => ({ node, score: 0, matchedTerms: [] }));
+    }
 
     // Match exact tag
     if (q.startsWith('#')) {
-      return this.getNodes().filter((n) => n.tags.some((t) => t.toLowerCase().includes(q)));
+      return this.getNodes()
+        .filter((n) => n.tags.some((t) => t.toLowerCase().includes(q)))
+        .map((node) => ({ node, score: 100, matchedTerms: [q] }));
     }
 
-    const tokens = q.match(/[a-zа-я0-9_-]{2,}/gi) || [q];
-    const matchScores = new Map<string, number>();
+    const tokens = tokenize(q).length ? tokenize(q) : [q];
+    const scores = new Map<string, number>();
+    const matched = new Map<string, Set<string>>();
+
+    const bump = (id: string, v: number, term: string) => {
+      scores.set(id, (scores.get(id) || 0) + v);
+      if (!matched.has(id)) matched.set(id, new Set());
+      matched.get(id)!.add(term);
+    };
 
     for (const token of tokens) {
-      const matchSet = this.invertedIndex.get(token);
-      if (matchSet) {
-        for (const id of matchSet) {
-          matchScores.set(id, (matchScores.get(id) || 0) + 10);
-        }
+      // 1) BM25 over the index: exact + prefix terms
+      for (const hit of this.bm25.termHits(token)) {
+        bump(hit.id, hit.score, token);
       }
 
-      // Substring fuzzy in subjects and tags
+      // 2) Substring fuzzy in subjects and tags (legacy boost)
       for (const [id, node] of this.nodes) {
         if (node.subject.toLowerCase().includes(token)) {
-          matchScores.set(id, (matchScores.get(id) || 0) + 15);
+          bump(id, 12, token);
         }
         if (node.tags.some((t) => t.toLowerCase().includes(token))) {
-          matchScores.set(id, (matchScores.get(id) || 0) + 8);
+          bump(id, 6, token);
         }
       }
     }
 
-    return Array.from(matchScores.entries())
-      .sort((a, b) => b[1] - a[1])
-      .map(([id]) => this.nodes.get(id)!)
-      .filter(Boolean);
+    return Array.from(scores.entries())
+      .map(([id, score]) => ({
+        node: this.nodes.get(id),
+        score,
+        matchedTerms: Array.from(matched.get(id) || []),
+      }))
+      .filter((h): h is ScoredSearchHit => !!h.node)
+      .sort((a, b) => b.score - a.score || b.node.timestamp - a.node.timestamp);
+  }
+
+  /** BM25 index statistics for the UI (docs, distinct terms, avg length). */
+  public searchStats() {
+    return this.bm25.stats();
   }
 
   public getState(): VaultGraphState {
