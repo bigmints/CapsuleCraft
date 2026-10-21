@@ -15,13 +15,3 @@ export function shouldOpenSlashMenu(text: string, caretIndex: number): boolean {
   if (prev === '') return true;
   return /[\s]/.test(prev);
 }
-
-/**
- * Strip a stray trigger "/" that opened the slash menu but never became
- * part of a command (the menu has its own search input).
- */
-export function stripSlashTrigger(text: string, caretIndex: number): string {
-  if (caretIndex <= 0 || caretIndex > text.length) return text;
-  if (text[caretIndex - 1] !== '/') return text;
-  return text.slice(0, caretIndex - 1) + text.slice(caretIndex);
-}

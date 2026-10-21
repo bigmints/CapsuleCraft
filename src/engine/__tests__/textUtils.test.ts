@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { shouldOpenSlashMenu, stripSlashTrigger } from '../textUtils';
+import { shouldOpenSlashMenu } from '../textUtils';
 
 describe('shouldOpenSlashMenu', () => {
   it('opens at the start of the text', () => {
@@ -16,16 +16,5 @@ describe('shouldOpenSlashMenu', () => {
     expect(shouldOpenSlashMenu('and', 3)).toBe(false);
     expect(shouldOpenSlashMenu('10', 2)).toBe(false);
     expect(shouldOpenSlashMenu('https://', 8)).toBe(false);
-  });
-});
-
-describe('stripSlashTrigger', () => {
-  it('removes the trailing trigger slash', () => {
-    expect(stripSlashTrigger('say /', 5)).toBe('say ');
-    expect(stripSlashTrigger('/', 1)).toBe('');
-  });
-
-  it('keeps text intact when caret does not follow a slash', () => {
-    expect(stripSlashTrigger('abc', 3)).toBe('abc');
   });
 });

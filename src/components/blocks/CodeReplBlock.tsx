@@ -14,45 +14,101 @@ export const CodeReplBlock: React.FC<Props> = ({ block, onChange, onDelete }) =>
 
   const handleRunCode = () => {
     setIsRunning(true);
+    const finishRun = (patch: Partial<CodeReplBlockData>) => {
+      onChange({ ...block.data, ...patch, lastRunTime: Date.now() });
+      setIsRunning(false);
+    };
+
+    // ── JSON: validate & pretty-print ─────────────────────────────────
+    if (block.data.language === 'json') {
+      try {
+        const parsed = JSON.parse(block.data.code);
+        finishRun({ output: JSON.stringify(parsed, null, 2), error: undefined });
+      } catch (err: any) {
+        finishRun({ output: undefined, error: err.message });
+      }
+      return;
+    }
+
+    // ── Python / Rust: honest offline notice ─────────────────────────
+    // The zero-dependency offline build ships no WASM interpreters, so we
+    // say so explicitly instead of evaluating the code as broken JavaScript.
+    if (block.data.language === 'python' || block.data.language === 'rust') {
+      const langLabel = block.data.language === 'python' ? 'Python' : 'Rust';
+      finishRun({
+        output: undefined,
+        error:
+          langLabel +
+          ' — интерпретатор не входит в offline-сборку CapsuleOS (zero-dependency). ' +
+          'Код сохранён в .eml как текст. Исполняемые языки сейчас: JavaScript, JSON.',
+      });
+      return;
+    }
+
+    // ── JavaScript: sandboxed in a Web Worker with a 3s watchdog ─────
     try {
-      // Safe execution simulation for JavaScript/REPL
-      let logs: string[] = [];
+      const workerSrc =
+        "self.onmessage = (e) => { const __logs = []; const console = { " +
+        "log: (...a) => __logs.push(a.map((x) => typeof x === 'object' ? JSON.stringify(x, null, 2) : String(x)).join(' ')), " +
+        "warn: (...a) => __logs.push('WARN: ' + a.join(' ')), " +
+        "error: (...a) => __logs.push('ERROR: ' + a.join(' ')) }; " +
+        "try { const fn = new Function('console', e.data); const res = fn(console); " +
+        "self.postMessage({ ok: true, logs: __logs, result: res === undefined ? null : (typeof res === 'object' ? JSON.stringify(res, null, 2) : String(res)) }); " +
+        "} catch (err) { self.postMessage({ ok: false, logs: __logs, error: String(err && err.message || err) }); } };";
+      const blob = new Blob([workerSrc], { type: 'application/javascript' });
+      const worker = new Worker(URL.createObjectURL(blob));
+      const timeout = setTimeout(() => {
+        worker.terminate();
+        finishRun({ error: 'Execution timed out (>3s) — possible infinite loop. Worker terminated.' });
+      }, 3000);
+      worker.onmessage = (e: MessageEvent) => {
+        clearTimeout(timeout);
+        worker.terminate();
+        const d = e.data;
+        const logs: string[] = d.logs || [];
+        const out =
+          logs.join('\n') +
+          (d.result ? (logs.length ? '\n=> ' : '=> ') + d.result : '');
+        finishRun(
+          d.ok
+            ? { output: out || '/* Executed successfully (no stdout) */', error: undefined }
+            : { output: logs.join('\n') || undefined, error: d.error }
+        );
+      };
+      worker.onerror = (e) => {
+        clearTimeout(timeout);
+        worker.terminate();
+        finishRun({ error: e.message || 'Worker error' });
+      };
+      worker.postMessage(block.data.code);
+      return;
+    } catch {
+      // Worker unavailable (e.g. restrictive webview) — fall back to sync run.
+    }
+
+    // ── Sync fallback ─────────────────────────────────────────────────
+    try {
+      const logs: string[] = [];
       const customConsole = {
         log: (...args: any[]) => {
           logs.push(args.map((a) => (typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a))).join(' '));
         },
-        warn: (...args: any[]) => {
-          logs.push('WARN: ' + args.join(' '));
-        },
-        error: (...args: any[]) => {
-          logs.push('ERROR: ' + args.join(' '));
-        },
+        warn: (...args: any[]) => logs.push('WARN: ' + args.join(' ')),
+        error: (...args: any[]) => logs.push('ERROR: ' + args.join(' ')),
       };
-
-      // Wrap and evaluate JS code
       const runFn = new Function('console', block.data.code);
       const evalResult = runFn(customConsole);
-
       let finalOutput = logs.join('\n');
       if (evalResult !== undefined) {
         const resultStr = typeof evalResult === 'object' ? JSON.stringify(evalResult, null, 2) : String(evalResult);
-        finalOutput = finalOutput ? `${finalOutput}\n=> ${resultStr}` : `=> ${resultStr}`;
+        finalOutput = finalOutput ? finalOutput + '\n=> ' + resultStr : '=> ' + resultStr;
       }
-
-      onChange({
-        ...block.data,
+      finishRun({
         output: finalOutput || '/* Executed successfully (no stdout) */',
         error: undefined,
-        lastRunTime: Date.now(),
       });
     } catch (err: any) {
-      onChange({
-        ...block.data,
-        error: err.message,
-        lastRunTime: Date.now(),
-      });
-    } finally {
-      setIsRunning(false);
+      finishRun({ error: err.message });
     }
   };
 
@@ -74,9 +130,9 @@ export const CodeReplBlock: React.FC<Props> = ({ block, onChange, onDelete }) =>
             className="bg-slate-800/80 text-xs text-slate-300 border border-slate-700 rounded px-2 py-0.5 outline-none font-mono"
           >
             <option value="javascript">JavaScript (REPL)</option>
-            <option value="python">Python (WASM)</option>
-            <option value="rust">Rust (SIMD)</option>
-            <option value="json">JSON Schema</option>
+            <option value="python">Python — скоро</option>
+            <option value="rust">Rust — скоро</option>
+            <option value="json">JSON (валидация)</option>
           </select>
         </div>
 

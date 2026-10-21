@@ -17,6 +17,7 @@ import { TodoBlock } from './blocks/TodoBlock';
 import { SlashCommandMenu } from './SlashCommandMenu';
 import { vaultStore } from '../engine/vaultStore';
 import { isDesktop, pickSavePath, writeTextFile } from '../engine/desktopStore';
+import { shouldOpenSlashMenu } from '../engine/textUtils';
 import {
   Sparkles,
   Plus,
@@ -502,7 +503,14 @@ export const BlockCanvasEditor: React.FC<Props> = ({
                   onChange={(d) => updateBlock(index, { ...block, data: d })}
                   onKeyDown={(e) => {
                     if (e.key === '/') {
-                      setSlashMenuOpen(true);
+                      const ta = e.currentTarget;
+                      const caret = ta.selectionStart ?? ta.value.length;
+                      // Notion-style: open the menu only at the start of a line
+                      // or after whitespace — never for "and/or", dates or URLs.
+                      if (shouldOpenSlashMenu(ta.value, caret)) {
+                        e.preventDefault();
+                        setSlashMenuOpen(true);
+                      }
                     }
                   }}
                   onDelete={() => deleteBlock(index)}
