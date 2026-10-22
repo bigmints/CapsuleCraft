@@ -132,23 +132,21 @@ export const BlockCanvasEditor: React.FC<Props> = ({
       case 'data_grid_view': {
         const sourceCid = extraData?.source_cid || `cid:dataset_${Date.now().toString(36)}_csv`;
         const cleanCid = sourceCid.replace(/^cid:/, '');
-        // Also attach default CSV
+        // Also attach an empty CSV so the block is addressable; the DataGrid
+        // shows an honest empty state until a real file is picked.
         const newAttachment: CapsuleAttachment = {
           name: `${cleanCid}.csv`,
           cid: cleanCid,
           mimeType: 'text/csv',
-          content: 'Category,Target,Actual,Growth\nNorth,100,120,0.20\nSouth,80,95,0.18\nEast,110,135,0.22',
+          content: '',
         };
         newBlock = {
           id,
           type: 'data_grid_view',
           data: {
             source_cid: sourceCid,
-            view: 'chart',
-            chartType: 'bar',
-            xColumn: 'Category',
-            yColumn: 'Actual',
-            title: 'Анализ распределения показателей',
+            view: 'table',
+            title: '',
           },
         };
         onUpdateCapsule({
@@ -165,12 +163,7 @@ export const BlockCanvasEditor: React.FC<Props> = ({
           name: `${cleanCid}.json`,
           cid: cleanCid,
           mimeType: 'application/json',
-          content: JSON.stringify({
-            elements: [
-              { id: '1', type: 'rectangle', x: 80, y: 60, width: 180, height: 60, label: 'Core Engine', color: '#38bdf8' },
-              { id: '2', type: 'sticky', x: 300, y: 60, width: 200, height: 75, label: '💡 Mindmap Node', color: '#f59e0b' },
-            ],
-          }),
+          content: JSON.stringify({ elements: [] }),
         };
         newBlock = {
           id,

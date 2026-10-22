@@ -19,6 +19,7 @@ import {
   Palette,
   Sparkles,
 } from 'lucide-react';
+import { useI18n } from '../../i18n';
 
 interface Props {
   block: CapsuleBlock & { type: 'interactive_canvas' };
@@ -35,6 +36,7 @@ export const WhiteboardBlock: React.FC<Props> = ({
   onUpdateAttachment,
   onDelete,
 }) => {
+  const { t } = useI18n();
   const cleanCid = block.data.scene_cid.replace(/^cid:/, '').replace(/^<|>$/g, '');
   const attachment = attachments.find(
     (a) => a.cid === cleanCid || `cid:${a.cid}` === block.data.scene_cid || a.name === cleanCid
@@ -51,28 +53,7 @@ export const WhiteboardBlock: React.FC<Props> = ({
         console.warn('Could not parse whiteboard attachment:', e);
       }
     }
-    return [
-      {
-        id: 'el_default_1',
-        type: 'rectangle',
-        x: 80,
-        y: 60,
-        width: 180,
-        height: 65,
-        label: 'Cognitive Node A',
-        color: '#38bdf8',
-      },
-      {
-        id: 'el_default_2',
-        type: 'sticky',
-        x: 320,
-        y: 60,
-        width: 200,
-        height: 80,
-        label: '💡 Synthesis hypothesis & feedback loop',
-        color: '#f59e0b',
-      },
-    ];
+    return [];
   }, [attachment]);
 
   const [elements, setElements] = useState<WhiteboardElement[]>(initialElements);
@@ -264,6 +245,11 @@ export const WhiteboardBlock: React.FC<Props> = ({
           }}
           className="relative w-full h-full"
         >
+          {elements.length === 0 && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <p className="text-[11px] font-mono text-slate-600">{t('board.empty')}</p>
+            </div>
+          )}
           {/* Render Arrow Connectors */}
           {elements
             .filter((el) => el.type === 'arrow')

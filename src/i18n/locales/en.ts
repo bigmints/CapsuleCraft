@@ -224,6 +224,11 @@ export const en: Dictionary = {
   'ai.submit': 'Start Co-Thinking',
   'ai.close': 'Close',
 
+  'app.newCapsuleSubject': 'New capsule',
+  'app.inboxSubject': 'Inbox',
+  'grid.empty': 'No dataset attached. Attach a CSV — the table and charts are built from real data.',
+  'grid.attachCsv': 'Attach CSV',
+  'board.empty': 'Empty canvas — add a rectangle or a sticky note',
   'app.toast.capsuleCreated': 'Capsule .eml created (local file)',
   'app.toast.replyCreated': 'Child capsule created <{subject}> with In-Reply-To',
   'app.toast.removed': 'Capsule removed from the RAM index',

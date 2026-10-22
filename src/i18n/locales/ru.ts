@@ -225,6 +225,11 @@ export const ru = {
   'ai.submit': 'Запустить Co-Thinking',
   'ai.close': 'Закрыть',
 
+  'app.newCapsuleSubject': 'Новая капсула',
+  'app.inboxSubject': 'Входящие',
+  'grid.empty': 'Датасет не приложен. Прикрепите CSV — таблица и графики построятся по реальным данным.',
+  'grid.attachCsv': 'Прикрепить CSV',
+  'board.empty': 'Холст пуст — добавьте прямоугольник или стикер',
   'app.toast.capsuleCreated': 'Создана капсула .eml (локальный файл)',
   'app.toast.replyCreated': 'Дочерняя капсула создана <{subject}> с In-Reply-To',
   'app.toast.removed': 'Капсула удалена из RAM-индекса',

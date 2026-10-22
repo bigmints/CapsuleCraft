@@ -5,6 +5,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), ver
 
 ## [Unreleased]
 
+### Changed
+- **Zero demo content in block defaults.** Inserting a DataGrid no longer plants a `North/South/East` sample CSV or a Russian chart title: the block is created with an empty attachment and shows an explicit empty state with a real CSV file picker. A whiteboard starts with an empty scene instead of pre-placed "Cognitive Node A" shapes. New capsules and replies start with a single empty paragraph — no "Новая мысль" heading, no instructional filler, no auto-tags. Removed the unused `createChildReply()` path that injected canned Russian "AI" criticism. Known gaps are now tracked in [LIMITATIONS.md](LIMITATIONS.md).
+
 ## [1.4.0] — 2026-10-22
 
 ### Added

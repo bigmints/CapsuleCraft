@@ -454,22 +454,17 @@ class VaultStore {
     const messageId = `<capsule-${idSuffix}-${Date.now().toString(36)}@vault.local>`;
     const newCapsule: CapsuleNode = {
       messageId,
-      subject: overrides?.subject || 'Новая исследовательская капсула',
-      from: overrides?.from || 'Alexey <user@local>',
-      to: overrides?.to || 'Co-Thinker <agent@local>',
+      subject: overrides?.subject || '',
+      from: overrides?.from || 'Local user <user@capsuleos.local>',
+      to: overrides?.to || 'CapsuleOS Vault <vault@capsuleos.local>',
       date: new Date().toUTCString(),
       timestamp: Date.now(),
       inReplyTo: overrides?.inReplyTo,
       references: overrides?.references || (overrides?.inReplyTo ? [overrides.inReplyTo] : []),
-      tags: overrides?.tags || ['#new-thought'],
+      tags: overrides?.tags || [],
       status: overrides?.status || 'Active',
       fileName: `capsule_${idSuffix}.eml`,
       blocks: overrides?.blocks || [
-        {
-          id: `blk_head_${Date.now()}`,
-          type: 'heading',
-          data: { level: 1, text: overrides?.subject || 'Новая исследовательская капсула' },
-        },
         {
           id: `blk_body_${Date.now()}`,
           type: 'paragraph',
@@ -481,54 +476,6 @@ class VaultStore {
 
     newCapsule.rawEml = assembleEml(newCapsule);
     this.nodes.set(messageId, newCapsule);
-    this.rebuildIndexes();
-    this.persist();
-    this.notify();
-    return newCapsule;
-  }
-
-  public createChildReply(parentId: string, title?: string, blocks?: CapsuleBlock[]): CapsuleNode {
-    const parent = this.nodes.get(parentId);
-    const parentSubject = parent ? parent.subject : 'Thought';
-    const cleanSubject = parentSubject.startsWith('Re: ') ? parentSubject : `Re: ${parentSubject}`;
-
-    const newCapsule: CapsuleNode = {
-      messageId: `<capsule-re-${Math.random().toString(36).substring(2, 8)}@vault.local>`,
-      subject: title || cleanSubject,
-      from: 'Co-Thinker <agent@local>',
-      to: parent?.from || 'Alexey <user@local>',
-      date: new Date().toUTCString(),
-      timestamp: Date.now(),
-      inReplyTo: parentId,
-      references: parent ? Array.from(new Set([...parent.references, parentId])) : [parentId],
-      tags: parent ? [...parent.tags, '#ai-dialogue'] : ['#ai-dialogue'],
-      status: 'Synthesis',
-      fileName: `re_${Math.random().toString(36).substring(2, 6)}.eml`,
-      blocks: blocks || [
-        {
-          id: `blk_rep_hd_${Date.now()}`,
-          type: 'heading',
-          data: { level: 2, text: title || cleanSubject },
-        },
-        {
-          id: `blk_rep_ai_${Date.now()}`,
-          type: 'ai_opponent_block',
-          author: 'Co-Thinker',
-          data: {
-            criticism: `Развитие мысли в ответ на «${parentSubject}»: выделим ключевые ограничивающие гипотезы и альтернативные пути синтеза.`,
-          },
-        },
-        {
-          id: `blk_rep_p_${Date.now()}`,
-          type: 'paragraph',
-          data: { text: 'Предлагается запустить итеративный цикл валидации с фиксацией метрик в RAM-графе.' },
-        },
-      ],
-      attachments: [],
-    };
-
-    newCapsule.rawEml = assembleEml(newCapsule);
-    this.nodes.set(newCapsule.messageId, newCapsule);
     this.rebuildIndexes();
     this.persist();
     this.notify();

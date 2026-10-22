@@ -158,13 +158,13 @@ export default function App() {  const { t } = useI18n();
       if (!target) target = vaultStore.getNodes()[0];
       if (!target) {
         target = vaultStore.createNewCapsule({
-          subject: 'Inbox',
+          subject: t('app.inboxSubject'),
           tags: ['#inbox'],
           blocks: [
             {
               id: `blk_todo_${Date.now()}`,
               type: 'todo_list',
-              data: { title: 'Inbox', items: [item] },
+              data: { title: t('app.inboxSubject'), items: [item] },
             },
           ],
         });
@@ -181,7 +181,7 @@ export default function App() {  const { t } = useI18n();
               {
                 id: `blk_todo_${Date.now()}`,
                 type: 'todo_list',
-                data: { title: 'Inbox', items: [item] },
+                data: { title: t('app.inboxSubject'), items: [item] },
               },
             ];
         handleUpdateCapsule({ ...target, blocks });
@@ -255,24 +255,19 @@ export default function App() {  const { t } = useI18n();
     const newId = `msg-${Date.now().toString(36)}@capsuleos.local`;
     const newCapsule: CapsuleNode = {
       messageId: newId,
-      subject: 'Новая мысль (RFC 5322)',
-      from: 'Alexey <alexey@workspace.local>',
-      to: 'CapsuleOS Knowledge Vault <vault@capsuleos.local>',
+      subject: t('app.newCapsuleSubject'),
+      from: 'Local user <user@capsuleos.local>',
+      to: 'CapsuleOS Vault <vault@capsuleos.local>',
       date: new Date().toUTCString(),
       timestamp: Date.now(),
       references: [],
       status: 'Active',
-      tags: ['#ideation'],
+      tags: [],
       blocks: [
         {
           id: `blk_${Date.now()}_1`,
-          type: 'heading',
-          data: { level: 1, text: 'Новая мысль' },
-        },
-        {
-          id: `blk_${Date.now()}_2`,
           type: 'paragraph',
-          data: { text: 'Введите текст вашей мысли или нажмите / для вставки таблицы, холста или AI блока...' },
+          data: { text: '' },
         },
       ],
       attachments: [],
@@ -305,13 +300,8 @@ export default function App() {  const { t } = useI18n();
       blocks: blocks || [
         {
           id: `blk_${Date.now()}_1`,
-          type: 'heading',
-          data: { level: 2, text: finalTitle },
-        },
-        {
-          id: `blk_${Date.now()}_2`,
           type: 'paragraph',
-          data: { text: 'Дочерняя ветка размышления и аргументации...' },
+          data: { text: '' },
         },
       ],
       attachments: [],

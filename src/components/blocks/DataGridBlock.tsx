@@ -11,13 +11,20 @@ import {
   Layers,
   ArrowUpDown,
   Download,
+  Upload,
 } from 'lucide-react';
+import { useI18n } from '../../i18n';
 
 interface Props {
   block: CapsuleBlock & { type: 'data_grid_view' };
   attachments: CapsuleAttachment[];
   onChange: (updatedData: DataGridBlockData) => void;
-  onUpdateAttachment: (cid: string, newContent: string) => void;
+  onUpdateAttachment: (
+    cid: string,
+    newContent: string,
+    mimeType?: string,
+    name?: string,
+  ) => void;
   onDelete: () => void;
 }
 
@@ -28,20 +35,29 @@ export const DataGridBlock: React.FC<Props> = ({
   onUpdateAttachment,
   onDelete,
 }) => {
+  const { t } = useI18n();
   const cleanCid = block.data.source_cid.replace(/^cid:/, '').replace(/^<|>$/g, '');
   const attachment = attachments.find(
     (a) => a.cid === cleanCid || `cid:${a.cid}` === block.data.source_cid || a.name === cleanCid
   );
 
-  const rawCsv = attachment ? attachment.content : 'Month,CAC,LTV,Margin\nJan,120,450,0.42\nFeb,115,480,0.45';
+  const rawCsv = attachment ? attachment.content : '';
 
   const { headers, rows } = useMemo(() => {
     const lines = rawCsv.trim().split('\n').filter(Boolean);
-    if (lines.length === 0) return { headers: ['Col1', 'Col2'], rows: [] };
+    if (lines.length === 0) return { headers: [] as string[], rows: [] as string[][] };
     const h = lines[0].split(',').map((s) => s.trim());
     const r = lines.slice(1).map((line) => line.split(',').map((s) => s.trim()));
     return { headers: h, rows: r };
   }, [rawCsv]);
+
+  const isEmpty = headers.length === 0;
+
+  const handleCsvFile = async (file: File | undefined) => {
+    if (!file) return;
+    const text = await file.text();
+    onUpdateAttachment(cleanCid, text, 'text/csv', `${cleanCid}.csv`);
+  };
 
   const viewMode = block.data.view || 'table';
   const chartType = block.data.chartType || 'bar';
@@ -167,7 +183,25 @@ export const DataGridBlock: React.FC<Props> = ({
 
       {/* Main Content Area */}
       <div className="p-4">
-        {viewMode === 'table' && (
+        {isEmpty ? (
+          <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
+            <FileSpreadsheet className="w-8 h-8 text-slate-600" />
+            <p className="text-xs font-mono text-slate-500 max-w-md">{t('grid.empty')}</p>
+            <label className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/40 text-cyan-300 text-xs font-mono cursor-pointer hover:bg-cyan-500/20 transition-colors">
+              <Upload className="w-3.5 h-3.5" />
+              {t('grid.attachCsv')}
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                className="hidden"
+                onChange={(event) => {
+                  void handleCsvFile(event.target.files?.[0]);
+                  event.target.value = '';
+                }}
+              />
+            </label>
+          </div>
+        ) : viewMode === 'table' && (
           <div className="space-y-3">
             <div className="overflow-x-auto rounded-lg border border-slate-800 bg-slate-950/60">
               <table className="w-full text-left text-xs border-collapse font-mono">
@@ -247,7 +281,7 @@ export const DataGridBlock: React.FC<Props> = ({
           </div>
         )}
 
-        {viewMode === 'chart' && (
+        {!isEmpty && viewMode === 'chart' && (
           <div className="space-y-4">
             {/* Chart Config Controls */}
             <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-950/50 p-2.5 rounded-lg border border-slate-800 text-xs">
@@ -430,7 +464,7 @@ export const DataGridBlock: React.FC<Props> = ({
           </div>
         )}
 
-        {viewMode === 'pivot' && (
+        {!isEmpty && viewMode === 'pivot' && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-950/60 p-4 rounded-xl border border-slate-800">
             <div className="p-3 bg-[#0f172a] rounded-lg border border-slate-800">
               <div className="text-[10px] text-slate-500 uppercase font-mono">Sum ({yCol})</div>

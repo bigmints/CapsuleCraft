@@ -29,9 +29,11 @@ no SQL, no document store, no cloud, no lock-in. Files you can open in any mail 
 ## 🧭 TL;DR
 
 - 📦 **Zero-DB.** One capsule = one `.eml` file on disk. Thunderbird can read your notes. `grep` can search them. `rsync` can sync them.
-- 🧱 **Beyond Markdown.** A block canvas editor: headings, callouts, TODOs, live CSV/JSON DataGrids with charts, whiteboards, code REPL, voice notes — all inside one MIME container.
+- 🧱 **Beyond Markdown.** A block canvas editor: headings, callouts, TODOs, live CSV DataGrids with charts, whiteboards, code REPL, voice notes — all inside one MIME container.
 - 🤖 **Offline co-thinker.** A deterministic local AI opponent critiques your claims, continues your threads and answers with datasets. No API key, no network.
 - ⚡ **Fast.** The real, in-browser benchmark parses **50 000 capsules in ~1.4 s** (~36k files/s) — measured, not marketing.
+
+> Known gaps are listed in [LIMITATIONS.md](LIMITATIONS.md) — roadmap items are never presented as shipped features.
 
 ## 🆕 What's new in v1.4.0
 
@@ -43,7 +45,7 @@ no SQL, no document store, no cloud, no lock-in. Files you can open in any mail 
 | 🗂 **Kanban + `/task`** | To do / In progress / Done board with drag-and-drop, per-card status, and `/task` converts the paragraph you are typing into a trackable task |
 | 📈 **Gantt timeline** | Day-scale chart with start/due bars, a today marker, dependency arrows and blocked-task warnings. Cycles are rejected before an edge is added — no fake progress |
 | ⌨️ **Command palette + history** | `Ctrl/Cmd+K` searches every action; undo/redo keeps capsule edits recoverable |
-| 🌍 **RU / EN** | Full interface localization with a persistent toggle — Russian default, complete English |
+| 🌍 **RU / EN** | Interface localization with a persistent toggle — Russian default, English translation (some block-level labels still pending) |
 | 🎙️ **Real audio only** | A new voice note starts microphone capture immediately; if the mic is unavailable it offers a file picker. Fake waveforms, fake timers and the `SIMULATED` badge are gone |
 | 🧹 **No demo content** | Fresh installs start truly empty — the sample vault, its loader and every demo string are removed |
 
