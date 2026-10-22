@@ -14,6 +14,9 @@ import {
   writeCapsuleEml,
   removeCapsuleEml,
   sanitizeFileName,
+  readVaultFile,
+  subscribeVaultChanges,
+  type VaultFsChange,
 } from './desktopStore';
 import { extractBacklinks } from './markdown';
 import { Bm25Index, tokenize } from './bm25';
@@ -29,6 +32,11 @@ class VaultStore {
   private listeners: Set<() => void> = new Set();
   /** Last rawEml that was written to the folder vault (dirty tracking). */
   private syncedEml: Map<string, string> = new Map();
+  /** File name to rawEml cache for rapid self-write guard in fs events. */
+  private syncedEmlByFile: Map<string, string> = new Map();
+  private unlistenWatcher?: () => void;
+  private fsBatchTimeout: any = null;
+  private pendingFsChanges: Map<string, VaultFsChange> = new Map();
   public scanStats = {
     totalFiles: 0,
     scanDurationMs: 0.8,
@@ -42,20 +50,35 @@ class VaultStore {
   }
 
   private init() {
+    // Start live folder vault watcher in desktop mode unconditionally
+    subscribeVaultChanges((changes) => {
+      this.queueExternalFsChanges(changes);
+    }).then((unlisten) => {
+      this.unlistenWatcher = unlisten;
+    });
+
     // Try to restore a previously saved vault; otherwise start EMPTY
     // (no demo seed — see FAQ/onboarding).
     try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed: CapsuleNode[] = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          for (const c of parsed) {
-            // Ensure rawEml is present
-            if (!c.rawEml) c.rawEml = assembleEml(c);
-            this.nodes.set(c.messageId, c);
+      if (typeof localStorage !== 'undefined') {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) {
+          const parsed: CapsuleNode[] = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            for (const c of parsed) {
+              // Ensure rawEml is present
+              if (!c.rawEml) c.rawEml = assembleEml(c);
+              this.nodes.set(c.messageId, c);
+            }
+            this.rebuildIndexes();
+            // Still check the folder vault in case changes occurred while app was closed
+            this.loadFromFolder().then((loaded) => {
+              if (loaded && loaded.length > 0) {
+                this.applyLoadedCapsules(loaded);
+              }
+            });
+            return;
           }
-          this.rebuildIndexes();
-          return;
         }
       }
     } catch (e) {
@@ -89,10 +112,14 @@ class VaultStore {
   private applyLoadedCapsules(list: CapsuleNode[]) {
     this.nodes.clear();
     this.syncedEml.clear();
+    this.syncedEmlByFile.clear();
     for (const c of list) {
       if (!c.rawEml) c.rawEml = assembleEml(c);
       this.nodes.set(c.messageId, c);
       this.syncedEml.set(c.messageId, c.rawEml);
+      if (c.fileName) {
+        this.syncedEmlByFile.set(c.fileName, c.rawEml);
+      }
     }
     this.rebuildIndexes();
     this.notify();
@@ -130,17 +157,25 @@ class VaultStore {
       const prev = this.syncedEml.get(node.messageId);
       if (prev === raw) {
         // Unchanged — keep the known file name in the existing set.
-        if (node.fileName) existing.add(node.fileName);
+        if (node.fileName) {
+          existing.add(node.fileName);
+          this.syncedEmlByFile.set(node.fileName, raw);
+        }
         continue;
       }
+      const targetFileName = node.fileName || `${sanitizeFileName(node.messageId)}.eml`;
+      // Pre-cache before write to eliminate self-write race condition with file watcher
+      this.syncedEml.set(node.messageId, raw);
+      this.syncedEmlByFile.set(targetFileName, raw);
+
       const fileName = await writeCapsuleEml(node.messageId, raw);
       if (fileName) {
-        this.syncedEml.set(node.messageId, raw);
         existing.add(fileName);
         // Remember the on-disk file name for later cleanup.
         if (node.fileName !== fileName) {
           node.fileName = fileName;
         }
+        this.syncedEmlByFile.set(fileName, raw);
       }
     }
     // Clean up orphaned .eml files (capsules deleted from the vault).
@@ -162,7 +197,9 @@ class VaultStore {
   private persist() {
     try {
       const list = Array.from(this.nodes.values());
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+      }
       // Real filesystem persistence (Tauri desktop shell) — fire-and-forget.
       saveVaultToDisk(list).then((ok) => {
         if (!ok) console.warn('vaultStore: disk persist unavailable');
@@ -440,12 +477,111 @@ class VaultStore {
   public deleteNode(messageId: string) {
     const node = this.nodes.get(messageId);
     this.nodes.delete(messageId);
+    this.syncedEml.delete(messageId);
+    if (node?.fileName) {
+      this.syncedEmlByFile.delete(node.fileName);
+    }
     this.rebuildIndexes();
     this.persist();
     this.notify();
     // Remove the capsule's .eml file from the folder vault.
     if (node?.fileName) {
       removeCapsuleEml(node.fileName).catch(() => {});
+    }
+  }
+
+  /**
+   * Queue external file system events with a short debounce (100ms)
+   * so bulk operations (e.g. git pull modifying 50 capsules) trigger
+   * only a single rebuildIndexes() pass instead of 50.
+   */
+  public queueExternalFsChanges(changes: VaultFsChange[]) {
+    for (const ch of changes) {
+      this.pendingFsChanges.set(ch.fileName, ch);
+    }
+    if (this.fsBatchTimeout) {
+      clearTimeout(this.fsBatchTimeout);
+    }
+    this.fsBatchTimeout = setTimeout(() => {
+      const batch = Array.from(this.pendingFsChanges.values());
+      this.pendingFsChanges.clear();
+      this.fsBatchTimeout = null;
+      this.handleExternalFsChanges(batch);
+    }, 100);
+  }
+
+  /**
+   * Process a batch of external file system changes from the native vault watcher.
+   */
+  public async handleExternalFsChanges(changes: VaultFsChange[]) {
+    let hasChanged = false;
+
+    for (const change of changes) {
+      const { fileName, kind } = change;
+
+      if (kind === 'remove') {
+        for (const [msgId, node] of this.nodes) {
+          if (node.fileName === fileName) {
+            this.nodes.delete(msgId);
+            this.syncedEml.delete(msgId);
+            this.syncedEmlByFile.delete(fileName);
+            hasChanged = true;
+            break;
+          }
+        }
+        this.syncedEmlByFile.delete(fileName);
+      } else {
+        // 'modify' or newly created externally
+        const rawEml = await readVaultFile(fileName);
+        if (rawEml === null) continue;
+
+        // Self-write loop guard: if rawEml matches our synced cache, it's CapsuleOS's own write
+        const cached = this.syncedEmlByFile.get(fileName);
+        if (cached === rawEml) {
+          continue;
+        }
+
+        try {
+          const parsed = parseEml(rawEml, fileName);
+
+          // Clean up any previous node associated with this exact same file name to avoid duplicate ghost cards
+          for (const [oldId, oldNode] of this.nodes) {
+            if (oldNode.fileName === fileName && oldId !== parsed.messageId) {
+              this.nodes.delete(oldId);
+              this.syncedEml.delete(oldId);
+            }
+          }
+
+          // If an existing capsule had this messageId under an older fileName, clean up old mapping
+          const existing = this.nodes.get(parsed.messageId);
+          if (existing?.fileName && existing.fileName !== fileName) {
+            this.syncedEmlByFile.delete(existing.fileName);
+          }
+
+          this.nodes.set(parsed.messageId, parsed);
+          this.syncedEml.set(parsed.messageId, rawEml);
+          this.syncedEmlByFile.set(fileName, rawEml);
+          hasChanged = true;
+        } catch (e) {
+          console.warn(`vaultStore: failed to parse external .eml ${fileName}`, e);
+        }
+      }
+    }
+
+    if (hasChanged) {
+      this.rebuildIndexes();
+      this.notify();
+    }
+  }
+
+  public destroy() {
+    if (this.unlistenWatcher) {
+      this.unlistenWatcher();
+      this.unlistenWatcher = undefined;
+    }
+    if (this.fsBatchTimeout) {
+      clearTimeout(this.fsBatchTimeout);
+      this.fsBatchTimeout = null;
     }
   }
 

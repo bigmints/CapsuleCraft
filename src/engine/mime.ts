@@ -164,7 +164,10 @@ export function parseEml(rawEml: string, fileName?: string): CapsuleNode {
     }
   }
 
-  const messageId = headersMap.get('message-id') || `<capsule-${Math.random().toString(36).substring(2, 10)}@vault.local>`;
+  const fallbackId = fileName
+    ? `<capsule-${fileName.toLowerCase().replace(/\.eml$/i, '').replace(/[^a-z0-9_-]/g, '_')}@vault.local>`
+    : `<capsule-${Math.random().toString(36).substring(2, 10)}@vault.local>`;
+  const messageId = headersMap.get('message-id') || fallbackId;
   const subject = headersMap.get('subject') || 'Untitled Capsule';
   const from = headersMap.get('from') || 'Alexey <user@local>';
   const to = headersMap.get('to') || 'Co-Thinker <agent@local>';

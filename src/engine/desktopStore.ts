@@ -3,6 +3,7 @@
 // per-user app data directory instead of (only) localStorage. Falls back
 // gracefully to localStorage in a plain browser.
 import { invoke } from '@tauri-apps/api/core';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 declare global {
   interface Window {
@@ -224,3 +225,33 @@ export async function removeCapsuleEml(fileName: string): Promise<boolean> {
   if (!vaultDir || !fileName) return false;
   return deleteFile(`${vaultDir}/${fileName}`);
 }
+
+/** Single file system change reported by native vault watcher. */
+export interface VaultFsChange {
+  path: string;
+  fileName: string;
+  kind: 'modify' | 'remove';
+}
+
+/** Read a single .eml file directly from the vault directory. */
+export async function readVaultFile(fileName: string): Promise<string | null> {
+  const vaultDir = await resolveVaultDir();
+  if (!vaultDir || !fileName) return null;
+  return readTextFile(`${vaultDir}/${fileName}`);
+}
+
+/** Subscribe to live native file system changes in the vault folder. */
+export async function subscribeVaultChanges(
+  callback: (changes: VaultFsChange[]) => void
+): Promise<() => void> {
+  try {
+    const unlisten: UnlistenFn = await listen<VaultFsChange[]>('vault:fs-change', (event) => {
+      callback(event.payload);
+    });
+    return unlisten;
+  } catch (e) {
+    // Non-Tauri (plain browser) fallback
+    return () => {};
+  }
+}
+

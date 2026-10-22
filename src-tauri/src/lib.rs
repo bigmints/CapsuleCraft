@@ -1,8 +1,21 @@
 // CapsuleOS — Tauri (Rust) native backend.
 // Provides real filesystem persistence + native dialogs for the React core.
 use std::fs;
-use tauri::{AppHandle, Manager};
+use std::time::Duration;
+use notify_debouncer_mini::notify::RecommendedWatcher;
+use notify_debouncer_mini::{new_debouncer, notify::RecursiveMode, DebounceEventResult, Debouncer};
+use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_dialog::DialogExt;
+
+pub struct VaultWatcherState(pub std::sync::Mutex<Option<Debouncer<RecommendedWatcher>>>);
+
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultFsChange {
+    pub path: String,
+    pub file_name: String,
+    pub kind: String, // "modify" | "remove"
+}
 
 /// Read a UTF-8 text file from disk (vault JSON, .eml capsules, exports).
 #[tauri::command]
@@ -123,6 +136,78 @@ fn app_data_dir(app: AppHandle) -> Result<String, String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            let app_handle = app.handle().clone();
+            let dir = match app.path().app_data_dir() {
+                Ok(d) => d,
+                Err(e) => {
+                    eprintln!("[CapsuleOS] Failed to get app_data_dir for watcher: {e}");
+                    return Ok(());
+                }
+            };
+            let vault_dir = dir.join("vault");
+            if let Err(e) = fs::create_dir_all(&vault_dir) {
+                eprintln!("[CapsuleOS] Failed to create vault dir: {e}");
+                return Ok(());
+            }
+
+            let handle_for_watcher = app_handle.clone();
+            let debouncer = match new_debouncer(Duration::from_millis(150), move |res: DebounceEventResult| {
+                match res {
+                    Ok(events) => {
+                        let mut changes = Vec::new();
+                        for event in events {
+                            let path = event.path;
+                            let file_name = match path.file_name().and_then(|n| n.to_str()) {
+                                Some(name) => name.to_string(),
+                                None => continue,
+                            };
+
+                            // Filter: only .eml files, ignore .tmp or temporary files
+                            let lower = file_name.to_lowercase();
+                            if !lower.ends_with(".eml") || lower.ends_with(".tmp") || lower.starts_with('.') {
+                                continue;
+                            }
+
+                            let kind = if path.exists() {
+                                "modify".to_string()
+                            } else {
+                                "remove".to_string()
+                            };
+
+                            changes.push(VaultFsChange {
+                                path: path.to_string_lossy().to_string(),
+                                file_name,
+                                kind,
+                            });
+                        }
+
+                        if !changes.is_empty() {
+                            if let Err(e) = handle_for_watcher.emit("vault:fs-change", &changes) {
+                                eprintln!("[CapsuleOS] emit vault:fs-change failed: {e}");
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        eprintln!("[CapsuleOS] Watcher error: {:?}", err);
+                    }
+                }
+            }) {
+                Ok(mut d) => {
+                    if let Err(e) = d.watcher().watch(&vault_dir, RecursiveMode::NonRecursive) {
+                        eprintln!("[CapsuleOS] Watcher watch failed: {e}");
+                    }
+                    Some(d)
+                }
+                Err(e) => {
+                    eprintln!("[CapsuleOS] Failed to create debouncer: {e}");
+                    None
+                }
+            };
+
+            app.manage(VaultWatcherState(std::sync::Mutex::new(debouncer)));
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             read_text_file,
             write_text_file,
