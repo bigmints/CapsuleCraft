@@ -10,7 +10,7 @@ no SQL, no document store, no cloud, no lock-in. Files you can open in any mail 
 
 [![Release](https://img.shields.io/github/v/release/kostyk348/capsuleos?sort=semver&color=0ea5e9&label=release)](https://github.com/kostyk348/capsuleos/releases)
 [![CI](https://github.com/kostyk348/capsuleos/actions/workflows/ci.yml/badge.svg)](https://github.com/kostyk348/capsuleos/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-109%20passing-22c55e)](https://github.com/kostyk348/capsuleos/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-136%20passing-22c55e)](https://github.com/kostyk348/capsuleos/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Tauri](https://img.shields.io/badge/Tauri-2-FFC131?logo=tauri&logoColor=black)](https://v2.tauri.app/)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev/)
@@ -268,7 +268,7 @@ npm ci
 npm run dev            # Vite dev server on http://localhost:5173
 npm run build          # production build into dist/
 npm run preview        # serve the build
-npm test               # vitest engine suite (109 tests)
+npm test               # vitest engine suite (136 tests)
 ```
 
 In a plain browser the vault falls back to `localStorage`; native file access is Tauri-only.

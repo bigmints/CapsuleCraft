@@ -10,7 +10,7 @@
 
 [![Release](https://img.shields.io/github/v/release/kostyk348/capsuleos?sort=semver&color=0ea5e9&label=release)](https://github.com/kostyk348/capsuleos/releases)
 [![CI](https://github.com/kostyk348/capsuleos/actions/workflows/ci.yml/badge.svg)](https://github.com/kostyk348/capsuleos/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/тесты-109%20passing-22c55e)](https://github.com/kostyk348/capsuleos/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/тесты-136%20passing-22c55e)](https://github.com/kostyk348/capsuleos/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Tauri](https://img.shields.io/badge/Tauri-2-FFC131?logo=tauri&logoColor=black)](https://v2.tauri.app/)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev/)
@@ -268,7 +268,7 @@ npm ci
 npm run dev            # Vite dev-сервер на http://localhost:5173
 npm run build          # прод-сборка в dist/
 npm run preview        # раздача сборки
-npm test               # движок-тесты vitest (109 шт.)
+npm test               # движок-тесты vitest (136 шт.)
 ```
 
 В обычном браузере vault падает на `localStorage`; нативный доступ к файлам — только через Tauri.

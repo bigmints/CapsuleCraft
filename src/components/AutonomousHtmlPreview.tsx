@@ -11,20 +11,33 @@ interface Props {
 
 export const AutonomousHtmlPreview: React.FC<Props> = ({ capsule, onDownloadEml }) => {
   const htmlContent = generateAutonomousHtml(capsule);
+  const originalEmailAttachment = capsule.attachments?.find(
+    (a) => a.name === 'email_body.html' || a.cid === 'email_body.html'
+  );
+
+  const [viewMode, setViewMode] = useState<'dashboard' | 'original'>(
+    originalEmailAttachment ? 'original' : 'dashboard'
+  );
   const [exported, setExported] = useState(false);
 
-  // Export the standalone dashboard as a single .html file (works in any browser).
+  const activeContent =
+    viewMode === 'original' && originalEmailAttachment
+      ? originalEmailAttachment.content
+      : htmlContent;
+
+  // Export the active view as a single .html file (works in any browser).
   const handleDownloadHtml = async () => {
     const safe = capsule.subject.replace(/[^a-zA-Z0-9\u0400-\u04FF_-]+/g, '_').slice(0, 60) || 'capsule';
-    const fileName = safe + '.html';
+    const prefix = viewMode === 'original' ? 'email_' : 'dashboard_';
+    const fileName = `${prefix}${safe}.html`;
     if (isDesktop()) {
       const path = await pickSavePath(fileName);
-      if (path) await writeTextFile(path, htmlContent);
+      if (path) await writeTextFile(path, activeContent);
       setExported(true);
       setTimeout(() => setExported(false), 2500);
       return;
     }
-    const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+    const blob = new Blob([activeContent], { type: 'text/html;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -57,11 +70,42 @@ export const AutonomousHtmlPreview: React.FC<Props> = ({ capsule, onDownloadEml 
         </div>
 
         <div className="flex items-center gap-2">
+          {originalEmailAttachment && (
+            <div className="flex items-center bg-slate-900/80 p-0.5 rounded-lg border border-slate-700/60 mr-2">
+              <button
+                type="button"
+                onClick={() => setViewMode('original')}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+                  viewMode === 'original'
+                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+                title="Оригинальный вид внешнего письма (HTML/стили автора)"
+              >
+                <Mail className="w-3.5 h-3.5" />
+                <span>Original Email</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('dashboard')}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+                  viewMode === 'dashboard'
+                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+                title="Автономный дашборд блоков CapsuleOS"
+              >
+                <Monitor className="w-3.5 h-3.5" />
+                <span>Capsule Dashboard</span>
+              </button>
+            </div>
+          )}
+
           <button
             type="button"
             onClick={handleDownloadHtml}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold transition-all shadow-[0_0_10px_rgba(16,185,129,0.3)] text-xs"
-            title="Сохранить автономный HTML5-дашборд одним файлом"
+            title="Сохранить активный вид одним .html файлом"
           >
             <FileCode className="w-3.5 h-3.5" />
             <span>{exported ? 'Saved!' : 'Download .html'}</span>
@@ -89,14 +133,14 @@ export const AutonomousHtmlPreview: React.FC<Props> = ({ capsule, onDownloadEml 
                 <span className="w-3 h-3 rounded-full bg-cyan-500/80 inline-block" />
               </div>
               <span className="text-slate-400 text-xs font-mono ml-2">
-                Mail Client View: {capsule.subject}
+                Mail Client View: {capsule.subject} {viewMode === 'original' ? '(Original)' : '(Dashboard)'}
               </span>
             </div>
 
             <div className="flex items-center gap-2 text-[10px] text-slate-500 font-mono">
               <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
-              <span title="RFC 5322 structure is valid; capsules are not cryptographically signed">
-                RFC 5322 valid · unsigned
+              <span title="RFC 5322 structure is valid; preview is isolated in sandbox">
+                RFC 5322 valid · sandboxed
               </span>
             </div>
           </div>
@@ -104,9 +148,11 @@ export const AutonomousHtmlPreview: React.FC<Props> = ({ capsule, onDownloadEml 
           {/* Iframe with HTML5 content */}
           <iframe
             title="Autonomous HTML5 Preview"
-            srcDoc={htmlContent}
-            className="w-full flex-1 min-h-[600px] border-none bg-slate-900"
-            sandbox="allow-same-origin"
+            srcDoc={activeContent}
+            className={`w-full flex-1 min-h-[600px] border-none transition-colors ${
+              viewMode === 'original' ? 'bg-white' : 'bg-slate-900'
+            }`}
+            sandbox="allow-popups allow-popups-to-escape-sandbox"
           />
         </div>
       </div>
