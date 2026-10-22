@@ -9,7 +9,9 @@ import {
   Download,
   ExternalLink,
   Flag,
+  Link2,
   ListTodo,
+  Lock,
   Plus,
   RotateCcw,
   Sun,
@@ -18,20 +20,28 @@ import { CapsuleNode, TaskStatus, TodoItem, TodoPriority } from '../types';
 import {
   bucketOf,
   buildIcs,
+  addDays,
   collectTasks,
+  daysBetween,
+  ganttRange,
   groupByStatus,
   groupTasks,
   humanDate,
   icsFileName,
+  isBlocked,
   KANBAN_ORDER,
   monthGrid,
   monthLabel,
   parseDateKey,
   PlannedTask,
+  taskBar,
+  taskKey,
+  taskStart,
   taskStats,
   taskStatus,
   tasksOnDay,
   toDateKey,
+  wouldCreateCycle,
   type BucketId,
 } from '../engine/planning';
 import { useI18n, type TranslationKey } from '../i18n';
@@ -87,6 +97,10 @@ const STATUS_DOT: Record<TaskStatus, string> = {
   done: 'bg-emerald-400',
 };
 
+const GANTT_DAY_W = 34;
+const GANTT_ROW_H = 42;
+const GANTT_LABEL_W = 240;
+
 const BUCKET_ACCENT: Record<string, string> = {
   overdue: 'text-rose-400',
   today: 'text-cyan-300',
@@ -116,7 +130,8 @@ export const PlanningView: React.FC<Props> = ({
   onUpdateTask,
   onAddTask,
 }) => {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+  const dateLocale = locale === 'en' ? 'en-GB' : 'ru-RU';
   const today = useMemo(() => toDateKey(new Date()), []);
   const [cursor, setCursor] = useState(() => {
     const now = new Date();
@@ -124,7 +139,7 @@ export const PlanningView: React.FC<Props> = ({
   });
   const [focusDay, setFocusDay] = useState<string | null>(null);
   const [showDone, setShowDone] = useState(false);
-  const [viewMode, setViewMode] = useState<'agenda' | 'kanban'>('agenda');
+  const [viewMode, setViewMode] = useState<'agenda' | 'kanban' | 'gantt'>('agenda');
   const [draggingTask, setDraggingTask] = useState<string | null>(null);
   const [quickText, setQuickText] = useState('');
   const [quickDue, setQuickDue] = useState(today);
@@ -154,6 +169,31 @@ export const PlanningView: React.FC<Props> = ({
   }, [tasks, today, showDone]);
 
   const board = useMemo(() => groupByStatus(tasks), [tasks]);
+
+  const ganttTasks = useMemo(
+    () =>
+      tasks
+        .filter((task) => taskStart(task.item))
+        .sort((a, b) => {
+          const startA = taskStart(a.item) || '';
+          const startB = taskStart(b.item) || '';
+          if (startA !== startB) return startA < startB ? -1 : 1;
+          return (a.item.due || '').localeCompare(b.item.due || '');
+        }),
+    [tasks],
+  );
+  const undatedTasks = useMemo(() => tasks.filter((task) => !taskStart(task.item)), [tasks]);
+  const range = useMemo(() => ganttRange(ganttTasks, today), [ganttTasks, today]);
+  const totalDays = useMemo(() => daysBetween(range.start, range.end) + 1, [range]);
+  const barsByKey = useMemo(() => {
+    const map = new Map<string, { left: number; span: number }>();
+    for (const task of ganttTasks) {
+      const bar = taskBar(task, range);
+      if (bar) map.set(taskKey(task), bar);
+    }
+    return map;
+  }, [ganttTasks, range]);
+  const todayOffset = useMemo(() => daysBetween(range.start, today), [range.start, today]);
 
   const focusTasks = focusDay ? tasksOnDay(tasks, focusDay, showDone) : [];
 
@@ -229,7 +269,7 @@ export const PlanningView: React.FC<Props> = ({
                     : 'text-slate-400 bg-slate-900 border-slate-800'
                 }`}
               >
-                {humanDate(task.item.due)}
+                {humanDate(task.item.due, dateLocale)}
               </span>
             )}
             <span
@@ -314,6 +354,17 @@ export const PlanningView: React.FC<Props> = ({
               >
                 {t('planning.viewKanban')}
               </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('gantt')}
+                className={`text-[11px] font-mono px-2.5 py-1.5 border-l border-slate-800 transition-colors ${
+                  viewMode === 'gantt'
+                    ? 'bg-cyan-500/15 text-cyan-300'
+                    : 'bg-slate-900 text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {t('planning.viewGantt')}
+              </button>
             </div>
             <button
               type="button"
@@ -375,7 +426,7 @@ export const PlanningView: React.FC<Props> = ({
               </button>
               <div className="flex items-center gap-2">
                 <span className="text-sm font-semibold text-slate-200 capitalize">
-                  {monthLabel(cursor.year, cursor.month)}
+                  {monthLabel(cursor.year, cursor.month, dateLocale)}
                 </span>
                 <button
                   type="button"
@@ -495,7 +546,7 @@ export const PlanningView: React.FC<Props> = ({
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-300">
-                    {humanDate(focusDay)}
+                    {humanDate(focusDay, dateLocale)}
                   </h3>
                   <button
                     type="button"
@@ -544,7 +595,7 @@ export const PlanningView: React.FC<Props> = ({
             )}
           </div>
         </div>
-        ) : (
+        ) : viewMode === 'kanban' ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-start">
             {KANBAN_ORDER.map((status) => (
               <div
@@ -615,7 +666,7 @@ export const PlanningView: React.FC<Props> = ({
                                   ? 'text-rose-300 bg-rose-950/50 border-rose-900/60'
                                   : 'text-slate-400 bg-slate-900 border-slate-800'
                               }`}>
-                                {humanDate(task.item.due)}
+                                {humanDate(task.item.due, dateLocale)}
                               </span>
                             )}
                             <span className={`px-1.5 py-0.5 rounded border ${
@@ -649,6 +700,258 @@ export const PlanningView: React.FC<Props> = ({
                 </div>
               </div>
             ))}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="rounded-xl border border-slate-800 bg-slate-900/40 overflow-hidden">
+              {ganttTasks.length === 0 ? (
+                <p className="text-[11px] font-mono text-slate-500 text-center py-10 px-4">
+                  {t('gantt.undated')}
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <div style={{ minWidth: GANTT_LABEL_W + totalDays * GANTT_DAY_W }}>
+                    {/* Timeline header */}
+                    <div className="flex border-b border-slate-800 bg-slate-950/60">
+                      <div
+                        className="shrink-0 px-3 py-1.5 text-[10px] font-mono text-slate-500 sticky left-0 z-10 bg-slate-950/95 border-r border-slate-800/60"
+                        style={{ width: GANTT_LABEL_W }}
+                      >
+                        {t('gantt.editor')}
+                      </div>
+                      <div className="relative h-6" style={{ width: totalDays * GANTT_DAY_W }}>
+                        {Array.from({ length: Math.ceil(totalDays / 7) }).map((_, index) => (
+                          <div
+                            key={index}
+                            className="absolute top-0 bottom-0 border-l border-slate-800/60 pl-1 text-[9px] font-mono text-slate-500 whitespace-nowrap"
+                            style={{ left: index * 7 * GANTT_DAY_W }}
+                          >
+                            {humanDate(addDays(range.start, index * 7), dateLocale)}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Rows + dependency arrows */}
+                    <div className="relative">
+                      <div
+                        className="absolute inset-y-0 pointer-events-none"
+                        style={{ left: GANTT_LABEL_W, width: totalDays * GANTT_DAY_W }}
+                      >
+                        {Array.from({ length: Math.ceil(totalDays / 7) }).map((_, index) => (
+                          <div
+                            key={index}
+                            className="absolute top-0 bottom-0 border-l border-slate-800/40"
+                            style={{ left: index * 7 * GANTT_DAY_W }}
+                          />
+                        ))}
+                        {todayOffset >= 0 && todayOffset < totalDays && (
+                          <div
+                            className="absolute top-0 bottom-0 w-px bg-cyan-500/60"
+                            style={{ left: todayOffset * GANTT_DAY_W }}
+                            title={t('gantt.today')}
+                          />
+                        )}
+                      </div>
+
+                      {ganttTasks.map((task, index) => {
+                        const key = taskKey(task);
+                        const bar = barsByKey.get(key);
+                        const blocked = isBlocked(task, tasks);
+                        const start = taskStart(task.item)!;
+                        return (
+                          <div
+                            key={key}
+                            className="flex border-b border-slate-800/50"
+                            style={{ height: GANTT_ROW_H }}
+                          >
+                            <div
+                              className="shrink-0 sticky left-0 z-10 bg-slate-950/95 px-3 flex flex-col justify-center border-r border-slate-800/60"
+                              style={{ width: GANTT_LABEL_W }}
+                            >
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                {blocked && (
+                                  <Lock
+                                    className="w-3 h-3 text-amber-400 shrink-0"
+                                    aria-label={t('gantt.blocked')}
+                                  />
+                                )}
+                                <span
+                                  className={`truncate text-[11px] ${
+                                    taskStatus(task.item) === 'done'
+                                      ? 'text-slate-500 line-through'
+                                      : 'text-slate-200'
+                                  }`}
+                                >
+                                  {task.item.text || t('todo.actionPlaceholder')}
+                                </span>
+                              </div>
+                              <span className="text-[9px] font-mono text-slate-600 truncate">
+                                {task.capsuleSubject}
+                              </span>
+                            </div>
+                            <div className="relative" style={{ width: totalDays * GANTT_DAY_W }}>
+                              {bar && (
+                                <div
+                                  className={`absolute top-1/2 -translate-y-1/2 h-5 rounded-md border text-[9px] font-mono flex items-center px-1.5 overflow-hidden ${
+                                    blocked
+                                      ? 'bg-amber-500/20 border-amber-500/60 text-amber-200'
+                                      : taskStatus(task.item) === 'done'
+                                        ? 'bg-emerald-500/15 border-emerald-700/60 text-emerald-300'
+                                        : 'bg-cyan-500/20 border-cyan-500/60 text-cyan-200'
+                                  }`}
+                                  style={{
+                                    left: bar.left * GANTT_DAY_W,
+                                    width: Math.max(bar.span * GANTT_DAY_W, 16),
+                                  }}
+                                  title={`${humanDate(start, dateLocale)} → ${humanDate(task.item.due || start, dateLocale)}${blocked ? ` · ${t('gantt.blocked')}` : ''}`}
+                                >
+                                  <span className="truncate">{bar.span > 2 ? task.item.text : ''}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      <svg
+                        className="absolute top-0 pointer-events-none"
+                        style={{
+                          left: GANTT_LABEL_W,
+                          width: totalDays * GANTT_DAY_W,
+                          height: ganttTasks.length * GANTT_ROW_H,
+                        }}
+                      >
+                        <defs>
+                          <marker
+                            id="gantt-arrow"
+                            markerWidth="6"
+                            markerHeight="6"
+                            refX="5"
+                            refY="3"
+                            orient="auto"
+                          >
+                            <path d="M0,0 L6,3 L0,6 z" fill="#f59e0b" />
+                          </marker>
+                        </defs>
+                        {ganttTasks.flatMap((task, index) => {
+                          const bar = barsByKey.get(taskKey(task));
+                          if (!bar) return [];
+                          return (task.item.blockedBy || []).map((dependencyKey) => {
+                            const dependencyBar = barsByKey.get(dependencyKey);
+                            const dependencyIndex = ganttTasks.findIndex(
+                              (candidate) => taskKey(candidate) === dependencyKey,
+                            );
+                            if (!dependencyBar || dependencyIndex < 0) return null;
+                            const x1 = (dependencyBar.left + dependencyBar.span) * GANTT_DAY_W;
+                            const y1 = dependencyIndex * GANTT_ROW_H + GANTT_ROW_H / 2;
+                            const x2 = bar.left * GANTT_DAY_W - 2;
+                            const y2 = index * GANTT_ROW_H + GANTT_ROW_H / 2;
+                            const elbow = x1 + 12;
+                            return (
+                              <path
+                                key={`${dependencyKey}->${taskKey(task)}`}
+                                d={`M${x1} ${y1} H${elbow} V${y2} H${x2}`}
+                                fill="none"
+                                stroke="#f59e0b"
+                                strokeWidth="1.2"
+                                markerEnd="url(#gantt-arrow)"
+                                opacity="0.8"
+                              />
+                            );
+                          });
+                        })}
+                      </svg>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {undatedTasks.length > 0 && ganttTasks.length > 0 && (
+              <p className="text-[10px] font-mono text-slate-500">{t('gantt.undated')}</p>
+            )}
+
+            {/* Dates and dependencies editor */}
+            <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-3">
+              <div className="flex items-center gap-1.5 mb-2 text-[10px] font-mono uppercase tracking-wider text-slate-400">
+                <Link2 className="w-3 h-3" />
+                {t('gantt.editor')}
+              </div>
+              {tasks.length === 0 ? (
+                <p className="text-[10px] font-mono text-slate-600 py-2">{t('planning.emptyTitle')}</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {tasks.map((task) => {
+                    const key = taskKey(task);
+                    const start = taskStart(task.item) || '';
+                    const due = task.item.due || '';
+                    const blocker = (task.item.blockedBy || [])[0] || '';
+                    const candidates = tasks.filter((candidate) => {
+                      const candidateKey = taskKey(candidate);
+                      return (
+                        candidateKey !== key && !wouldCreateCycle(tasks, key, candidateKey)
+                      );
+                    });
+                    return (
+                      <div
+                        key={key}
+                        className="grid grid-cols-1 md:grid-cols-[1fr_130px_130px_190px] items-center gap-1.5"
+                      >
+                        <span
+                          className={`truncate text-[11px] ${
+                            taskStatus(task.item) === 'done'
+                              ? 'text-slate-500 line-through'
+                              : 'text-slate-300'
+                          }`}
+                        >
+                          {task.item.text || t('todo.actionPlaceholder')}
+                        </span>
+                        <input
+                          type="date"
+                          value={start}
+                          onChange={(event) =>
+                            onUpdateTask(task.capsuleId, task.blockId, task.item.id, {
+                              start: event.target.value || undefined,
+                            })
+                          }
+                          className="text-[10px] font-mono bg-slate-900 border border-slate-800 rounded px-1.5 py-1 text-slate-300 [color-scheme:dark]"
+                          title={t('gantt.start')}
+                        />
+                        <input
+                          type="date"
+                          value={due}
+                          onChange={(event) =>
+                            onUpdateTask(task.capsuleId, task.blockId, task.item.id, {
+                              due: event.target.value || undefined,
+                            })
+                          }
+                          className="text-[10px] font-mono bg-slate-900 border border-slate-800 rounded px-1.5 py-1 text-slate-300 [color-scheme:dark]"
+                          title={t('gantt.due')}
+                        />
+                        <select
+                          value={blocker}
+                          onChange={(event) =>
+                            onUpdateTask(task.capsuleId, task.blockId, task.item.id, {
+                              blockedBy: event.target.value ? [event.target.value] : [],
+                            })
+                          }
+                          className="text-[10px] font-mono bg-slate-900 border border-slate-800 rounded px-1.5 py-1 text-slate-400 truncate"
+                          title={t('gantt.dependsOn')}
+                        >
+                          <option value="">{t('gantt.none')}</option>
+                          {candidates.map((candidate) => (
+                            <option key={taskKey(candidate)} value={taskKey(candidate)}>
+                              {candidate.item.text || t('todo.actionPlaceholder')}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>

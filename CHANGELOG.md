@@ -10,6 +10,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), ver
 ### Added
 - **Planning layer** (`engine/planning.ts`): aggregates every TODO block across the vault into one task list, with local `YYYY-MM-DD` day keys (DST-safe), month grid, overdue / today / week buckets, priority sorting/filtering, and RFC 5545 **VTODO** ICS export. New **Planning** tab + 21 engine tests.
 - **Kanban board** in the Planning view: fixed To do / In progress / Done columns, drag-and-drop between columns, per-card status selector, and status kept in sync with the checkbox. ICS export now maps `doing` → `IN-PROCESS`, `done` → `COMPLETED`.
+- **Gantt timeline** in the Planning view: day-scale chart with week labels, today marker, bars from `start` to `due`, amber styling + lock icon for tasks whose prerequisites are unfinished, and SVG dependency arrows. The editor below the chart sets start/due dates and a "depends on" prerequisite; candidate lists are filtered by `wouldCreateCycle`, so a dependency cycle cannot be created. Task identity is stable across the vault (`blockId:itemId`), and dependencies are stored as `blockedBy: string[]` inside the TODO item.
 - **`/task`**: typing `/task` inside a paragraph turns that paragraph into a trackable todo block (one task per line); selecting it with no text inserts an empty task. The slash menu is now fully RU/EN localized.
 - **Command palette** (`Ctrl/Cmd+K`): every action searchable and ranked (acronym + fuzzy scoring), plus capsule navigation — 12 tests.
 - **Undo/redo** for capsule edits (`engine/history.ts`): coalesced typing bursts, per-capsule stacks, palette + keyboard shortcuts.
@@ -25,7 +26,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), ver
 
 ### Fixed
 - Escape closes modals; AI block upserts no longer duplicate on repeated critique; graph selection no longer restarts the force simulation.
-- Version badge and docs now report the real test count (104 tests / 8 files).
+- Version badge and docs now report the real test count (109 tests / 8 files).
 
 ## [1.3.0] — 2026-10-22
 

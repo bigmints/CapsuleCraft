@@ -106,14 +106,14 @@ export function monthGrid(year: number, month: number): string[] {
   return cells;
 }
 
-export function monthLabel(year: number, month: number): string {
-  return new Date(year, month, 1).toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
+export function monthLabel(year: number, month: number, locale = 'ru-RU'): string {
+  return new Date(year, month, 1).toLocaleDateString(locale, { month: 'long', year: 'numeric' });
 }
 
-export function humanDate(key: string): string {
+export function humanDate(key: string, locale = 'ru-RU'): string {
   const date = parseDateKey(key);
   if (!date) return key;
-  return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+  return date.toLocaleDateString(locale, { day: 'numeric', month: 'short' });
 }
 
 /** Every todo item across the vault, with its owning capsule. */
@@ -166,6 +166,94 @@ export function groupByStatus(tasks: PlannedTask[]): Record<TaskStatus, PlannedT
 }
 
 export const KANBAN_ORDER: TaskStatus[] = ['todo', 'doing', 'done'];
+
+/** Stable identity of a task across the vault: `blockId:itemId`. */
+export function taskKey(task: PlannedTask): string {
+  return `${task.blockId}:${task.item.id}`;
+}
+
+/** First day of a task: explicit start, otherwise the due day. */
+export function taskStart(item: TodoItem): string | undefined {
+  if (isDateKey(item.start)) return item.start;
+  if (isDateKey(item.due)) return item.due;
+  return undefined;
+}
+
+export interface GanttRange {
+  start: string;
+  end: string;
+}
+
+/** Timeline bounds: one day of padding around every dated task. */
+export function ganttRange(tasks: PlannedTask[], today: string): GanttRange {
+  let min: string | null = null;
+  let max: string | null = null;
+  for (const task of tasks) {
+    const start = taskStart(task.item);
+    const end = isDateKey(task.item.due) ? task.item.due! : start;
+    if (!start || !end) continue;
+    const lo = start <= end ? start : end;
+    const hi = start <= end ? end : start;
+    if (!min || lo < min) min = lo;
+    if (!max || hi > max) max = hi;
+  }
+  if (!min || !max) {
+    return { start: addDays(today, -1), end: addDays(today, 13) };
+  }
+  return { start: addDays(min, -1), end: addDays(max, 1) };
+}
+
+export interface GanttBar {
+  left: number;
+  span: number;
+}
+
+/** Bar geometry in whole days, relative to `range.start`. */
+export function taskBar(task: PlannedTask, range: GanttRange): GanttBar | null {
+  const start = taskStart(task.item);
+  if (!start) return null;
+  const due = isDateKey(task.item.due) ? task.item.due! : start;
+  const lo = start <= due ? start : due;
+  const hi = start <= due ? due : start;
+  return {
+    left: daysBetween(range.start, lo),
+    span: Math.max(1, daysBetween(lo, hi) + 1),
+  };
+}
+
+/**
+ * Adding `dependencyKey` as a blocker of `targetKey` is a cycle when the
+ * dependency already (transitively) depends on the target.
+ */
+export function wouldCreateCycle(
+  tasks: PlannedTask[],
+  targetKey: string,
+  dependencyKey: string,
+): boolean {
+  if (targetKey === dependencyKey) return true;
+  const byKey = new Map(tasks.map((task) => [taskKey(task), task]));
+  const seen = new Set<string>();
+  const stack = [dependencyKey];
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    if (current === targetKey) return true;
+    if (seen.has(current)) continue;
+    seen.add(current);
+    const task = byKey.get(current);
+    for (const blocker of task?.item.blockedBy || []) stack.push(blocker);
+  }
+  return false;
+}
+
+/** A task is blocked while at least one prerequisite is not done. */
+export function isBlocked(task: PlannedTask, tasks: PlannedTask[]): boolean {
+  if (taskStatus(task.item) === 'done') return false;
+  const byKey = new Map(tasks.map((candidate) => [taskKey(candidate), candidate]));
+  return (task.item.blockedBy || []).some((key) => {
+    const blocker = byKey.get(key);
+    return blocker ? taskStatus(blocker.item) !== 'done' : false;
+  });
+}
 
 function compareTasks(a: PlannedTask, b: PlannedTask): number {
   const dueA = isDateKey(a.item.due) ? a.item.due! : '9999-12-31';

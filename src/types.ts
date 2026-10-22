@@ -94,6 +94,10 @@ export interface TodoItem {
   done: boolean;
   /** Explicit board status. Falls back to `done ? 'done' : 'todo'` when absent. */
   status?: TaskStatus;
+  /** Local calendar day (`YYYY-MM-DD`) when work starts. Defaults to the due day. */
+  start?: string;
+  /** Task keys (`blockId:itemId`) that must be completed first. */
+  blockedBy?: string[];
   /** Local calendar day (`YYYY-MM-DD`), not a UTC instant. */
   due?: string;
   priority?: TodoPriority;

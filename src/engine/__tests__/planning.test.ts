@@ -9,14 +9,19 @@ import {
   foldIcsLine,
   groupByStatus,
   groupTasks,
+  ganttRange,
+  isBlocked,
   isDateKey,
   KANBAN_ORDER,
   monthGrid,
   parseDateKey,
+  taskBar,
+  taskKey,
   taskStats,
   taskStatus,
   tasksOnDay,
   toDateKey,
+  wouldCreateCycle,
 } from '../planning';
 import type { CapsuleNode, TodoItem } from '../../types';
 import type { PlannedTask } from '../planning';
@@ -255,8 +260,7 @@ describe('ICS export (RFC 5545)', () => {
   });
 });
 
-describe('kanban status', () => {
-  it('falls back to the legacy done flag when status is absent', () => {
+describe('kanban status', () => {  it('falls back to the legacy done flag when status is absent', () => {
     expect(taskStatus({ id: '1', text: 'a', done: false })).toBe('todo');
     expect(taskStatus({ id: '2', text: 'b', done: true })).toBe('done');
   });
@@ -276,5 +280,60 @@ describe('kanban status', () => {
     expect(board.todo.map((t) => t.item.id)).toEqual(['a']);
     expect(board.doing.map((t) => t.item.id)).toEqual(['b']);
     expect(board.done.map((t) => t.item.id)).toEqual(['c']);
+  });
+});
+
+describe('gantt geometry', () => {
+  it('pads the range by one day around dated tasks', () => {
+    const tasks = [task('a', 'A', false, '2026-10-20'), task('b', 'B', false, '2026-10-25')];
+    expect(ganttRange(tasks, '2026-10-22')).toEqual({
+      start: '2026-10-19',
+      end: '2026-10-26',
+    });
+  });
+
+  it('falls back to a two-week window when nothing is dated', () => {
+    expect(ganttRange([task('x', 'X')], '2026-10-22')).toEqual({
+      start: '2026-10-21',
+      end: '2026-11-04',
+    });
+  });
+
+  it('positions a multi-day bar from start to due', () => {
+    const multi = task('a', 'A', false, '2026-10-23');
+    multi.item.start = '2026-10-20';
+    expect(taskBar(multi, { start: '2026-10-20', end: '2026-10-30' })).toEqual({
+      left: 0,
+      span: 4,
+    });
+    expect(taskBar(task('b', 'B'), { start: '2026-10-20', end: '2026-10-30' })).toBeNull();
+  });
+});
+
+describe('task dependencies', () => {
+  const key = (id: string) => `blk_c1:${id}`;
+
+  it('detects transitive cycles before an edge is added', () => {
+    const a = task('a', 'A');
+    const b = task('b', 'B');
+    const c = task('c', 'C');
+    a.item.blockedBy = [key('b')];
+    b.item.blockedBy = [key('c')];
+    const tasks = [a, b, c];
+    expect(wouldCreateCycle(tasks, key('c'), key('a'))).toBe(true);
+    expect(wouldCreateCycle(tasks, key('a'), key('c'))).toBe(false);
+    expect(wouldCreateCycle(tasks, key('a'), key('a'))).toBe(true);
+  });
+
+  it('marks a task blocked until every prerequisite is done', () => {
+    const a = task('a', 'A');
+    const b = task('b', 'B');
+    a.item.blockedBy = [key('b')];
+    let tasks = [a, b];
+    expect(isBlocked(a, tasks)).toBe(true);
+    b.item.done = true;
+    b.item.status = 'done';
+    tasks = [a, b];
+    expect(isBlocked(a, tasks)).toBe(false);
   });
 });
