@@ -85,10 +85,15 @@ export interface CalloutBlockData {
   tone: 'emerald' | 'amber' | 'blue' | 'purple' | 'rose';
 }
 
+export type TodoPriority = 'low' | 'normal' | 'high';
+
 export interface TodoItem {
   id: string;
   text: string;
   done: boolean;
+  /** Local calendar day (`YYYY-MM-DD`), not a UTC instant. */
+  due?: string;
+  priority?: TodoPriority;
 }
 
 export interface TodoListBlockData {

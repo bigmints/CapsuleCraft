@@ -154,9 +154,9 @@ export const ThoughtThreadView: React.FC<Props> = ({
         <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-6 max-w-4xl mx-auto w-full">
           {currentThread.map((capsule, index) => {
             const isAI =
-              capsule.from.toLowerCase().includes('claude') ||
               capsule.from.toLowerCase().includes('agent') ||
-              capsule.from.toLowerCase().includes('gemini');
+              capsule.from.toLowerCase().includes('co-thinker') ||
+              capsule.from.toLowerCase().includes('ai');
             const isChild = !!capsule.inReplyTo;
             const isSelectedCard = capsule.messageId === selectedMessageId;
 

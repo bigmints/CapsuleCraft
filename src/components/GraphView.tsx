@@ -23,6 +23,8 @@ function tagColor(tag?: string | null): string {
   return TAG_PALETTE.at(h % TAG_PALETTE.length) || '#64748b';
 }
 
+import { useI18n } from '../i18n';
+
 interface Props {
   graphState: VaultGraphState;
   selectedMessageId: string | null;
@@ -36,6 +38,7 @@ export const GraphView: React.FC<Props> = ({
   onSelectNode,
   onOpenInCanvas,
 }) => {
+  const { t } = useI18n();
   const containerRef = useRef<HTMLDivElement>(null);
   const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -44,8 +47,40 @@ export const GraphView: React.FC<Props> = ({
   const [chargeStrength, setChargeStrength] = useState<number>(-280);
   const [linkDistance, setLinkDistance] = useState<number>(100);
   const [showControls, setShowControls] = useState(false);
+  const [inspectorOpen, setInspectorOpen] = useState(true);
+
+  useEffect(() => {
+    setInspectorOpen(true);
+  }, [selectedMessageId]);
 
   const allTags = Array.from(graphState.tagIndex.keys());
+
+  /** Zoom the graph so the whole layout fits the viewport (with padding). */
+  const fitToContent = React.useCallback((animate = true) => {
+    const svgEl = svgRef.current;
+    const zoom = zoomRef.current;
+    if (!svgEl || !zoom) return;
+    const root = svgEl.querySelector('g.graph-root') as SVGGElement | null;
+    if (!root) return;
+    const bbox = root.getBBox();
+    if (!bbox.width || !bbox.height) return;
+    const width = svgEl.clientWidth || 800;
+    const height = svgEl.clientHeight || 600;
+    const padding = 90;
+    const scale = Math.max(
+      0.2,
+      Math.min(
+        2.2,
+        Math.min((width - padding * 2) / bbox.width, (height - padding * 2) / bbox.height),
+      ),
+    );
+    const transform = d3.zoomIdentity
+      .translate(width / 2 - scale * (bbox.x + bbox.width / 2), height / 2 - scale * (bbox.y + bbox.height / 2))
+      .scale(scale);
+    const sel = d3.select(svgEl);
+    if (animate) sel.transition().duration(450).call(zoom.transform, transform);
+    else sel.call(zoom.transform, transform);
+  }, []);
 
   useEffect(() => {
     if (!svgRef.current || !containerRef.current) return;
@@ -198,11 +233,11 @@ export const GraphView: React.FC<Props> = ({
     // Node outer halo for selected
     nodes
       .append('circle')
+      .attr('class', 'halo transition-all duration-200')
       .attr('r', (d: GraphNode) => 18 + (d.degree || 0) * 3)
       .attr('fill', (d: GraphNode) => (d.id === selectedMessageId ? 'rgba(56, 189, 248, 0.25)' : 'rgba(30, 41, 59, 0.6)'))
       .attr('stroke', (d: GraphNode) => (d.id === selectedMessageId ? '#38bdf8' : tagColor(d.group)))
-      .attr('stroke-width', (d: GraphNode) => (d.id === selectedMessageId ? 3 : 1.5))
-      .attr('class', 'transition-all duration-200');
+      .attr('stroke-width', (d: GraphNode) => (d.id === selectedMessageId ? 3 : 1.5));
 
     // Inner icon / core circle
     nodes
@@ -236,10 +271,35 @@ export const GraphView: React.FC<Props> = ({
       nodes.attr('transform', (d: any) => `translate(${d.x},${d.y})`);
     });
 
+    // Auto-fit once the force layout settles: the graph used to occupy a tiny
+    // island in the middle of a large empty canvas.
+    let fitted = false;
+    simulation.on('end', () => {
+      if (fitted) return;
+      fitted = true;
+      fitToContent(true);
+    });
+
     return () => {
       simulation.stop();
     };
-  }, [graphState, selectedMessageId, tagFilter, chargeStrength, linkDistance]);
+  }, [graphState, tagFilter, chargeStrength, linkDistance, fitToContent]);
+
+  // Selection styling is applied without restarting the force simulation.
+  useEffect(() => {
+    if (!svgRef.current) return;
+    const svg = d3.select(svgRef.current);
+    svg
+      .selectAll<SVGGElement, GraphNode>('.node-item')
+      .select('circle.halo')
+      .attr('fill', (d) => (d.id === selectedMessageId ? 'rgba(56, 189, 248, 0.25)' : 'rgba(30, 41, 59, 0.6)'))
+      .attr('stroke', (d) => (d.id === selectedMessageId ? '#38bdf8' : tagColor(d.group)))
+      .attr('stroke-width', (d) => (d.id === selectedMessageId ? 3 : 1.5));
+    svg
+      .selectAll<SVGGElement, GraphNode>('.node-item')
+      .select('text')
+      .attr('font-weight', (d) => (d.id === selectedMessageId ? '600' : '400'));
+  }, [selectedMessageId, graphState, tagFilter]);
 
 
   const zoomBy = (factor: number) => {
@@ -248,8 +308,7 @@ export const GraphView: React.FC<Props> = ({
   };
 
   const resetZoom = () => {
-    if (!zoomRef.current) return;
-    d3.select(svgRef.current).transition().duration(350).call(zoomRef.current.transform, d3.zoomIdentity);
+    fitToContent(true);
   };
 
   const selectedNodeData = selectedMessageId ? graphState.nodes.get(selectedMessageId) : null;
@@ -261,10 +320,9 @@ export const GraphView: React.FC<Props> = ({
         <div className="flex items-center gap-2 px-2 border-r border-slate-800">
           <Network className="w-4 h-4 text-sky-400" />
           <span className="text-xs font-semibold uppercase tracking-wider text-slate-200">
-            In-Memory Directed DAG
+            {t('graph.title')}
           </span>
         </div>
-
         {/* Tag Filter */}
         <div className="flex items-center gap-1.5 text-xs">
           <Filter className="w-3.5 h-3.5 text-slate-400" />
@@ -273,7 +331,7 @@ export const GraphView: React.FC<Props> = ({
             onChange={(e) => setTagFilter(e.target.value)}
             className="bg-slate-800 text-slate-200 border border-slate-700 rounded px-2 py-1 outline-none text-xs"
           >
-            <option value="all">Все теги ({graphState.graphNodes.length})</option>
+            <option value="all">{t('graph.filterAll', { count: graphState.graphNodes.length })}</option>
             {allTags.map((tag) => (
               <option key={tag} value={tag}>
                 {tag} ({graphState.tagIndex.get(tag)?.length || 0})
@@ -288,7 +346,7 @@ export const GraphView: React.FC<Props> = ({
             type="button"
             onClick={() => zoomBy(1.4)}
             className="p-1.5 rounded-md text-slate-300 hover:text-cyan-300 hover:bg-slate-700 transition-colors"
-            title="Zoom In"
+            title={t('graph.zoomIn')}
           >
             <ZoomIn className="w-3.5 h-3.5" />
           </button>
@@ -296,7 +354,7 @@ export const GraphView: React.FC<Props> = ({
             type="button"
             onClick={() => zoomBy(1 / 1.4)}
             className="p-1.5 rounded-md text-slate-300 hover:text-cyan-300 hover:bg-slate-700 transition-colors"
-            title="Zoom Out"
+            title={t('graph.zoomOut')}
           >
             <ZoomOut className="w-3.5 h-3.5" />
           </button>
@@ -304,7 +362,7 @@ export const GraphView: React.FC<Props> = ({
             type="button"
             onClick={resetZoom}
             className="p-1.5 rounded-md text-slate-300 hover:text-cyan-300 hover:bg-slate-700 transition-colors"
-            title="Reset View"
+            title={t('graph.fit')}
           >
             <Maximize2 className="w-3.5 h-3.5" />
           </button>
@@ -315,16 +373,16 @@ export const GraphView: React.FC<Props> = ({
           type="button"
           onClick={() => setShowControls(!showControls)}
           className={`p-1.5 rounded-lg border text-xs flex items-center gap-1 transition-colors ${showControls ? 'bg-sky-500/20 text-sky-300 border-sky-500/40' : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-slate-200'}`}
-          title="Adjust Physics Forces"
+          title={t('graph.physicsTitle')}
         >
           <Sliders className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Физика</span>
+          <span className="hidden sm:inline">{t('graph.physics')}</span>
         </button>
 
         {/* Telemetry badge */}
         <div className="hidden md:flex items-center gap-1.5 px-2 text-[11px] font-mono text-emerald-400 bg-emerald-950/50 py-0.5 rounded border border-emerald-800/40">
           <Sparkles className="w-3 h-3" />
-          <span>RAM Index: {graphState.graphNodes.length} нод / {graphState.graphEdges.length} связей</span>
+          <span>{t('graph.ramIndex', { nodes: graphState.graphNodes.length, edges: graphState.graphEdges.length })}</span>
         </div>
       </div>
 
@@ -332,12 +390,12 @@ export const GraphView: React.FC<Props> = ({
       {showControls && (
         <div className="absolute top-18 left-4 z-10 w-72 bg-slate-900/95 p-3 rounded-xl border border-slate-800 backdrop-blur-md shadow-2xl space-y-3 text-xs text-slate-300 animate-in fade-in slide-in-from-top-2">
           <div className="font-semibold text-slate-200 border-b border-slate-800 pb-1 flex justify-between">
-            <span>Параметры графа (D3 Physics)</span>
+            <span>{t('graph.physics')} (D3)</span>
             <button onClick={() => setShowControls(false)} className="text-slate-500 hover:text-slate-300">✕</button>
           </div>
           <div>
             <div className="flex justify-between mb-1 text-[11px]">
-              <span className="text-slate-400">Сила отталкивания (Charge):</span>
+              <span className="text-slate-400">{t('graph.charge')}</span>
               <span className="font-mono text-sky-400">{chargeStrength}</span>
             </div>
             <input
@@ -352,7 +410,7 @@ export const GraphView: React.FC<Props> = ({
           </div>
           <div>
             <div className="flex justify-between mb-1 text-[11px]">
-              <span className="text-slate-400">Длина связей (Link Distance):</span>
+              <span className="text-slate-400">{t('graph.linkDistance')}</span>
               <span className="font-mono text-sky-400">{linkDistance}px</span>
             </div>
             <input
@@ -372,20 +430,20 @@ export const GraphView: React.FC<Props> = ({
       <div className="absolute bottom-4 left-4 z-10 bg-slate-900/80 p-2.5 rounded-xl border border-slate-800 backdrop-blur-md text-[11px] font-mono text-slate-400 space-y-1.5">
         <div className="flex items-center gap-2">
           <span className="w-4 h-0.5 bg-sky-400 inline-block" />
-          <span className="text-sky-300">In-Reply-To (Диалог)</span>
+          <span className="text-sky-300">{t('graph.legendInReply')}</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="w-4 h-0.5 border-b border-dashed border-purple-400 inline-block" />
-          <span className="text-purple-300">References (Ассоциация)</span>
+          <span className="text-purple-300">{t('graph.legendReferences')}</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="w-4 h-0.5 border-b border-dotted border-emerald-400 inline-block" />
-          <span className="text-emerald-300">Backlinks ([[wikilinks]])</span>
+          <span className="text-emerald-300">{t('graph.legendBacklinks')}</span>
         </div>
       </div>
 
       {/* Selected Node Inspector Drawer */}
-      {selectedNodeData && (
+      {selectedNodeData && inspectorOpen && (
         <div className="absolute bottom-4 right-4 z-10 w-80 sm:w-96 bg-slate-900/95 p-4 rounded-xl border border-sky-500/40 backdrop-blur-md shadow-2xl text-xs space-y-3 animate-in fade-in slide-in-from-bottom-2">
           <div className="flex items-start justify-between gap-2 border-b border-slate-800 pb-2">
             <div>
@@ -397,8 +455,10 @@ export const GraphView: React.FC<Props> = ({
               </h4>
             </div>
             <button
-              onClick={() => onSelectNode('')}
+              type="button"
+              onClick={() => setInspectorOpen(false)}
               className="text-slate-500 hover:text-slate-300 p-1"
+              title={t('graph.hideInspector')}
             >
               ✕
             </button>
@@ -415,23 +475,26 @@ export const GraphView: React.FC<Props> = ({
           </div>
 
           <div className="flex flex-wrap gap-1">
-            {selectedNodeData.tags.map((t) => (
-              <span key={t} className="px-1.5 py-0.5 rounded bg-slate-800 text-sky-300 text-[10px] font-mono">
-                {t}
+            {selectedNodeData.tags.map((tag) => (
+              <span key={tag} className="px-1.5 py-0.5 rounded bg-slate-800 text-sky-300 text-[10px] font-mono">
+                {tag}
               </span>
             ))}
           </div>
 
           <div className="pt-2 border-t border-slate-800 flex items-center justify-between">
             <span className="text-[11px] text-slate-500">
-              {selectedNodeData.blocks.length} блоков • {selectedNodeData.attachments.length} вложений
+              {t('graph.counts', {
+                blocks: selectedNodeData.blocks.length,
+                attachments: selectedNodeData.attachments.length,
+              })}
             </span>
             <button
               type="button"
               onClick={() => onOpenInCanvas(selectedNodeData.messageId)}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-xs transition-colors shadow"
             >
-              <span>Открыть капсулу</span>
+              <span>{t('graph.openCapsule')}</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>

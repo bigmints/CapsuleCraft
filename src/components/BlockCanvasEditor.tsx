@@ -64,12 +64,15 @@ export const BlockCanvasEditor: React.FC<Props> = ({
 
   const handleExportMarkdown = () => exportCapsuleMarkdown(capsule);
 
-  // Keyboard shortcut listener: Alt+C -> Critique, Tab at empty block -> continue
+  // Keyboard shortcut listener: Alt+C -> Critique, Alt+E -> Expand/continue.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.altKey && (e.key === 'c' || e.key === 'C' || e.key === 'с' || e.key === 'С')) {
         e.preventDefault();
         onRequestAiAction('critique');
+      } else if (e.altKey && (e.key === 'e' || e.key === 'E' || e.key === 'у' || e.key === 'У')) {
+        e.preventDefault();
+        onRequestAiAction('continue');
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -121,7 +124,7 @@ export const BlockCanvasEditor: React.FC<Props> = ({
         newBlock = {
           id,
           type: 'ai_opponent_block',
-          author: 'Claude 3.5 Sonnet',
+          author: 'Co-Thinker',
           data: extraData || { criticism: 'AI Co-Thinker critical hypothesis...' },
         };
         break;
@@ -195,10 +198,10 @@ export const BlockCanvasEditor: React.FC<Props> = ({
           id,
           type: 'audio_note',
           data: extraData || {
-            duration: '0:30',
-            transcript: 'Новая аудио-запись мысли...',
-            waveform: [20, 45, 80, 60, 30, 90, 75, 40],
-            author: 'Alexey (Voice)',
+            duration: '0:00',
+            transcript: '',
+            waveform: [],
+            author: 'User Voice',
           },
         };
         break;
@@ -428,7 +431,7 @@ export const BlockCanvasEditor: React.FC<Props> = ({
               <Sparkles className="w-4 h-4 text-cyan-400" />
               <span className="font-semibold text-white">AI Co-Thinker:</span>
               <span className="hidden sm:inline text-slate-500 font-mono text-[10px]">
-                (Alt+C — Risk Critique | Tab — Expand Thesis)
+                (Alt+C — Risk Critique | Alt+E — Expand Thesis)
               </span>
             </div>
 

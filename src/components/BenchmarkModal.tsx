@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { parseEml } from '../engine/mime';
 import { Zap, Play, CheckCircle2, Cpu, HardDrive, Timer, Layers } from 'lucide-react';
 
@@ -19,6 +19,18 @@ export const BenchmarkModal: React.FC<Props> = ({ isOpen, onClose }) => {
     graphEdges: number;
     ramFootprintMb: number;
   } | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -109,7 +121,15 @@ export const BenchmarkModal: React.FC<Props> = ({ isOpen, onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+    <div
+      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Benchmark"
+    >
       <div className="w-full max-w-2xl bg-[#0f172a]/95 border border-cyan-500/30 rounded-2xl p-6 shadow-2xl shadow-cyan-950/40 space-y-5 text-slate-200 backdrop-blur-md">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-800 pb-3">

@@ -5,6 +5,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), ver
 
 ## [Unreleased]
 
+## [1.4.0] — 2026-10-22
+
+### Added
+- **Planning layer** (`engine/planning.ts`): aggregates every TODO block across the vault into one task list, with local `YYYY-MM-DD` day keys (DST-safe), month grid, overdue / today / week buckets, priority sorting/filtering, and RFC 5545 **VTODO** ICS export. New **Planning** tab + 21 engine tests.
+- **Command palette** (`Ctrl/Cmd+K`): every action searchable and ranked (acronym + fuzzy scoring), plus capsule navigation — 12 tests.
+- **Undo/redo** for capsule edits (`engine/history.ts`): coalesced typing bursts, per-capsule stacks, palette + keyboard shortcuts.
+- **RU / EN localization**: dependency-free i18n store, typed dictionaries, persistent locale toggle (`localStorage`), Russian source dictionary, full English translation.
+- **Task properties in TODO blocks**: due date and priority rendered/edited inline, feeding the planning layer.
+- **Graph UX**: auto-fit on load, selected-node styling, responsive navbar with the Planning tab.
+
+### Changed
+- **Audio notes are real or explicit — never simulated.** Adding a voice note starts `MediaRecorder` capture immediately; if the microphone is unavailable or denied, the block offers two honest actions: record again or attach an audio file. Removed the default fake waveform, fake playback timer, `0:30` default duration, the `SIMULATED` badge and the "simulated" MIME label. Attached/recorded audio stays a real base64 MIME part of the `.eml`.
+- **No demo content anywhere**: deleted `INITIAL_CAPSULES`, `resetToStarterVault()`, the "load sample vault" button, palette action, toast and localization keys. Fresh installs start with a genuinely empty vault; new capsules are created with an empty body paragraph instead of placeholder demo text.
+- **Co-Think is model-agnostic**: removed Claude / Gemini / DeepSeek / GPT mentions from the modal, defaults, block authorship, thread classification and tests. The engine is labeled `Local Co-Thinker · no external model`; model selection returns when a real integration exists.
+- Sidebar card now says "Local-first" and describes the actual `.eml` folder behaviour instead of claiming autonomous sync.
+
+### Fixed
+- Escape closes modals; AI block upserts no longer duplicate on repeated critique; graph selection no longer restarts the force simulation.
+- Version badge and docs now report the real test count (101 tests / 8 files).
+
 ## [1.3.0] — 2026-10-22
 
 ### Fixed

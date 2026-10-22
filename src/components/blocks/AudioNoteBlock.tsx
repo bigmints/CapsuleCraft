@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { CapsuleAttachment, CapsuleBlock, AudioNoteBlockData } from '../../types';
 import { Play, Pause, Mic, Paperclip, Trash2, Square, X } from 'lucide-react';
+import { useI18n } from '../../i18n';
 
 interface Props {
   block: CapsuleBlock & { type: 'audio_note' };
@@ -17,6 +18,9 @@ interface Props {
   onChange: (updatedData: AudioNoteBlockData) => void;
   onDelete: () => void;
 }
+
+/** Blocks whose microphone capture was already auto-started in this session. */
+const autoStartedBlocks = new Set<string>();
 
 function formatTime(sec: number): string {
   if (!isFinite(sec) || sec < 0) return '0:00';
@@ -56,15 +60,15 @@ export const AudioNoteBlock: React.FC<Props> = ({
   onChange,
   onDelete,
 }) => {
-  const waveform =
-    block.data.waveform && block.data.waveform.length > 0
-      ? block.data.waveform
-      : [20, 45, 70, 90, 60, 30, 80, 100, 75, 50, 65, 85, 40, 25];
+  const { t } = useI18n();
+
+  const waveform = block.data.waveform && block.data.waveform.length > 0 ? block.data.waveform : [];
 
   const audioRef = useRef<HTMLAudioElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [progressIndex, setProgressIndex] = useState(0);
+  const [progressPct, setProgressPct] = useState(0);
 
   // ── In-app microphone recording (MediaRecorder → base64 MIME attachment) ─
   const [recState, setRecState] = useState<'idle' | 'requesting' | 'recording'>('idle');
@@ -90,56 +94,41 @@ export const AudioNoteBlock: React.FC<Props> = ({
     ? `data:${block.data.audioMime || audioAtt!.mimeType || 'audio/mpeg'};base64,${audioAtt!.content}`
     : null;
 
-  // ── Simulated playback for voice notes without attached audio ─────────
-  useEffect(() => {
-    if (!isPlaying || hasRealAudio) return;
-    const interval = setInterval(() => {
-      setProgressIndex((prev) => {
-        if (prev >= waveform.length - 1) {
-          setIsPlaying(false);
-          return 0;
-        }
-        return prev + 1;
-      });
-    }, 200);
-    return () => clearInterval(interval);
-  }, [isPlaying, hasRealAudio, waveform.length]);
-
   const togglePlay = () => {
-    if (hasRealAudio && audioRef.current) {
-      if (audioRef.current.paused) {
-        audioRef.current.play();
-        setIsPlaying(true);
-      } else {
-        audioRef.current.pause();
-        setIsPlaying(false);
-      }
-      return;
+    const el = audioRef.current;
+    if (!hasRealAudio || !el) return;
+    if (el.paused) {
+      void el.play();
+      setIsPlaying(true);
+    } else {
+      el.pause();
+      setIsPlaying(false);
     }
-    setIsPlaying(!isPlaying);
   };
 
   // ── Real audio progress → waveform highlight ───────────────────────────
   const handleTimeUpdate = () => {
     const el = audioRef.current;
     if (!el || !el.duration) return;
-    setProgressIndex(Math.floor((el.currentTime / el.duration) * waveform.length));
+    setProgressPct((el.currentTime / el.duration) * 100);
+    if (waveform.length > 0) {
+      setProgressIndex(Math.floor((el.currentTime / el.duration) * waveform.length));
+    }
   };
 
-  // Seek by clicking a waveform bar
+  // Seek by clicking a waveform bar (real audio only — no fake playback)
   const handleSeek = (idx: number) => {
-    if (hasRealAudio && audioRef.current && audioRef.current.duration) {
-      audioRef.current.currentTime = (idx / waveform.length) * audioRef.current.duration;
-      setProgressIndex(idx);
-    } else {
-      setProgressIndex(idx);
-    }
+    const el = audioRef.current;
+    if (!hasRealAudio || !el || !el.duration) return;
+    el.currentTime = (idx / waveform.length) * el.duration;
+    setProgressIndex(idx);
   };
 
   // ── Attach a real audio file (goes into the .eml as a base64 part) ────
   const handleAttachFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !onAttachAudio) return;
+    setMicError(null);
     try {
       const cid = `audio_${Date.now().toString(36)}`;
       const b64 = await fileToBase64(file);
@@ -195,14 +184,14 @@ export const AudioNoteBlock: React.FC<Props> = ({
       if (levels.length >= 8) extra.waveform = downsample(levels, 96);
       onAttachAudio(cid, b64, mimeType.split(';')[0], name, extra);
     } catch {
-      setMicError('Recording captured, but encoding to a MIME attachment failed.');
+      setMicError(t('audio.encodeFailed'));
     }
   };
 
   const startRecording = async () => {
     setMicError(null);
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-      setMicError('This environment does not expose a microphone API.');
+      setMicError(t('audio.micUnsupported'));
       return;
     }
     setRecState('requesting');
@@ -273,8 +262,8 @@ export const AudioNoteBlock: React.FC<Props> = ({
       cleanupRecording();
       setMicError(
         err instanceof DOMException && err.name === 'NotAllowedError'
-          ? 'Microphone access denied — allow it in the browser or app settings.'
-          : 'No microphone is available.'
+          ? t('audio.micDenied')
+          : t('audio.micUnavailable')
       );
     }
   };
@@ -288,6 +277,27 @@ export const AudioNoteBlock: React.FC<Props> = ({
       setRecState('idle');
     }
   };
+
+  // Recording starts by itself when an empty audio-note block is created —
+  // no fake waveform, no simulated playback. If the mic is unavailable the
+  // block shows an explicit "attach audio file" action instead.
+  useEffect(() => {
+    if (!onAttachAudio || hasRealAudio || block.data.audioCid) return;
+    if (block.data.transcript.trim()) return;
+    if (autoStartedBlocks.has(block.id)) return;
+    // Defer one tick so React StrictMode's mount/unmount cycle doesn't cancel
+    // the capture before it starts.
+    const timer = window.setTimeout(() => {
+      if (autoStartedBlocks.has(block.id)) return;
+      autoStartedBlocks.add(block.id);
+      void startRecording();
+    }, 0);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const recordingLabel =
+    recState === 'requesting' ? t('audio.requesting') : recState === 'recording' ? t('audio.recording') : '';
 
   return (
     <div className="my-4 rounded-xl border border-cyan-500/30 bg-gradient-to-r from-[#0f172a] via-cyan-950/20 to-[#0f172a] p-4 shadow-lg shadow-cyan-950/20 group">
@@ -309,11 +319,10 @@ export const AudioNoteBlock: React.FC<Props> = ({
                 className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${
                   hasRealAudio
                     ? 'text-emerald-300 bg-emerald-950/50 border-emerald-700/50'
-                    : 'text-amber-300 bg-amber-950/40 border-amber-700/40'
+                    : 'text-slate-400 bg-slate-800/60 border-slate-700/60'
                 }`}
-                title={hasRealAudio ? 'Реальное аудио прикреплено как MIME-вложение' : 'Аудио не прикреплено — воспроизведение имитируется'}
               >
-                {hasRealAudio ? 'REAL AUDIO' : 'SIMULATED'}
+                {hasRealAudio ? t('audio.badge.attached') : t('audio.badge.none')}
               </span>
             </div>
           </div>
@@ -325,14 +334,34 @@ export const AudioNoteBlock: React.FC<Props> = ({
               ? formatTime(recSeconds)
               : hasRealAudio && audioRef.current?.duration
                 ? `${formatTime(audioRef.current.currentTime)} / ${formatTime(audioRef.current.duration)}`
-                : block.data.duration || '0:35'}
+                : '—'}
           </span>
+          {onAttachAudio && recState === 'idle' && !hasRealAudio && (
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="text-[10px] font-mono text-cyan-300 hover:text-cyan-200 p-1 rounded hover:bg-cyan-950/40 transition-colors border border-cyan-800/40"
+              title={t('audio.attachFile')}
+            >
+              <Paperclip className="w-3.5 h-3.5" />
+            </button>
+          )}
+          {onAttachAudio && recState === 'idle' && hasRealAudio && (
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="text-[10px] font-mono text-slate-400 hover:text-cyan-300 p-1 rounded hover:bg-slate-800 transition-colors border border-slate-700/60"
+              title={t('audio.attachFile')}
+            >
+              <Paperclip className="w-3.5 h-3.5" />
+            </button>
+          )}
           {onAttachAudio && recState === 'idle' && (
             <button
               type="button"
               onClick={startRecording}
               className="text-[10px] font-mono text-rose-400 hover:text-rose-300 p-1 rounded hover:bg-rose-950/40 transition-colors border border-rose-800/40"
-              title="Записать с микрофона — сохраняется в .eml как реальное MIME-вложение"
+              title={t('audio.recordFromMic')}
             >
               <Mic className="w-3.5 h-3.5" />
             </button>
@@ -340,7 +369,7 @@ export const AudioNoteBlock: React.FC<Props> = ({
           {recState !== 'idle' && (
             <span
               className="flex items-center gap-1.5 text-[10px] font-mono text-rose-300 bg-rose-950/50 border border-rose-700/50 px-2 py-0.5 rounded"
-              title={recState === 'requesting' ? 'Ожидание доступа к микрофону' : 'Идёт запись с микрофона'}
+              title={recordingLabel}
             >
               <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
               {recState === 'requesting' ? 'MIC…' : 'REC'}
@@ -352,7 +381,7 @@ export const AudioNoteBlock: React.FC<Props> = ({
                 type="button"
                 onClick={() => stopRecording(false)}
                 className="text-[10px] font-mono text-rose-300 hover:text-white p-1 rounded bg-rose-600/80 hover:bg-rose-500 transition-colors border border-rose-500/60"
-                title="Остановить и сохранить как MIME-вложение"
+                title={t('audio.stopAndSave')}
               >
                 <Square className="w-3 h-3 fill-current" />
               </button>
@@ -360,21 +389,11 @@ export const AudioNoteBlock: React.FC<Props> = ({
                 type="button"
                 onClick={() => stopRecording(true)}
                 className="text-[10px] font-mono text-slate-400 hover:text-rose-300 p-1 rounded hover:bg-slate-800 transition-colors border border-slate-700/60"
-                title="Отменить запись"
+                title={t('audio.cancelRecording')}
               >
                 <X className="w-3.5 h-3.5" />
               </button>
             </>
-          )}
-          {onAttachAudio && recState === 'idle' && (
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="text-[10px] font-mono text-slate-400 hover:text-cyan-300 p-1 rounded hover:bg-slate-800 transition-colors border border-slate-700/60"
-              title="Прикрепить реальный аудиофайл (mp3/webm/ogg) — сохраняется в .eml как MIME-вложение"
-            >
-              <Paperclip className="w-3.5 h-3.5" />
-            </button>
           )}
           <button
             type="button"
@@ -394,55 +413,95 @@ export const AudioNoteBlock: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* Waveform Player / Live recording meter */}
+      {/* Player / live recording meter / empty-state actions */}
       <div className="flex items-center gap-4 bg-slate-950/60 p-3 rounded-lg border border-slate-800/80">
-        <button
-          type="button"
-          onClick={togglePlay}
-          disabled={recState !== 'idle'}
-          className="w-9 h-9 rounded-full bg-cyan-500 hover:bg-cyan-400 disabled:bg-slate-700 disabled:cursor-not-allowed text-slate-950 flex items-center justify-center shadow-lg transition-transform active:scale-95 shrink-0"
-          title={
-            recState !== 'idle'
-              ? 'Идёт запись'
-              : hasRealAudio
-                ? 'Play / Pause (real audio)'
-                : 'Simulated playback'
-          }
-        >
-          {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current ml-0.5" />}
-        </button>
-
         {recState !== 'idle' ? (
-          <div className="flex-1 flex items-center gap-1.5 h-10 px-2 overflow-hidden">
-            {recLevels.length === 0 ? (
-              <div className="w-full text-center text-[10px] font-mono text-slate-500">
-                {recState === 'requesting' ? 'ожидание доступа к микрофону…' : 'запись… говорите в микрофон'}
+          <>
+            <button
+              type="button"
+              disabled
+              className="w-9 h-9 rounded-full bg-slate-700 text-slate-950 flex items-center justify-center shrink-0"
+              title={recordingLabel}
+            >
+              <Mic className="w-4 h-4" />
+            </button>
+            <div className="flex-1 flex items-center gap-1.5 h-10 px-2 overflow-hidden">
+              {recLevels.length === 0 ? (
+                <div className="w-full text-center text-[10px] font-mono text-slate-500">
+                  {recordingLabel}
+                </div>
+              ) : (
+                recLevels.map((val, idx) => (
+                  <div
+                    key={idx}
+                    style={{ height: `${val}%` }}
+                    className="flex-1 min-w-[2px] rounded-full bg-rose-400/90 transition-all duration-100"
+                  />
+                ))
+              )}
+            </div>
+          </>
+        ) : hasRealAudio ? (
+          <>
+            <button
+              type="button"
+              onClick={togglePlay}
+              className="w-9 h-9 rounded-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 flex items-center justify-center shadow-lg transition-transform active:scale-95 shrink-0"
+              title={t('audio.play')}
+            >
+              {isPlaying ? (
+                <Pause className="w-4 h-4 fill-current" />
+              ) : (
+                <Play className="w-4 h-4 fill-current ml-0.5" />
+              )}
+            </button>
+            {waveform.length > 0 ? (
+              <div className="flex-1 flex items-center gap-1.5 h-10 px-2">
+                {waveform.map((val, idx) => {
+                  const isPassed = idx <= progressIndex;
+                  return (
+                    <div
+                      key={idx}
+                      style={{ height: `${Math.max(15, val)}%` }}
+                      onClick={() => handleSeek(idx)}
+                      className={`flex-1 rounded-full cursor-pointer transition-all duration-150 ${
+                        isPassed ? 'bg-cyan-400' : 'bg-slate-700 hover:bg-slate-600'
+                      }`}
+                    />
+                  );
+                })}
               </div>
             ) : (
-              recLevels.map((val, idx) => (
-                <div
-                  key={idx}
-                  style={{ height: `${val}%` }}
-                  className="flex-1 min-w-[2px] rounded-full bg-rose-400/90 transition-all duration-100"
-                />
-              ))
+              <div className="flex-1 h-1.5 rounded-full bg-slate-700 overflow-hidden">
+                <div className="h-full bg-cyan-400" style={{ width: `${progressPct}%` }} />
+              </div>
             )}
-          </div>
+          </>
         ) : (
-          <div className="flex-1 flex items-center gap-1.5 h-10 px-2">
-            {waveform.map((val, idx) => {
-              const isPassed = idx <= progressIndex && isPlaying;
-              return (
-                <div
-                  key={idx}
-                  style={{ height: `${Math.max(15, val)}%` }}
-                  onClick={() => handleSeek(idx)}
-                  className={`flex-1 rounded-full transition-all duration-150 ${
-                    isPassed ? 'bg-cyan-400' : 'bg-slate-700 hover:bg-slate-600'
-                  } ${hasRealAudio ? 'cursor-pointer' : ''}`}
-                />
-              );
-            })}
+          <div className="flex-1 flex flex-col sm:flex-row sm:items-center gap-2">
+            <p className="text-[11px] text-slate-400 flex-1">{t('audio.prompt')}</p>
+            <div className="flex items-center gap-2">
+              {onAttachAudio && (
+                <button
+                  type="button"
+                  onClick={startRecording}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-rose-600/90 hover:bg-rose-500 text-white text-[11px] font-semibold transition-colors"
+                >
+                  <Mic className="w-3.5 h-3.5" />
+                  {t('audio.record')}
+                </button>
+              )}
+              {onAttachAudio && (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-[11px] font-semibold transition-colors"
+                >
+                  <Paperclip className="w-3.5 h-3.5" />
+                  {t('audio.attach')}
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -463,6 +522,7 @@ export const AudioNoteBlock: React.FC<Props> = ({
           onEnded={() => {
             setIsPlaying(false);
             setProgressIndex(0);
+            setProgressPct(0);
           }}
           className="hidden"
         />
@@ -470,12 +530,14 @@ export const AudioNoteBlock: React.FC<Props> = ({
 
       {/* Audio Transcript */}
       <div className="mt-3">
-        <div className="text-[10px] font-mono text-slate-500 uppercase mb-1">Transcript:</div>
+        <div className="text-[10px] font-mono text-slate-500 uppercase mb-1">
+          {t('audio.transcript')}:
+        </div>
         <textarea
           rows={2}
           value={block.data.transcript}
           onChange={(e) => onChange({ ...block.data, transcript: e.target.value })}
-          placeholder="Audio note transcription..."
+          placeholder={t('audio.transcriptPlaceholder')}
           className="w-full bg-transparent text-slate-300 text-xs leading-relaxed resize-none border-none outline-none focus:ring-0 placeholder:text-slate-600"
         />
       </div>

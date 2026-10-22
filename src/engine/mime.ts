@@ -47,7 +47,7 @@ export function assembleEml(capsule: CapsuleNode): string {
 
   const headers: string[] = [
     `From: ${capsule.from || 'Alexey <user@local>'}`,
-    `To: ${capsule.to || 'Claude 3.5 Sonnet <agent@local>'}`,
+    `To: ${capsule.to || 'Co-Thinker <agent@local>'}`,
     `Subject: ${capsule.subject || 'Untitled Capsule'}`,
     `Date: ${capsule.date || new Date().toUTCString()}`,
     `Message-ID: ${capsule.messageId}`,
@@ -167,7 +167,7 @@ export function parseEml(rawEml: string, fileName?: string): CapsuleNode {
   const messageId = headersMap.get('message-id') || `<capsule-${Math.random().toString(36).substring(2, 10)}@vault.local>`;
   const subject = headersMap.get('subject') || 'Untitled Capsule';
   const from = headersMap.get('from') || 'Alexey <user@local>';
-  const to = headersMap.get('to') || 'Claude 3.5 Sonnet <agent@local>';
+  const to = headersMap.get('to') || 'Co-Thinker <agent@local>';
   const dateStr = headersMap.get('date') || new Date().toUTCString();
   const inReplyTo = headersMap.get('in-reply-to') || undefined;
   
@@ -297,7 +297,7 @@ export function generateAutonomousHtml(capsule: CapsuleNode): string {
           return `
           <div style="background: #1e293b; border-left: 4px solid #10b981; border-radius: 8px; padding: 16px 20px; margin: 20px 0;">
             <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-              <span style="color: #10b981; font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em;">⚡ AI Co-Thinker Critique (${escapeHtml(block.author || 'Claude 3.5 Sonnet')})</span>
+              <span style="color: #10b981; font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em;">⚡ AI Co-Thinker Critique (${escapeHtml(block.author || 'Co-Thinker')})</span>
             </div>
             <p style="color: #f1f5f9; font-size: 15px; line-height: 1.6; margin: 0; font-style: italic;">
               "${escapeHtml(block.data.criticism)}"
@@ -361,7 +361,7 @@ export function generateAutonomousHtml(capsule: CapsuleNode): string {
           );
           const audioHtml = att
             ? `<audio controls style="width: 100%;" src="data:${(block.data as any).audioMime || att.mimeType || 'audio/mpeg'};base64,${att.content}"></audio>`
-            : `<p style="color: #94a3b8; font-size: 13px; margin: 0;">Voice note — audio payload not attached (simulated)</p>`;
+            : `<p style="color: #94a3b8; font-size: 13px; margin: 0;">Voice note — no audio attached</p>`;
           return `
             <div style="background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 16px; margin: 20px 0;">
               <div style="color: #22d3ee; font-weight: 600; font-size: 14px; margin-bottom: 8px;">🎤 Voice Thought Note ${escapeHtml((block.data as any).author || '')}</div>

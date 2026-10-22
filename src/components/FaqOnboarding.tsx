@@ -1,9 +1,8 @@
 // FAQ & onboarding — shown when the vault is empty (fresh install) and
 // available anytime from the navbar help button. Replaces the old demo seed:
 // a new vault now starts empty, and the FAQ explains the workflow instead.
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  Archive,
   ChevronDown,
   FilePlus2,
   FolderOpen,
@@ -162,7 +161,6 @@ export const FaqList: React.FC = () => {
 interface EmptyVaultProps {
   onCreateNew: () => void;
   onImportEml: (file: File) => void;
-  onLoadSample: () => void;
 }
 
 const QUICK_STEPS = [
@@ -187,7 +185,6 @@ const QUICK_STEPS = [
 export const EmptyVaultState: React.FC<EmptyVaultProps> = ({
   onCreateNew,
   onImportEml,
-  onLoadSample,
 }) => {
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -230,14 +227,6 @@ export const EmptyVaultState: React.FC<EmptyVaultProps> = ({
           >
             <FolderOpen className="w-4 h-4 text-cyan-400" />
             Импорт .eml
-          </button>
-          <button
-            type="button"
-            onClick={onLoadSample}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800/80 hover:bg-slate-800 border border-slate-700 hover:border-slate-600 text-slate-200 text-sm font-medium transition-all active:scale-95"
-          >
-            <Archive className="w-4 h-4 text-amber-400" />
-            Загрузить демо-хранилище
           </button>
           <input
             ref={fileRef}
@@ -285,11 +274,26 @@ export const FaqModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({
   isOpen,
   onClose,
 }) => {
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm"
       onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label="FAQ"
     >
       <div
         className="w-full max-w-2xl max-h-[85vh] flex flex-col rounded-2xl border border-slate-700 bg-slate-950 shadow-2xl"

@@ -95,7 +95,9 @@ export const AutonomousHtmlPreview: React.FC<Props> = ({ capsule, onDownloadEml 
 
             <div className="flex items-center gap-2 text-[10px] text-slate-500 font-mono">
               <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Signed & MIME-Valid</span>
+              <span title="RFC 5322 structure is valid; capsules are not cryptographically signed">
+                RFC 5322 valid · unsigned
+              </span>
             </div>
           </div>
 

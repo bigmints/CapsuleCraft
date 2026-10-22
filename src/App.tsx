@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import JSZip from 'jszip';
-import { CapsuleNode, VaultGraphState } from './types';
+import { CapsuleNode, CapsuleBlock, VaultGraphState, TodoItem, TodoPriority } from './types';
 import { vaultStore } from './engine/vaultStore';
 import { offlineAiResponse } from './engine/offlineAi';
 import { assembleEml, parseEml } from './engine/mime';
+import { UndoHistory } from './engine/history';
 import { Navbar, ActiveView } from './components/Navbar';
 import { VaultSidebar } from './components/VaultSidebar';
 import { BlockCanvasEditor } from './components/BlockCanvasEditor';
@@ -14,16 +15,52 @@ import { AutonomousHtmlPreview } from './components/AutonomousHtmlPreview';
 import { BenchmarkModal } from './components/BenchmarkModal';
 import { AiCoThinkModal } from './components/AiCoThinkModal';
 import { EmptyVaultState, FaqModal } from './components/FaqOnboarding';
+import { CommandPalette, PaletteAction } from './components/CommandPalette';
+import { PlanningView } from './components/PlanningView';
+import { useI18n } from './i18n';
 
-export default function App() {
+/**
+ * Insert an AI-generated block, replacing the previous one in place when the
+ * matcher says it is the same artefact (same persona's critique / same
+ * synthesis callout). Re-running Co-Think must refresh, not stack duplicates.
+ */
+function upsertBlock(
+  blocks: CapsuleBlock[],
+  candidate: CapsuleBlock,
+  matcher: (block: CapsuleBlock) => boolean,
+): { blocks: CapsuleBlock[]; replaced: boolean } {
+  const index = blocks.map((b, i) => (matcher(b) ? i : -1)).filter((i) => i >= 0).pop();
+  if (index === undefined) return { blocks: [...blocks, candidate], replaced: false };
+  const next = [...blocks];
+  next[index] = candidate;
+  return { blocks: next, replaced: true };
+}
+
+export default function App() {  const { t } = useI18n();
   const [graphState, setGraphState] = useState<VaultGraphState>(() => vaultStore.getState());
   const [selectedMessageId, setSelectedMessageId] = useState<string>('msg-001@capsuleos.local');
   const [activeView, setActiveView] = useState<ActiveView>('canvas');
   const [isBenchmarkOpen, setIsBenchmarkOpen] = useState(false);
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
   const [isFaqOpen, setIsFaqOpen] = useState(false);
+  const [isPaletteOpen, setIsPaletteOpen] = useState(false);
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Per-capsule undo history (serialized snapshots). Kept in a ref so typing
+  // does not re-render the app; `editTick` only bumps the palette's canUndo.
+  const histories = useRef<Map<string, UndoHistory>>(new Map());
+  const lastEditAt = useRef<Map<string, number>>(new Map());
+  const [editTick, setEditTick] = useState(0);
+
+  const historyFor = (messageId: string): UndoHistory => {
+    let h = histories.current.get(messageId);
+    if (!h) {
+      h = new UndoHistory();
+      histories.current.set(messageId, h);
+    }
+    return h;
+  };
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -43,20 +80,171 @@ export default function App() {
     : Array.from(graphState.nodes.values())[0];
 
   // Fresh installs start with an empty vault — the FAQ/onboarding page takes
-  // the stage until the first capsule exists (no demo seed anymore).
+  // the stage until the first capsule exists. No demo seed exists.
   const isVaultEmpty = graphState.nodes.size === 0;
 
-  const handleLoadSampleVault = useCallback(() => {
-    vaultStore.resetToStarterVault();
-    const first = Array.from(vaultStore.getState().nodes.keys())[0];
-    if (first) setSelectedMessageId(first);
-    showToast('Демо-хранилище загружено: 5 связанных капсул');
+  // Update capsule in memory (with undo history)
+  const handleUpdateCapsule = useCallback((updated: CapsuleNode) => {
+    const previous = vaultStore.getNode(updated.messageId);
+    if (previous) {
+      const snap = JSON.stringify(previous);
+      const now = Date.now();
+      const last = lastEditAt.current.get(updated.messageId) || 0;
+      // Coalesce continuous typing: one undo step per ~700ms burst.
+      if (now - last > 700) historyFor(updated.messageId).push(snap);
+      lastEditAt.current.set(updated.messageId, now);
+    }
+    vaultStore.saveNode(updated);
+    setEditTick((t) => t + 1);
   }, []);
 
-  // Update capsule in memory
-  const handleUpdateCapsule = useCallback((updated: CapsuleNode) => {
-    vaultStore.saveNode(updated);
-  }, []);
+  // ── Planning: task mutations across capsule todo blocks ─────────────────────
+  const mutateTask = useCallback(
+    (
+      capsuleId: string,
+      blockId: string,
+      itemId: string,
+      updater: (item: TodoItem) => TodoItem,
+    ) => {
+      const capsule = vaultStore.getNode(capsuleId);
+      if (!capsule) return;
+      const blocks = capsule.blocks.map((block) =>
+        block.type === 'todo_list' && block.id === blockId
+          ? {
+              ...block,
+              data: {
+                ...block.data,
+                items: (block.data.items || []).map((item) =>
+                  item.id === itemId ? updater(item) : item,
+                ),
+              },
+            }
+          : block,
+      );
+      handleUpdateCapsule({ ...capsule, blocks });
+    },
+    [handleUpdateCapsule],
+  );
+
+  const handleToggleTask = useCallback(
+    (capsuleId: string, blockId: string, itemId: string) => {
+      mutateTask(capsuleId, blockId, itemId, (item) => ({ ...item, done: !item.done }));
+    },
+    [mutateTask],
+  );
+
+  const handleUpdateTask = useCallback(
+    (capsuleId: string, blockId: string, itemId: string, patch: Partial<TodoItem>) => {
+      mutateTask(capsuleId, blockId, itemId, (item) => ({ ...item, ...patch }));
+    },
+    [mutateTask],
+  );
+
+  /** Quick add from the planning view: append to the inbox capsule's todo block. */
+  const handleAddTask = useCallback(
+    (text: string, due?: string, priority: TodoPriority = 'normal') => {
+      const item: TodoItem = {
+        id: `todo_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 5)}`,
+        text,
+        done: false,
+        due,
+        priority,
+      };
+      let target = vaultStore.getNodes().find((node) => node.tags.includes('#inbox'));
+      if (!target) target = vaultStore.getNodes()[0];
+      if (!target) {
+        target = vaultStore.createNewCapsule({
+          subject: 'Inbox',
+          tags: ['#inbox'],
+          blocks: [
+            {
+              id: `blk_todo_${Date.now()}`,
+              type: 'todo_list',
+              data: { title: 'Inbox', items: [item] },
+            },
+          ],
+        });
+      } else {
+        const todoBlock = target.blocks.find((block) => block.type === 'todo_list');
+        const blocks: CapsuleBlock[] = todoBlock
+          ? target.blocks.map((block) =>
+              block.id === todoBlock.id && block.type === 'todo_list'
+                ? { ...block, data: { ...block.data, items: [...(block.data.items || []), item] } }
+                : block,
+            )
+          : [
+              ...target.blocks,
+              {
+                id: `blk_todo_${Date.now()}`,
+                type: 'todo_list',
+                data: { title: 'Inbox', items: [item] },
+              },
+            ];
+        handleUpdateCapsule({ ...target, blocks });
+      }
+      showToast(due ? t('planning.toastAddedDue', { due }) : t('planning.toastAdded'));
+    },
+    [handleUpdateCapsule, t],
+  );
+
+  const undo = useCallback(() => {
+    const id = selectedMessageId;
+    const current = id ? vaultStore.getNode(id) : undefined;
+    if (!id || !current) return;
+    const snapshot = historyFor(id).undo(JSON.stringify(current));
+    if (snapshot === null) {
+      showToast(t('app.toast.undoEmpty'));
+      return;
+    }
+    vaultStore.saveNode(JSON.parse(snapshot));
+    lastEditAt.current.delete(id);
+    setEditTick((t) => t + 1);
+    showToast(t('app.toast.undoDone'));
+  }, [selectedMessageId, t]);
+
+  const redo = useCallback(() => {
+    const id = selectedMessageId;
+    const current = id ? vaultStore.getNode(id) : undefined;
+    if (!id || !current) return;
+    const snapshot = historyFor(id).redo(JSON.stringify(current));
+    if (snapshot === null) {
+      showToast(t('app.toast.redoEmpty'));
+      return;
+    }
+    vaultStore.saveNode(JSON.parse(snapshot));
+    lastEditAt.current.delete(id);
+    setEditTick((t) => t + 1);
+    showToast(t('app.toast.redoDone'));
+  }, [selectedMessageId, t]);
+
+  // Global keyboard: ⌘K palette, ⌘Z / ⇧⌘Z undo & redo.
+  // While typing in a field the browser's native text undo wins.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsPaletteOpen((open) => !open);
+        return;
+      }
+      const target = e.target as HTMLElement | null;
+      const typing =
+        !!target &&
+        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+      if (!mod || typing) return;
+      const key = e.key.toLowerCase();
+      if (key === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) redo();
+        else undo();
+      } else if (key === 'y') {
+        e.preventDefault();
+        redo();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [undo, redo]);
 
   // Create new blank capsule
   const handleCreateNewCapsule = useCallback(() => {
@@ -90,8 +278,8 @@ export default function App() {
     vaultStore.saveNode(newCapsule);
     setSelectedMessageId(newId);
     setActiveView('canvas');
-    showToast('Создана новая .eml капсула в оперативной памяти');
-  }, []);
+    showToast(t('app.toast.capsuleCreated'));
+  }, [t]);
 
   // Create In-Reply-To child capsule. `blocks` lets the caller inject
   // AI-generated content (offline Co-Thinker) instead of the default template.
@@ -129,8 +317,8 @@ export default function App() {
     vaultStore.saveNode(newCapsule);
     setSelectedMessageId(newId);
     setActiveView('canvas');
-    showToast(`Порождена дочерняя капсула «${finalTitle}» со связью In-Reply-To`);
-  }, [graphState.nodes]);
+    showToast(t('app.toast.replyCreated', { subject: finalTitle }));
+  }, [graphState.nodes, t]);
 
   // Delete Capsule
   const handleDeleteCapsule = useCallback((messageId: string) => {
@@ -143,8 +331,8 @@ export default function App() {
         setSelectedMessageId(remaining[0]);
       }
     }
-    showToast('Капсула удалена из RAM хранилища');
-  }, [selectedMessageId]);
+    showToast(t('app.toast.removed'));
+  }, [selectedMessageId, t]);
 
   // Import .eml file
   const handleImportEml = useCallback(async (file: File) => {
@@ -154,11 +342,11 @@ export default function App() {
       vaultStore.saveNode(parsed);
       setSelectedMessageId(parsed.messageId);
       setActiveView('canvas');
-      showToast(`Импортирован файл ${file.name} (RFC 5322)`);
+      showToast(t('app.toast.importedFile', { name: file.name }));
     } catch (err: any) {
-      showToast(`Ошибка импорта: ${err.message}`);
+      showToast(t('app.toast.importError', { message: err.message }));
     }
-  }, []);
+  }, [t]);
 
   // Export single .eml
   const handleDownloadEml = useCallback((messageId: string) => {
@@ -172,8 +360,8 @@ export default function App() {
     a.download = node.fileName || `${node.subject.replace(/[^a-zA-Z0-9_-]/g, '_')}.eml`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast(`Скачан .eml: ${a.download}`);
-  }, [graphState.nodes]);
+    showToast(t('app.toast.downloaded', { name: a.download }));
+  }, [graphState.nodes, t]);
 
   // Export whole vault as ZIP
   const handleExportVaultZip = useCallback(async () => {
@@ -193,8 +381,8 @@ export default function App() {
     a.download = `CapsuleOS_Vault_${new Date().toISOString().slice(0, 10)}.zip`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast(`Экспортирован архив Vault (${allNodes.length} .eml файлов)`);
-  }, [graphState.nodes]);
+    showToast(t('app.toast.vaultExported', { count: allNodes.length }));
+  }, [graphState.nodes, t]);
 
   // AI Co-Thinking trigger.
   // Accepts both the editor's short actions and the Co-Think modal modes:
@@ -202,11 +390,10 @@ export default function App() {
   const handleAiAction = useCallback(async (
     action: 'critique' | 'continue' | 'reply_thread' | 'data_insight' | string,
     customPrompt?: string,
-    selectedPersona?: string
   ) => {
     if (!currentCapsule) return;
     setIsAiLoading(true);
-    const persona = selectedPersona || 'Claude 3.5 Sonnet';
+    const persona = 'Co-Thinker';
 
     // Normalize modal mode names onto engine actions.
     // counter_arg -> reply_thread (child capsule), synthesis -> continue (callout).
@@ -226,8 +413,7 @@ export default function App() {
 
       const promptToSend = customPrompt || defaultPrompt;
 
-      // Offline deterministic Co-Thinker — no server, no API key needed.
-      // (Original implementation called the Gemini-backed /api/ai/co-think endpoint.)
+      // Offline deterministic Co-Thinker — local heuristics, no server or model call.
       // The engine reads the REAL capsule content (blocks, claims, CSV attachments)
       // and gets the vault context for honest related-capsule suggestions.
       await new Promise((r) => setTimeout(r, 350)); // keep spinner visible for UX
@@ -251,52 +437,64 @@ export default function App() {
           Array.isArray(aiBlocks) && aiBlocks.length > 0 ? aiBlocks : undefined
         );
       } else if (mode === 'continue') {
-        const newCallout = {
+        const newCallout: CapsuleBlock = {
           id: `blk_ai_cont_${Date.now()}`,
-          type: 'callout' as const,
+          type: 'callout',
           data: {
             title: `AI Synthesis (${persona})`,
             content: aiReply,
-            tone: 'emerald' as const,
+            tone: 'emerald',
           },
         };
-        handleUpdateCapsule({
-          ...currentCapsule,
-          blocks: [...currentCapsule.blocks, newCallout],
-        });
-        showToast(`AI Synthesis добавлен в капсулу (${persona})`);
+        const { blocks, replaced } = upsertBlock(
+          currentCapsule.blocks,
+          newCallout,
+          (b) => b.type === 'callout' && String((b.data as any).title || '').startsWith('AI Synthesis'),
+        );
+        handleUpdateCapsule({ ...currentCapsule, blocks });
+        showToast(replaced
+          ? t('app.toast.aiUpdated', { label: 'AI Synthesis', persona })
+          : t('app.toast.aiAdded', { label: 'AI Synthesis', persona }));
       } else if (mode === 'data_insight') {
-        const newCallout = {
+        const newCallout: CapsuleBlock = {
           id: `blk_ai_data_${Date.now()}`,
-          type: 'callout' as const,
+          type: 'callout',
           data: {
             title: `Data Insight (${persona})`,
             content: aiReply,
-            tone: 'blue' as const,
+            tone: 'blue',
           },
         };
-        handleUpdateCapsule({
-          ...currentCapsule,
-          blocks: [...currentCapsule.blocks, newCallout],
-        });
-        showToast(`Data Insight добавлен в капсулу (${persona})`);
+        const { blocks, replaced } = upsertBlock(
+          currentCapsule.blocks,
+          newCallout,
+          (b) => b.type === 'callout' && String((b.data as any).title || '').startsWith('Data Insight'),
+        );
+        handleUpdateCapsule({ ...currentCapsule, blocks });
+        showToast(replaced
+          ? t('app.toast.aiUpdated', { label: 'Data Insight', persona })
+          : t('app.toast.aiAdded', { label: 'Data Insight', persona }));
       } else {
-        // Insert AI Opponent block
-        const newBlock = {
+        // Insert (or refresh) the AI opponent block for this persona.
+        const newBlock: CapsuleBlock = {
           id: `blk_ai_${Date.now()}`,
-          type: 'ai_opponent_block' as const,
+          type: 'ai_opponent_block',
           author: persona,
           data: {
             criticism: aiReply,
             confidence: data.result?.confidence ?? 0.94,
-            sourceClaim: currentCapsule.subject,
+            sourceClaim: data.result?.sourceClaim || currentCapsule.subject,
           },
         };
-        handleUpdateCapsule({
-          ...currentCapsule,
-          blocks: [...currentCapsule.blocks, newBlock],
-        });
-        showToast(`AI Critique добавлен в капсулу (${persona})`);
+        const { blocks, replaced } = upsertBlock(
+          currentCapsule.blocks,
+          newBlock,
+          (b) => b.type === 'ai_opponent_block' && (b.author || '') === persona,
+        );
+        handleUpdateCapsule({ ...currentCapsule, blocks });
+        showToast(replaced
+          ? t('app.toast.aiUpdated', { label: 'AI Critique', persona })
+          : t('app.toast.aiAdded', { label: 'AI Critique', persona }));
       }
     } catch (err: any) {
       console.warn('AI API error, using client fallback:', err);
@@ -314,12 +512,88 @@ export default function App() {
         ...currentCapsule,
         blocks: [...currentCapsule.blocks, fallbackBlock],
       });
-      showToast('Добавлен блок анализа Co-Thinker');
+      showToast(t('app.toast.aiFallback'));
     } finally {
       setIsAiLoading(false);
       setIsAiModalOpen(false);
     }
-  }, [currentCapsule, graphState.nodes, handleCreateReply, handleUpdateCapsule]);
+  }, [currentCapsule, graphState.nodes, handleCreateReply, handleUpdateCapsule, t]);
+
+  // Command palette entries — navigation, actions and (from the component
+  // itself) BM25-ranked capsules. `editTick` keeps undo/redo state fresh.
+  const paletteActions = useMemo<PaletteAction[]>(() => {
+    const id = selectedMessageId;
+    const hist = id ? histories.current.get(id) : undefined;
+    return [
+      {
+        id: 'new-capsule',
+        title: t('palette.action.new.title'),
+        hint: t('palette.action.new.hint'),
+        group: t('palette.group.actions'),
+        keywords: ['new', 'создать', 'eml', 'заметка', 'create'],
+        run: handleCreateNewCapsule,
+      },
+      {
+        id: 'undo',
+        title: t('palette.action.undo.title'),
+        hint: hist?.canUndo
+          ? t('palette.action.undo.hintAvailable', { count: hist.depth })
+          : t('palette.action.undo.hintEmpty'),
+        group: t('palette.group.actions'),
+        keywords: ['undo', 'отмена', 'назад'],
+        shortcut: '⌘Z',
+        run: undo,
+      },
+      {
+        id: 'redo',
+        title: t('palette.action.redo.title'),
+        hint: hist?.canRedo ? t('palette.action.redo.hintAvailable') : t('palette.action.redo.hintEmpty'),
+        group: t('palette.group.actions'),
+        keywords: ['redo', 'повтор', 'вперёд'],
+        shortcut: '⇧⌘Z',
+        run: redo,
+      },
+      {
+        id: 'export-vault',
+        title: t('palette.action.export.title'),
+        hint: t('palette.action.export.hint'),
+        group: t('palette.group.actions'),
+        keywords: ['export', 'zip', 'backup', 'резерв'],
+        run: handleExportVaultZip,
+      },
+      {
+        id: 'benchmark',
+        title: t('palette.action.bench.title'),
+        hint: t('palette.action.bench.hint'),
+        group: t('palette.group.tools'),
+        keywords: ['bench', 'speed', 'скорость', '50k'],
+        run: () => setIsBenchmarkOpen(true),
+      },
+      {
+        id: 'cothink',
+        title: t('palette.action.cothink.title'),
+        hint: t('palette.action.cothink.hint'),
+        group: t('palette.group.tools'),
+        keywords: ['ai', 'критика', 'синтез', 'co-think'],
+        run: () => setIsAiModalOpen(true),
+      },
+      {
+        id: 'faq',
+        title: t('palette.action.faq.title'),
+        hint: t('palette.action.faq.hint'),
+        group: t('palette.group.tools'),
+        keywords: ['help', 'помощь', 'вопросы'],
+        run: () => setIsFaqOpen(true),
+      },
+      { id: 'view-editor', title: t('palette.action.view.editor'), group: t('palette.group.navigation'), keywords: t('palette.action.view.editor.keywords').split(' '), run: () => setActiveView('canvas') },
+      { id: 'view-graph', title: t('palette.action.view.graph'), group: t('palette.group.navigation'), keywords: t('palette.action.view.graph.keywords').split(' '), run: () => setActiveView('graph') },
+      { id: 'view-thread', title: t('palette.action.view.thread'), group: t('palette.group.navigation'), keywords: t('palette.action.view.thread.keywords').split(' '), run: () => setActiveView('thread') },
+      { id: 'view-planning', title: t('palette.action.view.planning'), group: t('palette.group.navigation'), keywords: t('palette.action.view.planning.keywords').split(' '), run: () => setActiveView('planning') },
+      { id: 'view-mime', title: t('palette.action.view.mime'), group: t('palette.group.navigation'), keywords: t('palette.action.view.mime.keywords').split(' '), run: () => setActiveView('mime') },
+      { id: 'view-preview', title: t('palette.action.view.preview'), group: t('palette.group.navigation'), keywords: t('palette.action.view.preview.keywords').split(' '), run: () => setActiveView('html_preview') },
+    ];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedMessageId, editTick, handleCreateNewCapsule, handleExportVaultZip, undo, redo, t]);
 
   return (
     <div className="w-screen h-screen flex flex-col bg-slate-950 text-slate-100 overflow-hidden font-sans select-none">
@@ -355,7 +629,6 @@ export default function App() {
             <EmptyVaultState
               onCreateNew={handleCreateNewCapsule}
               onImportEml={handleImportEml}
-              onLoadSample={handleLoadSampleVault}
             />
           )}
 
@@ -386,6 +659,19 @@ export default function App() {
                 setSelectedMessageId(id);
                 setActiveView('canvas');
               }}
+            />
+          )}
+
+          {!isVaultEmpty && activeView === 'planning' && (
+            <PlanningView
+              nodes={Array.from(graphState.nodes.values())}
+              onOpenCapsule={(id) => {
+                setSelectedMessageId(id);
+                setActiveView('canvas');
+              }}
+              onToggleTask={handleToggleTask}
+              onUpdateTask={handleUpdateTask}
+              onAddTask={handleAddTask}
             />
           )}
 
@@ -435,6 +721,18 @@ export default function App() {
       {/* FAQ / Help Modal */}
       <FaqModal isOpen={isFaqOpen} onClose={() => setIsFaqOpen(false)} />
 
+      {/* ⌘K command palette — search, navigation and actions */}
+      <CommandPalette
+        isOpen={isPaletteOpen}
+        onClose={() => setIsPaletteOpen(false)}
+        actions={paletteActions}
+        onOpenCapsule={(id) => {
+          setSelectedMessageId(id);
+          setActiveView('canvas');
+        }}
+        onImportEml={handleImportEml}
+      />
+
       {/* AI Co-Think Modal */}
       {currentCapsule && (
         <AiCoThinkModal
@@ -442,8 +740,8 @@ export default function App() {
           onClose={() => setIsAiModalOpen(false)}
           currentCapsule={currentCapsule}
           isLoading={isAiLoading}
-          onExecuteAi={(prompt, mode, persona) => {
-            handleAiAction(mode, prompt, persona);
+          onExecuteAi={(prompt, mode) => {
+            handleAiAction(mode, prompt);
           }}
         />
       )}

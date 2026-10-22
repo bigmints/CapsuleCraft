@@ -219,8 +219,8 @@ describe('generateOfflineAiResponse — anti-canned guarantees', () => {
   });
 
   it('personas change the framing but not the content source', () => {
-    const a = generateOfflineAiResponse('critique', financeCapsule, undefined, 'Claude 3.5 Sonnet').criticism!;
-    const b = generateOfflineAiResponse('critique', financeCapsule, undefined, 'DeepSeek-R1').criticism!;
+    const a = generateOfflineAiResponse('critique', financeCapsule, undefined, 'Co-Thinker A').criticism!;
+    const b = generateOfflineAiResponse('critique', financeCapsule, undefined, 'Co-Thinker B').criticism!;
     expect(a).not.toBe(b);
     expect(a).toContain('Анализ рынка');
     expect(b).toContain('Анализ рынка');
@@ -252,7 +252,7 @@ describe('generateOfflineAiResponse — continue / reply_thread', () => {
   });
 
   it('continue suggests a REAL related capsule from the vault', () => {
-    const r = generateOfflineAiResponse('continue', financeCapsule, undefined, 'Gemini 3.7 Flash', {
+    const r = generateOfflineAiResponse('continue', financeCapsule, undefined, 'Co-Thinker', {
       vaultNodes: [
         financeCapsule,
         {
@@ -282,7 +282,7 @@ describe('offlineAiResponse contract', () => {
     expect(r.mode).toBe('offline');
     expect(r.reply).toBeTruthy();
     expect(r.text).toBeTruthy();
-    expect(r.result.author).toBe('Claude 3.5 Sonnet');
+    expect(r.result.author).toBe('Co-Thinker');
     expect(r.result.suggestedBlock.type).toBe('ai_opponent_block');
   });
 });

@@ -16,6 +16,7 @@ export interface OfflineAiResult {
   criticism?: string;
   text?: string;
   confidence?: number;
+  sourceClaim?: string;
   suggestedBlock?: any;
   suggestedBlocks?: any[];
   subject?: string;
@@ -341,9 +342,7 @@ interface PersonaStyle {
 }
 
 const PERSONA_STYLES: Record<string, PersonaStyle> = {
-  'Claude 3.5 Sonnet': { label: 'адвокат дьявола: ищем, где модель ломается', confidence: 0.88 },
-  'Gemini 3.7 Flash': { label: 'быстрый синтез: собираем из этого рабочий план', confidence: 0.8 },
-  'DeepSeek-R1': { label: 'формальная строгость: проверяем каждое число и вывод', confidence: 0.76 },
+  'Co-Thinker': { label: 'честный разбор содержимого', confidence: 0.86 },
 };
 
 function personaStyle(persona: string): PersonaStyle {
@@ -368,7 +367,7 @@ export function generateOfflineAiResponse(
   action: string,
   capsule: any,
   prompt?: string,
-  persona: string = 'Claude 3.5 Sonnet',
+  persona: string = 'Co-Thinker',
   ctx?: VaultContext,
 ): OfflineAiResult {
   const subject: string = capsule?.subject || 'Knowledge Capsule';
@@ -556,7 +555,7 @@ export function offlineAiResponse(
   action: string,
   currentCapsule: any,
   prompt?: string,
-  persona: string = 'Claude 3.5 Sonnet',
+  persona: string = 'Co-Thinker',
   ctx?: VaultContext,
 ) {
   const result = generateOfflineAiResponse(action, currentCapsule, prompt, persona, ctx);

@@ -1,6 +1,7 @@
 import React from 'react';
-import { CapsuleBlock, TodoListBlockData, TodoItem } from '../../types';
-import { CheckSquare, Plus, Trash2, GripVertical } from 'lucide-react';
+import { CapsuleBlock, TodoListBlockData, TodoItem, TodoPriority } from '../../types';
+import { CheckSquare, Plus, Trash2 } from 'lucide-react';
+import { useI18n } from '../../i18n';
 
 interface Props {
   block: CapsuleBlock & { type: 'todo_list' };
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export const TodoBlock: React.FC<Props> = ({ block, onChange, onDelete }) => {
+  const { t } = useI18n();
   const items = block.data.items || [];
   const completedCount = items.filter((i) => i.done).length;
   const progress = items.length > 0 ? (completedCount / items.length) * 100 : 0;
@@ -41,6 +43,11 @@ export const TodoBlock: React.FC<Props> = ({ block, onChange, onDelete }) => {
     onChange({ ...block.data, items: updated });
   };
 
+  const handlePatchItem = (id: string, patch: Partial<TodoItem>) => {
+    const updated = items.map((item) => (item.id === id ? { ...item, ...patch } : item));
+    onChange({ ...block.data, items: updated });
+  };
+
   return (
     <div className="my-3 rounded-xl border border-slate-800 bg-[#0f172a]/80 p-4 shadow-md group">
       {/* Header */}
@@ -51,7 +58,7 @@ export const TodoBlock: React.FC<Props> = ({ block, onChange, onDelete }) => {
             type="text"
             value={block.data.title || 'Checklist / Actions'}
             onChange={(e) => onChange({ ...block.data, title: e.target.value })}
-            placeholder="Checklist title..."
+            placeholder={t('todo.titlePlaceholder')}
             className="bg-transparent text-slate-200 font-semibold text-sm outline-none border-none focus:ring-0 w-full"
           />
         </div>
@@ -64,7 +71,7 @@ export const TodoBlock: React.FC<Props> = ({ block, onChange, onDelete }) => {
             type="button"
             onClick={onDelete}
             className="text-xs text-slate-500 hover:text-rose-400 p-1 rounded hover:bg-slate-800"
-            title="Delete checklist"
+            title={t('todo.deleteTitle')}
           >
             <Trash2 className="w-3.5 h-3.5" />
           </button>
@@ -98,11 +105,28 @@ export const TodoBlock: React.FC<Props> = ({ block, onChange, onDelete }) => {
               type="text"
               value={item.text}
               onChange={(e) => handleTextChange(item.id, e.target.value)}
-              placeholder="Action item..."
+              placeholder={t('todo.actionPlaceholder')}
               className={`flex-1 bg-transparent text-xs outline-none border-none focus:ring-0 ${
                 item.done ? 'line-through text-slate-500' : 'text-slate-200'
               }`}
             />
+            <input
+              type="date"
+              value={item.due || ''}
+              onChange={(e) => handlePatchItem(item.id, { due: e.target.value || undefined })}
+              className="shrink-0 w-[112px] text-[10px] font-mono bg-slate-900/70 border border-slate-800 rounded px-1.5 py-0.5 text-slate-400 opacity-0 group-hover/item:opacity-100 focus:opacity-100 transition-opacity [color-scheme:dark]"
+              title={t('todo.dueTitle')}
+            />
+            <select
+              value={item.priority || 'normal'}
+              onChange={(e) => handlePatchItem(item.id, { priority: e.target.value as TodoPriority })}
+              className="shrink-0 text-[10px] font-mono bg-slate-900/70 border border-slate-800 rounded px-1 py-0.5 text-slate-400 opacity-0 group-hover/item:opacity-100 focus:opacity-100 transition-opacity"
+              title={t('todo.priorityTitle')}
+            >
+              <option value="high">high</option>
+              <option value="normal">norm</option>
+              <option value="low">low</option>
+            </select>
             <button
               type="button"
               onClick={() => handleDeleteItem(item.id)}
@@ -121,7 +145,7 @@ export const TodoBlock: React.FC<Props> = ({ block, onChange, onDelete }) => {
         className="mt-2 text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1.5 py-1 px-2 rounded hover:bg-cyan-950/30 transition-colors font-medium"
       >
         <Plus className="w-3.5 h-3.5" />
-        <span>Add item</span>
+        <span>{t('todo.addItem')}</span>
       </button>
     </div>
   );

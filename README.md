@@ -10,7 +10,7 @@ no SQL, no document store, no cloud, no lock-in. Files you can open in any mail 
 
 [![Release](https://img.shields.io/github/v/release/kostyk348/capsuleos?sort=semver&color=0ea5e9&label=release)](https://github.com/kostyk348/capsuleos/releases)
 [![CI](https://github.com/kostyk348/capsuleos/actions/workflows/ci.yml/badge.svg)](https://github.com/kostyk348/capsuleos/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-17%20passing-22c55e)](https://github.com/kostyk348/capsuleos/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-101%20passing-22c55e)](https://github.com/kostyk348/capsuleos/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Tauri](https://img.shields.io/badge/Tauri-2-FFC131?logo=tauri&logoColor=black)](https://v2.tauri.app/)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev/)
@@ -32,6 +32,18 @@ no SQL, no document store, no cloud, no lock-in. Files you can open in any mail 
 - 🧱 **Beyond Markdown.** A block canvas editor: headings, callouts, TODOs, live CSV/JSON DataGrids with charts, whiteboards, code REPL, voice notes — all inside one MIME container.
 - 🤖 **Offline co-thinker.** A deterministic local AI opponent critiques your claims, continues your threads and answers with datasets. No API key, no network.
 - ⚡ **Fast.** The real, in-browser benchmark parses **50 000 capsules in ~1.4 s** (~36k files/s) — measured, not marketing.
+
+## 🆕 What's new in v1.4.0
+
+> The "workspace that doesn't lie" release. [Full changelog →](CHANGELOG.md)
+
+| | |
+|---|---|
+| 📋 **Planning layer** | Tasks across the whole vault: month grid, overdue / today / week buckets, priorities, ICS (VTODO) export. Due dates and priorities live inside the `.eml` TODO blocks |
+| ⌨️ **Command palette + history** | `Ctrl/Cmd+K` searches every action; undo/redo keeps capsule edits recoverable |
+| 🌍 **RU / EN** | Full interface localization with a persistent toggle — Russian default, complete English |
+| 🎙️ **Real audio only** | A new voice note starts microphone capture immediately; if the mic is unavailable it offers a file picker. Fake waveforms, fake timers and the `SIMULATED` badge are gone |
+| 🧹 **No demo content** | Fresh installs start truly empty — the sample vault, its loader and every demo string are removed |
 
 ## 🆕 What's new in v1.3.0
 
@@ -65,7 +77,7 @@ no SQL, no document store, no cloud, no lock-in. Files you can open in any mail 
 |---|---|
 | 🔧 **13 bugs fixed** | Phantom attachments, dead Co-Think modes, slash-menu false triggers, double-hash tag chips, dead ⌘K, stuck REPL, graph without zoom, invisible thread blocks… |
 | 🎙 **Real audio notes** | Voice memos are now actual MIME audio attachments with a click-to-seek waveform — recorded straight from the microphone, `SIMULATED` badge finally means something else |
-| 🗺 **Empty-vault onboarding** | First launch no longer seeds demo notes: you get a clean vault with a built-in FAQ instead. The five-capsule sample vault is one click away |
+| 🗺 **Empty-vault onboarding** | First launch no longer seeds demo notes: you get a clean vault with a built-in FAQ instead |
 | 📊 **Real benchmark** | The "SIMD 50k" modal now really pushes 50k synthetic `.eml` files through the parse engine. No more fake setInterval numbers |
 | 🧪 **17-test suite** | MIME round-trip, phantom-attachment regression, HTML escaping, wikilinks, caret rules — wired into CI |
 | 📤 **Standalone HTML export** | Preview view exports a self-contained `.html` dashboard |
@@ -219,7 +231,7 @@ macOS builds are not shipped yet — build from source below.
 
 ### First launch
 
-CapsuleOS starts with an **empty vault** — no demo notes. A built-in onboarding page takes the stage instead: it explains the `.eml` concept, answers the frequent questions and offers three actions — create a capsule, import an `.eml`, or load a five-capsule sample vault (every block type included). The FAQ stays reachable anytime via the **FAQ** button in the top bar.
+CapsuleOS starts with an **empty vault** — no demo notes. A built-in onboarding page takes the stage instead: it explains the `.eml` concept, answers the frequent questions and offers two actions — create a capsule or import an `.eml`. The FAQ stays reachable anytime via the **FAQ** button in the top bar.
 
 <img src="screenshots/capsuleos-faq.png" alt="CapsuleOS first launch — empty vault with built-in FAQ" width="100%">
 
@@ -252,7 +264,7 @@ npm ci
 npm run dev            # Vite dev server on http://localhost:5173
 npm run build          # production build into dist/
 npm run preview        # serve the build
-npm test               # vitest engine suite (17 tests)
+npm test               # vitest engine suite (101 tests)
 ```
 
 In a plain browser the vault falls back to `localStorage`; native file access is Tauri-only.
