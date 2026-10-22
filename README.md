@@ -10,7 +10,7 @@ no SQL, no document store, no cloud, no lock-in. Files you can open in any mail 
 
 [![Release](https://img.shields.io/github/v/release/kostyk348/capsuleos?sort=semver&color=0ea5e9&label=release)](https://github.com/kostyk348/capsuleos/releases)
 [![CI](https://github.com/kostyk348/capsuleos/actions/workflows/ci.yml/badge.svg)](https://github.com/kostyk348/capsuleos/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-101%20passing-22c55e)](https://github.com/kostyk348/capsuleos/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-104%20passing-22c55e)](https://github.com/kostyk348/capsuleos/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Tauri](https://img.shields.io/badge/Tauri-2-FFC131?logo=tauri&logoColor=black)](https://v2.tauri.app/)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev/)
@@ -40,6 +40,7 @@ no SQL, no document store, no cloud, no lock-in. Files you can open in any mail 
 | | |
 |---|---|
 | 📋 **Planning layer** | Tasks across the whole vault: month grid, overdue / today / week buckets, priorities, ICS (VTODO) export. Due dates and priorities live inside the `.eml` TODO blocks |
+| 🗂 **Kanban + `/task`** | To do / In progress / Done board with drag-and-drop, per-card status, and `/task` converts the paragraph you are typing into a trackable task |
 | ⌨️ **Command palette + history** | `Ctrl/Cmd+K` searches every action; undo/redo keeps capsule edits recoverable |
 | 🌍 **RU / EN** | Full interface localization with a persistent toggle — Russian default, complete English |
 | 🎙️ **Real audio only** | A new voice note starts microphone capture immediately; if the mic is unavailable it offers a file picker. Fake waveforms, fake timers and the `SIMULATED` badge are gone |
@@ -264,7 +265,7 @@ npm ci
 npm run dev            # Vite dev server on http://localhost:5173
 npm run build          # production build into dist/
 npm run preview        # serve the build
-npm test               # vitest engine suite (101 tests)
+npm test               # vitest engine suite (104 tests)
 ```
 
 In a plain browser the vault falls back to `localStorage`; native file access is Tauri-only.

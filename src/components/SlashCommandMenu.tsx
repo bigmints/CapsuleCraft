@@ -13,11 +13,12 @@ import {
   Lightbulb,
   CheckSquare,
 } from 'lucide-react';
+import { useI18n } from '../i18n';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  onSelect: (type: BlockType, extraData?: any) => void;
+  onSelect: (type: BlockType, extraData?: any, commandId?: string) => void;
   position?: { top: number; left: number };
 }
 
@@ -41,47 +42,64 @@ export const SlashCommandMenu: React.FC<Props> = ({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const menuRef = useRef<HTMLDivElement>(null);
 
+  const { t } = useI18n();
   const commands: CommandItem[] = [
     {
       id: 'h1',
       type: 'heading',
-      title: 'Заголовок H1',
-      description: 'Крупный раздел документа',
+      title: t('slash.h1'),
+      description: t('slash.h1.desc'),
       icon: Heading1,
       extraData: { level: 1, text: '' },
     },
     {
       id: 'h2',
       type: 'heading',
-      title: 'Заголовок H2',
-      description: 'Подраздел или блок гипотезы',
+      title: t('slash.h2'),
+      description: t('slash.h2.desc'),
       icon: Heading2,
       extraData: { level: 2, text: '' },
     },
     {
       id: 'p',
       type: 'paragraph',
-      title: 'Текст / Абзац',
-      description: 'Чистый типографический текст',
+      title: t('slash.paragraph'),
+      description: t('slash.paragraph.desc'),
       icon: AlignLeft,
       extraData: { text: '' },
     },
     {
+      id: 'task',
+      type: 'todo_list',
+      title: t('slash.task'),
+      description: t('slash.task.desc'),
+      icon: CheckSquare,
+      badge: '/task',
+    },
+    {
+      id: 'todo',
+      type: 'todo_list',
+      title: t('slash.todo'),
+      description: t('slash.todo.desc'),
+      icon: CheckSquare,
+      extraData: {
+        title: '',
+        items: [{ id: `td_${Date.now().toString(36)}`, text: '', done: false, status: 'todo' }],
+      },
+    },
+    {
       id: 'ai_critique',
       type: 'ai_opponent_block',
-      title: 'AI Co-Thinker Critique',
-      description: 'Контраргумент и проверка рисков от нейросети',
+      title: t('slash.ai'),
+      description: t('slash.ai.desc'),
       icon: Sparkles,
       badge: 'Alt+C',
-      extraData: {
-        criticism: 'Критический анализ исходной посылки: необходимо учесть скрытые риски масштабирования.',
-      },
     },
     {
       id: 'datagrid',
       type: 'data_grid_view',
-      title: 'Live DataGrid & Chart',
-      description: 'Интерактивная таблица, привязанная к CSV через CID',
+      title: t('slash.data'),
+      description: t('slash.data.desc'),
       icon: FileSpreadsheet,
       badge: 'MIME CID',
       extraData: {
@@ -93,8 +111,8 @@ export const SlashCommandMenu: React.FC<Props> = ({
     {
       id: 'whiteboard',
       type: 'interactive_canvas',
-      title: 'Whiteboard / MindMap',
-      description: 'Бесконечный векторный холст для визуального мышления',
+      title: t('slash.canvas'),
+      description: t('slash.canvas.desc'),
       icon: Palette,
       badge: 'Vector',
       extraData: {
@@ -104,50 +122,33 @@ export const SlashCommandMenu: React.FC<Props> = ({
     {
       id: 'code',
       type: 'code_repl',
-      title: 'Код / REPL Block',
-      description: 'Исполняемая ячейка JavaScript / Python',
+      title: t('slash.code'),
+      description: t('slash.code.desc'),
       icon: Code2,
       badge: 'Executable',
       extraData: {
         language: 'javascript',
-        code: '// JavaScript / REPL execution\nconsole.log("Calculated metrics:", 42);',
+        code: '',
       },
     },
     {
       id: 'audio',
       type: 'audio_note',
-      title: 'Голосовая заметка',
-      description: 'Аудио-запись с визуализацией формы волны',
+      title: t('slash.audio'),
+      description: t('slash.audio.desc'),
       icon: Mic,
       badge: 'Voice',
-      extraData: {
-        duration: '0:24',
-        transcript: 'Голосовая заметка синтеза...',
-        waveform: [20, 50, 80, 100, 60, 40, 90, 70, 30],
-        author: 'Alexey (Voice)',
-      },
     },
     {
       id: 'callout',
       type: 'callout',
-      title: 'Callout / Выделение',
-      description: 'Инвариант, идея или предупреждение',
+      title: t('slash.callout'),
+      description: t('slash.callout.desc'),
       icon: Lightbulb,
       extraData: {
-        title: 'Ключевая идея',
-        content: 'Все данные сохраняются в чистый .eml файл без внешних баз данных.',
+        title: '',
+        content: '',
         tone: 'emerald',
-      },
-    },
-    {
-      id: 'todo',
-      type: 'todo_list',
-      title: 'Чек-лист / Задачи',
-      description: 'Интерактивный список шагов',
-      icon: CheckSquare,
-      extraData: {
-        title: 'Шаги валидации',
-        items: [{ id: '1', text: 'Собрать обратную связь', done: false }],
       },
     },
   ];
@@ -180,7 +181,7 @@ export const SlashCommandMenu: React.FC<Props> = ({
         e.preventDefault();
         if (filtered[selectedIndex]) {
           const item = filtered[selectedIndex];
-          onSelect(item.type, item.extraData);
+          onSelect(item.type, item.extraData, item.id);
           onClose();
         }
       }
@@ -225,7 +226,7 @@ export const SlashCommandMenu: React.FC<Props> = ({
               key={item.id}
               type="button"
               onClick={() => {
-                onSelect(item.type, item.extraData);
+                onSelect(item.type, item.extraData, item.id);
                 onClose();
               }}
               onMouseEnter={() => setSelectedIndex(idx)}

@@ -59,6 +59,7 @@ export const BlockCanvasEditor: React.FC<Props> = ({
 }) => {
   const [showMeta, setShowMeta] = useState(true);
   const [slashMenuOpen, setSlashMenuOpen] = useState(false);
+  const [slashSource, setSlashSource] = useState<{ index: number; text: string } | null>(null);
   const [tagInput, setTagInput] = useState('');
   const [hoveredBlockIndex, setHoveredBlockIndex] = useState<number | null>(null);
 
@@ -125,7 +126,7 @@ export const BlockCanvasEditor: React.FC<Props> = ({
           id,
           type: 'ai_opponent_block',
           author: 'Co-Thinker',
-          data: extraData || { criticism: 'AI Co-Thinker critical hypothesis...' },
+          data: extraData || { criticism: '' },
         };
         break;
       case 'data_grid_view': {
@@ -189,7 +190,7 @@ export const BlockCanvasEditor: React.FC<Props> = ({
           type: 'code_repl',
           data: extraData || {
             language: 'javascript',
-            code: '// JavaScript Calculation\nconst arr = [10, 20, 30];\nconsole.log("Sum:", arr.reduce((a, b) => a + b, 0));',
+            code: '',
           },
         };
         break;
@@ -210,8 +211,8 @@ export const BlockCanvasEditor: React.FC<Props> = ({
           id,
           type: 'callout',
           data: extraData || {
-            title: 'Инвариант',
-            content: 'Zero-DB архитектура обеспечивает бесконечную переносимость данных.',
+            title: '',
+            content: '',
             tone: 'emerald',
           },
         };
@@ -221,8 +222,8 @@ export const BlockCanvasEditor: React.FC<Props> = ({
           id,
           type: 'todo_list',
           data: extraData || {
-            title: 'План действий',
-            items: [{ id: '1', text: 'Провести когортный стресс-тест', done: false }],
+            title: '',
+            items: [{ id: `td_${Date.now().toString(36)}`, text: '', done: false, status: 'todo' }],
           },
         };
         break;
@@ -238,6 +239,42 @@ export const BlockCanvasEditor: React.FC<Props> = ({
     const newBlocks = [...capsule.blocks];
     newBlocks.splice(insertIdx, 0, newBlock);
     onUpdateCapsule({ ...capsule, blocks: newBlocks });
+  };
+
+  /**
+   * `/task` converts the paragraph the menu was opened from into a todo block:
+   * every non-empty line becomes one trackable task. With no text it inserts a
+   * single empty task. Other commands keep their normal insert behaviour.
+   */
+  const handleSlashSelect = (type: BlockType, extraData?: any, commandId?: string) => {
+    if (commandId === 'task') {
+      const sourceText = slashSource?.text.trim() || '';
+      const lines = sourceText ? sourceText.split(/\n+/).map((line) => line.trim()).filter(Boolean) : [''];
+      const items = lines.map((text, i) => ({
+        id: `td_${Date.now().toString(36)}_${i}`,
+        text,
+        done: false,
+        status: 'todo' as const,
+      }));
+      if (slashSource && sourceText) {
+        const taskBlock: CapsuleBlock = {
+          id: `blk_task_${Date.now().toString(36)}`,
+          type: 'todo_list',
+          data: { items },
+        };
+        onUpdateCapsule({
+          ...capsule,
+          blocks: capsule.blocks.map((b, i) => (i === slashSource.index ? taskBlock : b)),
+        });
+      } else {
+        insertBlock('todo_list', { items });
+      }
+      setSlashSource(null);
+      setSlashMenuOpen(false);
+      return;
+    }
+    insertBlock(type, extraData);
+    setSlashSource(null);
   };
 
   const handleUpdateAttachment = (cid: string, newContent: string, mimeType?: string, name?: string) => {
@@ -546,6 +583,7 @@ export const BlockCanvasEditor: React.FC<Props> = ({
                       // or after whitespace — never for "and/or", dates or URLs.
                       if (shouldOpenSlashMenu(ta.value, caret)) {
                         e.preventDefault();
+                        setSlashSource({ index, text: ta.value });
                         setSlashMenuOpen(true);
                       }
                     }
@@ -639,7 +677,10 @@ export const BlockCanvasEditor: React.FC<Props> = ({
           <div className="pt-2 flex items-center justify-center">
             <button
               type="button"
-              onClick={() => setSlashMenuOpen(true)}
+              onClick={() => {
+                setSlashSource(null);
+                setSlashMenuOpen(true);
+              }}
               className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900/60 hover:bg-slate-850 text-slate-400 hover:text-cyan-300 border border-dashed border-slate-700 hover:border-cyan-500/40 text-xs font-medium transition-all shadow-[0_0_10px_rgba(0,0,0,0.3)]"
             >
               <Plus className="w-4 h-4 text-cyan-400" />
@@ -652,7 +693,7 @@ export const BlockCanvasEditor: React.FC<Props> = ({
         <SlashCommandMenu
           isOpen={slashMenuOpen}
           onClose={() => setSlashMenuOpen(false)}
-          onSelect={(type, extraData) => insertBlock(type, extraData)}
+          onSelect={(type, extraData, commandId) => handleSlashSelect(type, extraData, commandId)}
         />
       </div>
     </div>

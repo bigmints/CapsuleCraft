@@ -6,7 +6,7 @@
  * "due Friday" must survive a timezone or DST change unchanged.
  */
 
-import { CapsuleNode, TodoItem, TodoPriority } from '../types';
+import { CapsuleNode, TaskStatus, TodoItem, TodoPriority } from '../types';
 
 export type TaskPriority = TodoPriority;
 
@@ -138,7 +138,7 @@ export function collectTasks(capsules: CapsuleNode[]): PlannedTask[] {
 }
 
 export function bucketOf(task: PlannedTask, today: string): BucketId {
-  if (task.item.done) return 'done';
+  if (taskStatus(task.item) === 'done') return 'done';
   const due = task.item.due;
   if (!isDateKey(due)) return 'none';
   const delta = daysBetween(today, due!);
@@ -148,6 +148,24 @@ export function bucketOf(task: PlannedTask, today: string): BucketId {
   if (delta <= 7) return 'week';
   return 'later';
 }
+
+/** Explicit status when present; legacy items only carry the `done` flag. */
+export function taskStatus(item: TodoItem): TaskStatus {
+  if (item.status) return item.status;
+  return item.done ? 'done' : 'todo';
+}
+
+/** Kanban columns: fixed order, every task in exactly one column. */
+export function groupByStatus(tasks: PlannedTask[]): Record<TaskStatus, PlannedTask[]> {
+  const columns: Record<TaskStatus, PlannedTask[]> = { todo: [], doing: [], done: [] };
+  for (const task of tasks) {
+    columns[taskStatus(task.item)].push(task);
+  }
+  for (const id of KANBAN_ORDER) columns[id] = sortTasks(columns[id]);
+  return columns;
+}
+
+export const KANBAN_ORDER: TaskStatus[] = ['todo', 'doing', 'done'];
 
 function compareTasks(a: PlannedTask, b: PlannedTask): number {
   const dueA = isDateKey(a.item.due) ? a.item.due! : '9999-12-31';
@@ -276,7 +294,9 @@ export function buildIcs(tasks: PlannedTask[], options: IcsOptions = {}): string
   const now = options.now || new Date();
   const stamp = formatUtcStamp(now);
   const calendarName = options.calendarName || 'CapsuleOS Planning';
-  const selected = options.includeCompleted ? tasks : tasks.filter((t) => !t.item.done);
+  const selected = options.includeCompleted
+    ? tasks
+    : tasks.filter((t) => taskStatus(t.item) !== 'done');
 
   const lines: string[] = [
     'BEGIN:VCALENDAR',
@@ -302,12 +322,13 @@ export function buildIcs(tasks: PlannedTask[], options: IcsOptions = {}): string
     }
     lines.push(`SUMMARY:${escapeIcsText(summary)}`);
     lines.push(`DESCRIPTION:${escapeIcsText(descriptionParts.join('\n'))}`);
-    lines.push(`STATUS:${task.item.done ? 'COMPLETED' : 'NEEDS-ACTION'}`);
+    const status = taskStatus(task.item);
+    lines.push(`STATUS:${status === 'done' ? 'COMPLETED' : status === 'doing' ? 'IN-PROCESS' : 'NEEDS-ACTION'}`);
     lines.push(`PRIORITY:${icsPriority(task.item.priority as TaskPriority | undefined)}`);
     if (task.capsuleTags.length) {
       lines.push(`CATEGORIES:${task.capsuleTags.map((tag) => escapeIcsText(tag)).join(',')}`);
     }
-    if (task.item.done) {
+    if (status === 'done') {
       lines.push('PERCENT-COMPLETE:100');
     }
     lines.push('END:VTODO');

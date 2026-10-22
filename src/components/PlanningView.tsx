@@ -14,19 +14,22 @@ import {
   RotateCcw,
   Sun,
 } from 'lucide-react';
-import { CapsuleNode, TodoItem, TodoPriority } from '../types';
+import { CapsuleNode, TaskStatus, TodoItem, TodoPriority } from '../types';
 import {
   bucketOf,
   buildIcs,
   collectTasks,
+  groupByStatus,
   groupTasks,
   humanDate,
   icsFileName,
+  KANBAN_ORDER,
   monthGrid,
   monthLabel,
   parseDateKey,
   PlannedTask,
   taskStats,
+  taskStatus,
   tasksOnDay,
   toDateKey,
   type BucketId,
@@ -66,6 +69,24 @@ const PRIORITY_CLASS: Record<TodoPriority, string> = {
   low: 'text-slate-500 bg-slate-900 border-slate-800',
 };
 
+const STATUS_KEY: Record<TaskStatus, TranslationKey> = {
+  todo: 'status.todo',
+  doing: 'status.doing',
+  done: 'status.done',
+};
+
+const STATUS_ACCENT: Record<TaskStatus, string> = {
+  todo: 'text-slate-300 border-slate-700',
+  doing: 'text-cyan-300 border-cyan-800/60',
+  done: 'text-emerald-300 border-emerald-800/60',
+};
+
+const STATUS_DOT: Record<TaskStatus, string> = {
+  todo: 'bg-slate-400',
+  doing: 'bg-cyan-400 animate-pulse',
+  done: 'bg-emerald-400',
+};
+
 const BUCKET_ACCENT: Record<string, string> = {
   overdue: 'text-rose-400',
   today: 'text-cyan-300',
@@ -103,6 +124,8 @@ export const PlanningView: React.FC<Props> = ({
   });
   const [focusDay, setFocusDay] = useState<string | null>(null);
   const [showDone, setShowDone] = useState(false);
+  const [viewMode, setViewMode] = useState<'agenda' | 'kanban'>('agenda');
+  const [draggingTask, setDraggingTask] = useState<string | null>(null);
   const [quickText, setQuickText] = useState('');
   const [quickDue, setQuickDue] = useState(today);
   const [quickPriority, setQuickPriority] = useState<TodoPriority>('normal');
@@ -126,9 +149,11 @@ export const PlanningView: React.FC<Props> = ({
   }, [tasks]);
 
   const sections = useMemo(() => {
-    const visible = showDone ? tasks : tasks.filter((t) => !t.item.done);
+    const visible = showDone ? tasks : tasks.filter((t) => taskStatus(t.item) !== 'done');
     return groupTasks(visible, today);
   }, [tasks, today, showDone]);
+
+  const board = useMemo(() => groupByStatus(tasks), [tasks]);
 
   const focusTasks = focusDay ? tasksOnDay(tasks, focusDay, showDone) : [];
 
@@ -159,7 +184,7 @@ export const PlanningView: React.FC<Props> = ({
   };
 
   const renderTask = (task: PlannedTask) => {
-    const overdue = !task.item.done && bucketOf(task, today) === 'overdue';
+    const overdue = taskStatus(task.item) !== 'done' && bucketOf(task, today) === 'overdue';
     return (
       <div
         key={`${task.blockId}:${task.item.id}`}
@@ -266,6 +291,30 @@ export const PlanningView: React.FC<Props> = ({
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <div className="flex rounded-lg border border-slate-800 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setViewMode('agenda')}
+                className={`text-[11px] font-mono px-2.5 py-1.5 transition-colors ${
+                  viewMode === 'agenda'
+                    ? 'bg-cyan-500/15 text-cyan-300'
+                    : 'bg-slate-900 text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {t('planning.viewAgenda')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('kanban')}
+                className={`text-[11px] font-mono px-2.5 py-1.5 border-l border-slate-800 transition-colors ${
+                  viewMode === 'kanban'
+                    ? 'bg-cyan-500/15 text-cyan-300'
+                    : 'bg-slate-900 text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {t('planning.viewKanban')}
+              </button>
+            </div>
             <button
               type="button"
               onClick={() => setShowDone((v) => !v)}
@@ -311,6 +360,7 @@ export const PlanningView: React.FC<Props> = ({
           ))}
         </div>
 
+        {viewMode === 'agenda' ? (
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(280px,340px)_1fr] gap-4 items-start">
           {/* Month calendar */}
           <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-3">
@@ -494,6 +544,113 @@ export const PlanningView: React.FC<Props> = ({
             )}
           </div>
         </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-start">
+            {KANBAN_ORDER.map((status) => (
+              <div
+                key={status}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  const key = event.dataTransfer.getData('text/plain');
+                  const task = tasks.find((candidate) => `${candidate.blockId}:${candidate.item.id}` === key);
+                  setDraggingTask(null);
+                  if (!task) return;
+                  onUpdateTask(task.capsuleId, task.blockId, task.item.id, {
+                    status,
+                    done: status === 'done',
+                  });
+                }}
+                className="rounded-xl border border-slate-800 bg-slate-900/40 p-2 min-h-[360px]"
+              >
+                <div className="flex items-center gap-2 px-1.5 pb-2 mb-2 border-b border-slate-800">
+                  <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[status]}`} />
+                  <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-300">
+                    {t(STATUS_KEY[status])}
+                  </h3>
+                  <span className="text-[10px] font-mono text-slate-600">{board[status].length}</span>
+                </div>
+
+                <div className="space-y-2">
+                  {board[status].length === 0 ? (
+                    <p className="text-[10px] font-mono text-slate-600 text-center py-6 px-2">
+                      {t('planning.boardEmpty')}
+                    </p>
+                  ) : (
+                    board[status].map((task) => {
+                      const key = `${task.blockId}:${task.item.id}`;
+                      const overdue = status !== 'done' && bucketOf(task, today) === 'overdue';
+                      return (
+                        <div
+                          key={key}
+                          draggable
+                          onDragStart={(event) => {
+                            event.dataTransfer.setData('text/plain', key);
+                            event.dataTransfer.effectAllowed = 'move';
+                            setDraggingTask(key);
+                          }}
+                          onDragEnd={() => setDraggingTask(null)}
+                          className={`rounded-lg border bg-slate-950/70 p-2.5 cursor-grab active:cursor-grabbing transition-opacity ${
+                            draggingTask === key ? 'opacity-40' : 'opacity-100'
+                          } ${STATUS_ACCENT[status]}`}
+                        >
+                          <div className={`text-xs leading-snug break-words ${
+                            status === 'done' ? 'text-slate-500 line-through' : 'text-slate-200'
+                          }`}>
+                            {task.item.text || t('todo.actionPlaceholder')}
+                          </div>
+                          <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[9px] font-mono">
+                            <button
+                              type="button"
+                              onClick={() => onOpenCapsule(task.capsuleId)}
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-400 hover:text-cyan-300 max-w-[180px]"
+                              title={t('planning.openCapsule', { subject: task.capsuleSubject })}
+                            >
+                              <ExternalLink className="w-2.5 h-2.5 shrink-0" />
+                              <span className="truncate">{task.capsuleSubject}</span>
+                            </button>
+                            {task.item.due && (
+                              <span className={`px-1.5 py-0.5 rounded border ${
+                                overdue
+                                  ? 'text-rose-300 bg-rose-950/50 border-rose-900/60'
+                                  : 'text-slate-400 bg-slate-900 border-slate-800'
+                              }`}>
+                                {humanDate(task.item.due)}
+                              </span>
+                            )}
+                            <span className={`px-1.5 py-0.5 rounded border ${
+                              PRIORITY_CLASS[(task.item.priority || 'normal') as TodoPriority]
+                            }`}>
+                              {task.item.priority === 'high' ? 'high' : task.item.priority === 'low' ? 'low' : 'norm'}
+                            </span>
+                          </div>
+                          <select
+                            value={taskStatus(task.item)}
+                            onChange={(event) => {
+                              const next = event.target.value as TaskStatus;
+                              onUpdateTask(task.capsuleId, task.blockId, task.item.id, {
+                                status: next,
+                                done: next === 'done',
+                              });
+                            }}
+                            className="mt-1.5 w-full text-[10px] font-mono bg-slate-900 border border-slate-800 rounded px-1.5 py-1 text-slate-400"
+                            title={t('planning.statusTitle')}
+                          >
+                            {KANBAN_ORDER.map((option) => (
+                              <option key={option} value={option}>
+                                {t(STATUS_KEY[option])}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

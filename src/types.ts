@@ -86,11 +86,14 @@ export interface CalloutBlockData {
 }
 
 export type TodoPriority = 'low' | 'normal' | 'high';
+export type TaskStatus = 'todo' | 'doing' | 'done';
 
 export interface TodoItem {
   id: string;
   text: string;
   done: boolean;
+  /** Explicit board status. Falls back to `done ? 'done' : 'todo'` when absent. */
+  status?: TaskStatus;
   /** Local calendar day (`YYYY-MM-DD`), not a UTC instant. */
   due?: string;
   priority?: TodoPriority;

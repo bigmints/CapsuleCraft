@@ -128,7 +128,10 @@ export default function App() {  const { t } = useI18n();
 
   const handleToggleTask = useCallback(
     (capsuleId: string, blockId: string, itemId: string) => {
-      mutateTask(capsuleId, blockId, itemId, (item) => ({ ...item, done: !item.done }));
+      mutateTask(capsuleId, blockId, itemId, (item) => {
+        const done = !item.done;
+        return { ...item, done, status: done ? 'done' : 'todo' };
+      });
     },
     [mutateTask],
   );
@@ -147,6 +150,7 @@ export default function App() {  const { t } = useI18n();
         id: `todo_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 5)}`,
         text,
         done: false,
+        status: 'todo',
         due,
         priority,
       };

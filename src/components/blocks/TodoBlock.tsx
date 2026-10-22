@@ -1,13 +1,19 @@
 import React from 'react';
-import { CapsuleBlock, TodoListBlockData, TodoItem, TodoPriority } from '../../types';
+import { CapsuleBlock, TodoListBlockData, TodoItem, TodoPriority, TaskStatus } from '../../types';
 import { CheckSquare, Plus, Trash2 } from 'lucide-react';
-import { useI18n } from '../../i18n';
+import { useI18n, type TranslationKey } from '../../i18n';
 
 interface Props {
   block: CapsuleBlock & { type: 'todo_list' };
   onChange: (updatedData: TodoListBlockData) => void;
   onDelete: () => void;
 }
+
+const STATUS_KEY: Record<TaskStatus, TranslationKey> = {
+  todo: 'status.todo',
+  doing: 'status.doing',
+  done: 'status.done',
+};
 
 export const TodoBlock: React.FC<Props> = ({ block, onChange, onDelete }) => {
   const { t } = useI18n();
@@ -16,9 +22,11 @@ export const TodoBlock: React.FC<Props> = ({ block, onChange, onDelete }) => {
   const progress = items.length > 0 ? (completedCount / items.length) * 100 : 0;
 
   const handleToggle = (id: string) => {
-    const updated = items.map((item) =>
-      item.id === id ? { ...item, done: !item.done } : item
-    );
+    const updated = items.map((item) => {
+      if (item.id !== id) return item;
+      const done = !item.done;
+      return { ...item, done, status: done ? 'done' : 'todo' } as TodoItem;
+    });
     onChange({ ...block.data, items: updated });
   };
 
@@ -34,6 +42,7 @@ export const TodoBlock: React.FC<Props> = ({ block, onChange, onDelete }) => {
       id: `td_${Date.now().toString(36)}`,
       text: '',
       done: false,
+      status: 'todo',
     };
     onChange({ ...block.data, items: [...items, newItem] });
   };
@@ -56,7 +65,7 @@ export const TodoBlock: React.FC<Props> = ({ block, onChange, onDelete }) => {
           <CheckSquare className="w-4 h-4 text-cyan-400 shrink-0" />
           <input
             type="text"
-            value={block.data.title || 'Checklist / Actions'}
+            value={block.data.title || ''}
             onChange={(e) => onChange({ ...block.data, title: e.target.value })}
             placeholder={t('todo.titlePlaceholder')}
             className="bg-transparent text-slate-200 font-semibold text-sm outline-none border-none focus:ring-0 w-full"
@@ -126,6 +135,21 @@ export const TodoBlock: React.FC<Props> = ({ block, onChange, onDelete }) => {
               <option value="high">high</option>
               <option value="normal">norm</option>
               <option value="low">low</option>
+            </select>
+            <select
+              value={item.status || (item.done ? 'done' : 'todo')}
+              onChange={(e) => {
+                const status = e.target.value as TaskStatus;
+                handlePatchItem(item.id, { status, done: status === 'done' });
+              }}
+              className="shrink-0 text-[10px] font-mono bg-slate-900/70 border border-slate-800 rounded px-1 py-0.5 text-slate-400 opacity-0 group-hover/item:opacity-100 focus:opacity-100 transition-opacity"
+              title={t('planning.statusTitle')}
+            >
+              {(Object.keys(STATUS_KEY) as TaskStatus[]).map((status) => (
+                <option key={status} value={status}>
+                  {t(STATUS_KEY[status])}
+                </option>
+              ))}
             </select>
             <button
               type="button"

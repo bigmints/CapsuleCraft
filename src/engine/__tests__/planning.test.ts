@@ -7,11 +7,14 @@ import {
   daysBetween,
   escapeIcsText,
   foldIcsLine,
+  groupByStatus,
   groupTasks,
   isDateKey,
+  KANBAN_ORDER,
   monthGrid,
   parseDateKey,
   taskStats,
+  taskStatus,
   tasksOnDay,
   toDateKey,
 } from '../planning';
@@ -249,5 +252,29 @@ describe('ICS export (RFC 5545)', () => {
     const ics = buildIcs([task('x', 'someday', false)]);
     expect(ics).not.toContain('DUE');
     expect(ics).toContain('STATUS:NEEDS-ACTION');
+  });
+});
+
+describe('kanban status', () => {
+  it('falls back to the legacy done flag when status is absent', () => {
+    expect(taskStatus({ id: '1', text: 'a', done: false })).toBe('todo');
+    expect(taskStatus({ id: '2', text: 'b', done: true })).toBe('done');
+  });
+
+  it('respects an explicit status over the done flag', () => {
+    expect(taskStatus({ id: '1', text: 'a', done: false, status: 'doing' })).toBe('doing');
+  });
+
+  it('puts every task into exactly one fixed column', () => {
+    const tasks = [
+      task('a', 'todo task'),
+      { ...task('b', 'doing task'), item: { ...task('b', 'doing task').item, status: 'doing' as const } },
+      task('c', 'done task', true),
+    ];
+    const board = groupByStatus(tasks);
+    expect(KANBAN_ORDER).toEqual(['todo', 'doing', 'done']);
+    expect(board.todo.map((t) => t.item.id)).toEqual(['a']);
+    expect(board.doing.map((t) => t.item.id)).toEqual(['b']);
+    expect(board.done.map((t) => t.item.id)).toEqual(['c']);
   });
 });
