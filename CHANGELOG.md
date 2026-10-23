@@ -15,7 +15,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), ver
   - Converts email HTML into clean CapsuleOS note blocks (headings clamped to 1..3, tasks list, callout quotes, paragraphs) without duplicate content from layout `div`s.
   - Resolves inline `cid:` images to Data URIs and preserves raw Base64 for binary attachments.
   - **Dual preview modes** in `AutonomousHtmlPreview.tsx`: segmented toggle between **«Original Email»** (authentic email styling, white background, CID images, sandboxed) and **«Capsule Dashboard»** (dark theme block note view), plus contextual `.html` download.
-  - 22 new unit & integration tests (`emailParser.test.ts`), bringing the test suite to **136 tests**.
+  - 24 parser tests in `emailParser.test.ts`; the suite is now **138 tests / 10 files**.
+- **Live vault folder watcher** (PR #6): desktop builds watch the `.eml` folder with a debounce and a write-loop guard, so files edited outside CapsuleOS appear without a restart.
+
+### Fixed
+- Imported email text keeps inline formatting tight (`<strong>AI for Everyone</strong>.` → `AI for Everyone.` instead of `Everyone .`), astral-plane numeric entities (`&#128512;`) decode to one code point, and quoted blocks no longer ship a hardcoded Russian "Цитата" title — the editor shows an empty title, the exported dashboard falls back to "Quote".
 
 ### Changed
 - **Zero demo content in block defaults.** Inserting a DataGrid no longer plants a `North/South/East` sample CSV or a Russian chart title: the block is created with an empty attachment and shows an explicit empty state with a real CSV file picker. A whiteboard starts with an empty scene instead of pre-placed "Cognitive Node A" shapes. New capsules and replies start with a single empty paragraph — no "Новая мысль" heading, no instructional filler, no auto-tags. Removed the unused `createChildReply()` path that injected canned Russian "AI" criticism. Known gaps are now tracked in [LIMITATIONS.md](LIMITATIONS.md).
@@ -29,7 +33,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), ver
 - **`/task`**: typing `/task` inside a paragraph turns that paragraph into a trackable todo block (one task per line); selecting it with no text inserts an empty task. The slash menu is now fully RU/EN localized.
 - **Command palette** (`Ctrl/Cmd+K`): every action searchable and ranked (acronym + fuzzy scoring), plus capsule navigation — 12 tests.
 - **Undo/redo** for capsule edits (`engine/history.ts`): coalesced typing bursts, per-capsule stacks, palette + keyboard shortcuts.
-- **RU / EN localization**: dependency-free i18n store, typed dictionaries, persistent locale toggle (`localStorage`), Russian source dictionary, full English translation.
+- **RU / EN localization**: dependency-free i18n store, typed dictionaries, persistent locale toggle (`localStorage`), Russian source dictionary, English translation (some block-level labels still pending).
 - **Task properties in TODO blocks**: due date and priority rendered/edited inline, feeding the planning layer.
 - **Graph UX**: auto-fit on load, selected-node styling, responsive navbar with the Planning tab.
 

@@ -193,7 +193,7 @@ export function decodeHtmlEntities(html: string): string {
         if (code === 847 || code === 8203 || code === 8204 || code === 8205 || code === 65279) {
           return '';
         }
-        return String.fromCharCode(code);
+        return String.fromCodePoint(code);
       } catch {
         return _;
       }
@@ -204,7 +204,7 @@ export function decodeHtmlEntities(html: string): string {
         if (code === 0x034f || code === 0x200b || code === 0x200c || code === 0x200d || code === 0xfeff) {
           return '';
         }
-        return String.fromCharCode(code);
+        return String.fromCodePoint(code);
       } catch {
         return _;
       }
@@ -216,7 +216,10 @@ export function decodeHtmlEntities(html: string): string {
  * Removes invisible preheader padding and combining joiners (\u034F, \u200B, etc.).
  */
 export function stripHtmlTags(html: string): string {
-  const stripped = html.replace(/<[^>]+>/g, ' ');
+  // Inline formatting tags must not become whitespace: `<strong>x</strong>.`
+  // has to read as `x.`, not `x .`. Block separation is handled by callers.
+  const withBreaks = html.replace(/<br\s*\/?>/gi, ' ');
+  const stripped = withBreaks.replace(/<[^>]+>/g, '');
   const decoded = decodeHtmlEntities(stripped);
   return decoded
     .replace(/[\u034F\u200B-\u200D\uFEFF]/g, '')
@@ -282,7 +285,7 @@ export function htmlToBlocks(rawHtml: string): CapsuleBlock[] {
           id: `blk_callout_${blockIndex++}_${now}`,
           type: 'callout',
           data: {
-            title: 'Цитата',
+            title: '',
             content: text,
             tone: 'blue',
           },

@@ -372,7 +372,7 @@ export function generateAutonomousHtml(capsule: CapsuleNode): string {
         case 'callout':
           return `
             <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid #10b981; border-radius: 8px; padding: 14px 18px; margin: 20px 0;">
-              <div style="color: #10b981; font-weight: 600; font-size: 14px; margin-bottom: 4px;">💡 ${escapeHtml(block.data.title)}</div>
+              <div style="color: #10b981; font-weight: 600; font-size: 14px; margin-bottom: 4px;">💡 ${escapeHtml(block.data.title || 'Quote')}</div>
               <div style="color: #cbd5e1; font-size: 14px; line-height: 1.5;">${escapeHtml(block.data.content)}</div>
             </div>
           `;

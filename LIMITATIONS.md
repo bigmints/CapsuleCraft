@@ -44,5 +44,13 @@ _Last updated: 2026-10-22 (v1.4.0)_
 - The "Co-Thinker" is a deterministic heuristic engine, not an LLM. It quotes
   real capsule content and refuses to invent numbers, but it cannot reason
   beyond its rule set.
+- Imported email HTML is parsed with a dependency-free regex tokenizer, not a
+  full HTML5 parser: deeply nested layouts, tables used for design and CSS
+  positioning can flatten into fewer blocks.
+- The **Original Email** preview runs in a sandbox with scripts disabled. That is
+  deliberate — tracking pixels and scripts from real mail do not execute — but it
+  also means interactive email HTML (forms, animated widgets) is inert.
 - Import covers `.eml` files and vault ZIPs; there is no Evernote/Notion/PDF
-  importer.
+  importer. Folder watching is desktop-only; the web build has no file watcher.
+- Imported quote blocks carry an empty title by design (no language assumption);
+  the exported dashboard labels them "Quote".

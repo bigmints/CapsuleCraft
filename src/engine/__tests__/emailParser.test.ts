@@ -153,9 +153,19 @@ describe('emailParser: htmlToBlocks', () => {
     const blocks = htmlToBlocks(html);
     expect(blocks).toHaveLength(1);
     expect(blocks[0].type).toBe('callout');
-    expect((blocks[0].data as any).title).toBe('Цитата');
+    expect((blocks[0].data as any).title).toBe('');
     expect((blocks[0].data as any).content).toBe('Important notice from author');
     expect((blocks[0].data as any).tone).toBe('blue');
+  });
+
+  it('keeps inline formatting from adding spaces before punctuation', () => {
+    const blocks = htmlToBlocks('<p>You finished <strong>AI for Everyone</strong>.</p>');
+    expect((blocks[0].data as any).text).toBe('You finished AI for Everyone.');
+  });
+
+  it('decodes astral-plane numeric entities as single code points', () => {
+    const blocks = htmlToBlocks('<p>Done &#128512;</p>');
+    expect((blocks[0].data as any).text).toBe('Done 😀');
   });
 
   it('decodes HTML entities and numeric codes in text', () => {
