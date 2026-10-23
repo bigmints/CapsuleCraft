@@ -154,6 +154,8 @@ struct NativeApp {
     search_index: search::Bm25Index,
     /// Lowercased-free page text per capsule, used for search snippets.
     page_texts: Vec<String>,
+    /// Fixed document scroll offset (screenshots only).
+    document_scroll: Option<f32>,
 }
 
 struct SnapshotJob {
@@ -201,6 +203,7 @@ impl NativeApp {
             backlinks: Vec::new(),
             search_index: search::Bm25Index::default(),
             page_texts: Vec::new(),
+            document_scroll: launch.scroll,
         }
         .with_links()
     }
@@ -997,6 +1000,7 @@ impl eframe::App for NativeApp {
                                         &mut self.vault.capsules[index],
                                         self.locale,
                                         &link_context,
+                                        self.document_scroll,
                                     ));
                                 }
                                 _ => draw_empty_state(ui, &mut editor, self.locale),
@@ -2206,10 +2210,14 @@ fn draw_document(
     capsule: &mut Capsule,
     locale: Locale,
     link_context: &LinkContext,
+    scroll: Option<f32>,
 ) -> EditorAction {
     let mut action = EditorAction::default();
-    ScrollArea::vertical()
-        .id_salt("document")
+    let mut area = ScrollArea::vertical().id_salt("document");
+    if let Some(offset) = scroll {
+        area = area.vertical_scroll_offset(offset);
+    }
+    area
         .auto_shrink([false, false])
         .show(ui, |ui| {
             let available = ui.available_width();

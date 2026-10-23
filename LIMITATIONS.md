@@ -77,3 +77,31 @@ _Last updated: 2026-10-23 (v1.5 in progress)_
   importer. Folder watching is desktop-only; the web build has no file watcher.
 - Imported quote blocks carry an empty title by design (no language assumption);
   the exported dashboard labels them "Quote".
+
+## Native egui prototype
+
+The `native/` crate is a separate, experimental shell over the same `.eml`
+folder. It is honest about what it does not do yet:
+
+- **No audio playback.** Audio notes can be attached and stored as MIME parts,
+  but the native shell cannot play them; the block says so instead of showing a
+  fake waveform player.
+- **No code execution.** Code blocks are syntax-labelled text; "Run" is
+  unavailable, and the source is only ever written to the `.eml`.
+- **No live folder watching.** The web/Tauri build watches the vault folder;
+  the native shell needs **Reload** (`Ctrl/Cmd` + reload button) to see files
+  edited outside the app.
+- **Search index is rebuilt on save and on navigation**, not incrementally while
+  typing. On a very large vault the first search after a bulk import can pause.
+- **Links are title-based.** A `[[link]]` matches a page subject (case- and
+  whitespace-insensitive) or an explicit `[[<message-id>]]`; renaming a page does
+  not rewrite links that point at its old title.
+- **Backlinks are computed on navigation**, not per keystroke, so a page shows
+  the backlinks it had when you opened it.
+- **Imported email is read-only.** The native shell renders `text/plain` /
+  `text/html` text and never rewrites a file it did not create.
+- **Unsupported blocks are preserved, not edited**: they stay in
+  `canvas_state.json` and open in the web app.
+- **`--snapshot` is a developer command**: it writes one PNG and exits; it is not
+  a live screencast.
+

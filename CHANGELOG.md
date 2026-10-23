@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), ver
 ## [Unreleased]
 
 ### Added
+- **Native egui prototype (branch `egui-prototype`, `native/`)**: a webview-free shell over the same `.eml` vault. The prototype now builds and runs against egui 0.37, and the first features sit on top of the ported engines:
+  - **`[[Wiki links]]`** — new `links` engine (parse spans, resolve by subject or Message-ID, list backlinks) with tests; paragraphs paint links in the accent colour, the document lists **Links** and **Linked from**, and clicking a target navigates or creates the missing page with that title.
+  - **BM25 sidebar search** — ranks whole-page text and shows the score plus a one-line excerpt centred on the first hit (`search::snippet`, Cyrillic case folding), falling back to the parent path when the match came from a tag.
+  - **Drop-to-import** — dropping `.eml` files on the window imports them byte-for-byte, with a dimmed drop hint and a skipped-file count; the file dialog shares the same code path.
+  - **`--snapshot`** — renders the real window to PNG (`--view`, `--page`, `--search`, `--scroll`, `--locale`, `--frames`), so the README screenshots come from the app itself.
+  - **Threads view fixes** — cycles are walked once, orphan replies stay visible, replies render under their root instead of inside a 44 px row, and a Threads / All pages switch with real counts replaces the stray empty-state label.
+  - **Planning toolbar** — measured, right-aligned stat boxes, so open / completion / overdue no longer collide with the mode switch.
 - **External email parser & dual preview modes** (`engine/emailParser.ts`): allows dropping raw `.eml` emails from Gmail, Outlook, Apple Mail, Thunderbird or newsletters directly into the vault folder.
   - Recursively resolves MIME multiparts (`multipart/mixed`, `multipart/related`, `multipart/alternative`) and single-part emails.
   - Decodes Quoted-Printable (RFC 2045) and encoded-word headers (RFC 2047 `B` & `Q` encodings with adjacent whitespace collapsing per Sec 6.2).

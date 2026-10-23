@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use crate::i18n::Locale;
 use crate::views::View;
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct Launch {
     /// Vault folder; `None` means "the default vault".
     pub vault: Option<PathBuf>,
@@ -26,6 +26,8 @@ pub struct Launch {
     pub locale: Option<Locale>,
     /// Pre-filled sidebar search, so a snapshot can show ranked results.
     pub search: Option<String>,
+    /// Pixels to scroll the document before capturing (screenshots only).
+    pub scroll: Option<f32>,
     /// Print the parsed launch configuration and exit.
     pub print_config: bool,
 }
@@ -71,6 +73,7 @@ pub fn parse(args: &[String]) -> Launch {
                 launch.locale = take_value(&mut index).and_then(|v| parse_locale(&v));
             }
             "--search" => launch.search = take_value(&mut index),
+            "--scroll" => launch.scroll = take_value(&mut index).and_then(|v| v.parse().ok()),
             "--print-config" => launch.print_config = true,
             other if !other.starts_with('-') => {
                 if launch.vault.is_none() {

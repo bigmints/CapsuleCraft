@@ -276,6 +276,35 @@ npm test               # vitest engine suite (151 tests)
 
 In a plain browser the vault falls back to `localStorage`; native file access is Tauri-only.
 
+### Native egui prototype (experimental)
+
+A second, webview-free shell lives in [`native/`](native/). It opens the **same `.eml`
+vault** with [egui](https://github.com/emilk/egui) and no browser engine at all.
+
+```bash
+cd native
+cargo run --release -- /path/to/your/.eml/vault   # omit the path for the default vault
+```
+
+<img src="screenshots/capsuleos-native-page.png" alt="CapsuleOS native egui prototype — page view with wiki links" width="100%">
+
+What works today, all against the real files on disk:
+
+| | |
+|---|---|
+| 🗂 **Page tree + editor** | Headings, paragraphs, task lists, callouts, code, CSV grids, audio notes, whiteboards and preserved unknown blocks; autosave, undo/redo, `.eml` round-trip |
+| 🔗 **`[[Wiki links]]`** | Links are parsed from page text, painted in the accent colour, listed under **Links**, and backlinks are shown as **Linked from**. Clicking a missing target creates that page |
+| 🔍 **BM25 search** | The sidebar ranks whole-page text, shows the relevance score and a sentence excerpt around the first hit |
+| ✅ **Planning** | Agenda, Kanban, Gantt and calendar over every task in the vault, quick add, ICS export |
+| 🕸 **Graph / threads / MIME / email** | Force graph, reply chains from `In-Reply-To`, raw MIME, imported-mail preview |
+| 📥 **Drop to import** | Dragging `.eml` files onto the window copies them into the vault byte-for-byte |
+| 📸 **Screenshots from the real app** | `--snapshot out.png [--view page\|planning\|graph\|threads\|mime\|mail] [--page N] [--search Q] [--scroll PX] [--locale ru\|en]` renders the actual window to PNG and exits |
+
+<img src="screenshots/capsuleos-native-backlinks.png" alt="Native prototype — wiki links, backlinks and preserved code blocks" width="100%">
+
+Honest gaps (audio playback, code execution, live folder watching, merging) are listed in
+[LIMITATIONS.md](LIMITATIONS.md#native-egui-prototype).
+
 ## 🏗 Architecture
 
 ```text
