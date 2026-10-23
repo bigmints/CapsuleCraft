@@ -134,6 +134,20 @@ export const GraphView: React.FC<Props> = ({
       .attr('d', 'M0,-5L10,0L0,5')
       .attr('fill', '#a855f7');
 
+    // Arrow for page hierarchy (sub-page → parent)
+    defs
+      .append('marker')
+      .attr('id', 'arrow-page-parent')
+      .attr('viewBox', '0 -5 10 10')
+      .attr('refX', 22)
+      .attr('refY', 0)
+      .attr('markerWidth', 5)
+      .attr('markerHeight', 5)
+      .attr('orient', 'auto')
+      .append('path')
+      .attr('d', 'M0,-5L10,0L0,5')
+      .attr('fill', '#f59e0b');
+
     // Arrow for Backlinks (wikilinks)
     defs
       .append('marker')
@@ -183,16 +197,26 @@ export const GraphView: React.FC<Props> = ({
       .enter()
       .append('line')
       .attr('stroke', (d: GraphEdge) =>
-        d.type === 'in_reply_to' ? '#38bdf8' : d.type === 'backlink' ? '#34d399' : '#a855f7'
+        d.type === 'in_reply_to'
+          ? '#38bdf8'
+          : d.type === 'page_parent'
+          ? '#f59e0b'
+          : d.type === 'backlink'
+          ? '#34d399'
+          : '#a855f7'
       )
       .attr('stroke-opacity', (d: GraphEdge) => (d.type === 'backlink' ? 0.45 : 0.6))
-      .attr('stroke-width', (d: GraphEdge) => (d.type === 'in_reply_to' ? 2 : 1.5))
+      .attr('stroke-width', (d: GraphEdge) =>
+        d.type === 'in_reply_to' || d.type === 'page_parent' ? 2 : 1.5
+      )
       .attr('stroke-dasharray', (d: GraphEdge) =>
         d.type === 'references' ? '4 3' : d.type === 'backlink' ? '1 4' : 'none'
       )
       .attr('marker-end', (d: GraphEdge) =>
         d.type === 'in_reply_to'
           ? 'url(#arrow-in-reply-to)'
+          : d.type === 'page_parent'
+          ? 'url(#arrow-page-parent)'
           : d.type === 'backlink'
           ? 'url(#arrow-backlink)'
           : 'url(#arrow-references)'
@@ -431,6 +455,10 @@ export const GraphView: React.FC<Props> = ({
         <div className="flex items-center gap-2">
           <span className="w-4 h-0.5 bg-sky-400 inline-block" />
           <span className="text-sky-300">{t('graph.legendInReply')}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="w-4 h-0.5 bg-amber-400 inline-block" />
+          <span className="text-amber-300">{t('graph.legendPages')}</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="w-4 h-0.5 border-b border-dashed border-purple-400 inline-block" />

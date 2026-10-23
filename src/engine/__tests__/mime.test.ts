@@ -33,6 +33,7 @@ describe('assembleEml → parseEml round-trip', () => {
     const capsule = makeCapsule({
       references: ['<root@vault.local>'],
       inReplyTo: '<root@vault.local>',
+      parentId: '<page-root@vault.local>',
     });
     const parsed = parseEml(assembleEml(capsule), 'round.eml');
 
@@ -40,9 +41,20 @@ describe('assembleEml → parseEml round-trip', () => {
     expect(parsed.subject).toBe('Test capsule');
     expect(parsed.from).toBe('Alexey <user@local>');
     expect(parsed.inReplyTo).toBe('<root@vault.local>');
+    expect(parsed.parentId).toBe('<page-root@vault.local>');
     expect(parsed.references).toEqual(['<root@vault.local>']);
     expect(parsed.tags).toEqual(['#test', '#mime']);
     expect(parsed.status).toBe('Active');
+  });
+
+  it('persists the page parent in its own header, not In-Reply-To', () => {
+    const withParent = assembleEml(
+      makeCapsule({ parentId: '<page-root@vault.local>' }),
+    );
+    expect(withParent).toContain('X-Capsule-Page-Parent: <page-root@vault.local>');
+    expect(withParent).not.toContain('In-Reply-To: <page-root@vault.local>');
+
+    expect(assembleEml(makeCapsule())).not.toContain('X-Capsule-Page-Parent');
   });
 
   it('preserves blocks via embedded canvas_state.json', () => {

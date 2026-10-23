@@ -15,8 +15,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), ver
   - Converts email HTML into clean CapsuleOS note blocks (headings clamped to 1..3, tasks list, callout quotes, paragraphs) without duplicate content from layout `div`s.
   - Resolves inline `cid:` images to Data URIs and preserves raw Base64 for binary attachments.
   - **Dual preview modes** in `AutonomousHtmlPreview.tsx`: segmented toggle between **«Original Email»** (authentic email styling, white background, CID images, sandboxed) and **«Capsule Dashboard»** (dark theme block note view), plus contextual `.html` download.
-  - 24 parser tests in `emailParser.test.ts`; the suite is now **138 tests / 10 files**.
+  - 24 parser tests in `emailParser.test.ts`; the suite is now **146 tests / 11 files**.
 - **Live vault folder watcher** (PR #6): desktop builds watch the `.eml` folder with a debounce and a write-loop guard, so files edited outside CapsuleOS appear without a restart.
+- **Hierarchical pages (wiki tree)**: pages can be nested without touching mail threading — `parentId` is persisted in a `X-Capsule-Page-Parent` MIME header. The sidebar is now a collapsible page tree (search stays a flat BM25 relevance list), the editor shows a clickable breadcrumb, a parent picker, and a "Subpage" action. Reparenting is cycle-safe (a page cannot become its own descendant), dangling parents are promoted to roots, and deleting a page never cascades — its children become roots. The graph draws hierarchy as amber `Sub-page` edges. 8 hierarchy tests + MIME round-trip coverage.
 
 ### Fixed
 - Imported email text keeps inline formatting tight (`<strong>AI for Everyone</strong>.` → `AI for Everyone.` instead of `Everyone .`), astral-plane numeric entities (`&#128512;`) decode to one code point, and quoted blocks no longer ship a hardcoded Russian "Цитата" title — the editor shows an empty title, the exported dashboard falls back to "Quote".

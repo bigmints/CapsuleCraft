@@ -10,7 +10,7 @@
 
 [![Release](https://img.shields.io/github/v/release/kostyk348/capsuleos?sort=semver&color=0ea5e9&label=release)](https://github.com/kostyk348/capsuleos/releases)
 [![CI](https://github.com/kostyk348/capsuleos/actions/workflows/ci.yml/badge.svg)](https://github.com/kostyk348/capsuleos/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/тесты-138%20passing-22c55e)](https://github.com/kostyk348/capsuleos/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/тесты-146%20passing-22c55e)](https://github.com/kostyk348/capsuleos/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Tauri](https://img.shields.io/badge/Tauri-2-FFC131?logo=tauri&logoColor=black)](https://v2.tauri.app/)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev/)
@@ -44,6 +44,7 @@
 | 📋 **Планирование** | Задачи по всему хранилищу: сетка месяца, просроченные / сегодня / неделя, приоритеты, экспорт ICS (VTODO). Сроки и приоритеты хранятся внутри TODO-блоков `.eml` |
 | 🗂 **Kanban + `/task`** | Доска «К выполнению / В работе / Готово» с drag-and-drop и статусом на карточке; `/task` превращает абзац, в котором вы печатаете, в отслеживаемую задачу |
 | 📈 **Gantt-таймлайн** | Шкала по дням с полосами «начало → срок», отметкой «сегодня», стрелками зависимостей и предупреждением о заблокированных задачах. Циклы отсекаются до добавления связи — без фейкового прогресса |
+| 🌲 **Иерархия страниц** | Вложенные страницы как вики-дерево: родитель хранится в `X-Capsule-Page-Parent`, хлебные крошки, безопасное перемещение без циклов, осиротевшие страницы поднимаются в корень, иерархия рисуется янтарными рёбрами в графе. Дерево страниц и почтовые треды разделены |
 | 📨 **Импорт внешних писем** | Положите настоящий `.eml` из Gmail / Outlook / Thunderbird в хранилище: MIME, quoted-printable, заголовки RFC 2047 и CID-картинки разбираются в блоки, а Preview переключается между **Original Email** и **Capsule Dashboard** |
 | ⌨️ **Палитра команд и история** | `Ctrl/Cmd+K` ищет любое действие; undo/redo возвращает правки капсул |
 | 🌍 **RU / EN** | Локализация интерфейса с переключателем — русский по умолчанию, английский перевод (часть подписей внутри блоков пока не переведена) |
@@ -269,7 +270,7 @@ npm ci
 npm run dev            # Vite dev-сервер на http://localhost:5173
 npm run build          # прод-сборка в dist/
 npm run preview        # раздача сборки
-npm test               # движок-тесты vitest (138 шт.)
+npm test               # движок-тесты vitest (146 шт.)
 ```
 
 В обычном браузере vault падает на `localStorage`; нативный доступ к файлам — только через Tauri.

@@ -58,6 +58,10 @@ export function assembleEml(capsule: CapsuleNode): string {
     headers.push(`In-Reply-To: ${capsule.inReplyTo}`);
   }
 
+  if (capsule.parentId) {
+    headers.push(`X-Capsule-Page-Parent: ${capsule.parentId}`);
+  }
+
   if (capsule.references && capsule.references.length > 0) {
     headers.push(`References: ${capsule.references.join(' ')}`);
   }
@@ -224,6 +228,7 @@ export function parseEml(rawEml: string, fileName?: string): CapsuleNode {
   const to = decodeRfc2047(headersMap.get('to') || 'Co-Thinker <agent@local>');
   const dateStr = headersMap.get('date') || new Date().toUTCString();
   const inReplyTo = headersMap.get('in-reply-to') || undefined;
+  const parentId = headersMap.get('x-capsule-page-parent') || undefined;
   
   const rawRefs = headersMap.get('references') || '';
   const references = rawRefs
@@ -293,6 +298,7 @@ export function parseEml(rawEml: string, fileName?: string): CapsuleNode {
     date: dateStr,
     timestamp: new Date(dateStr).getTime() || Date.now(),
     inReplyTo,
+    parentId,
     references,
     tags,
     status,

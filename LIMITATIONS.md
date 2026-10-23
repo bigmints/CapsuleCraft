@@ -3,7 +3,22 @@
 Honest list of what CapsuleOS does **not** do yet. Updated as features land — if a
 limitation below is fixed, it gets removed instead of being quietly forgotten.
 
-_Last updated: 2026-10-22 (v1.4.0)_
+_Last updated: 2026-10-23 (v1.5 in progress)_
+
+## Page hierarchy
+
+- Siblings are sorted alphabetically; there is no manual drag-to-reorder and no
+  persisted `order` field. Renaming a page can move it within its parent.
+- The parent link is a custom `X-Capsule-Page-Parent` MIME header. It is a valid
+  `X-` header and survives our own round-trip, but external mail clients ignore
+  it (they only see `In-Reply-To` / `References`).
+- Page hierarchy is deliberately separate from mail threading: sub-pages do not
+  appear in the Thread view, and replies do not become sub-pages.
+- Deleting a page never cascades — children are promoted to roots. Moving a page
+  between vaults (or copying a subtree) is not implemented.
+- Reparenting rejects cycles in the engine and hides descendants from the parent
+  picker, but existing hand-edited `.eml` files can still contain a cycle; the
+  sidebar then promotes one page to a root instead of hiding the branch.
 
 ## Planning & tasks
 

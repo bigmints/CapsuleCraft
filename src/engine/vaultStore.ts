@@ -596,6 +596,7 @@ class VaultStore {
       date: new Date().toUTCString(),
       timestamp: Date.now(),
       inReplyTo: overrides?.inReplyTo,
+      parentId: overrides?.parentId,
       references: overrides?.references || (overrides?.inReplyTo ? [overrides.inReplyTo] : []),
       tags: overrides?.tags || [],
       status: overrides?.status || 'Active',
@@ -750,6 +751,24 @@ class VaultStore {
         });
         degreeMap.set(node.messageId, (degreeMap.get(node.messageId) || 0) + 1);
         degreeMap.set(node.inReplyTo, (degreeMap.get(node.inReplyTo) || 0) + 1);
+      }
+
+      // Page hierarchy edge (X-Capsule-Page-Parent). Kept separate from
+      // In-Reply-To so a reply thread does not silently become a sub-page.
+      if (
+        node.parentId &&
+        this.nodes.has(node.parentId) &&
+        node.parentId !== node.inReplyTo
+      ) {
+        graphEdges.push({
+          id: `edge_page_${node.messageId}_${node.parentId}`,
+          source: node.messageId,
+          target: node.parentId,
+          type: 'page_parent',
+          label: 'Sub-page',
+        });
+        degreeMap.set(node.messageId, (degreeMap.get(node.messageId) || 0) + 1);
+        degreeMap.set(node.parentId, (degreeMap.get(node.parentId) || 0) + 1);
       }
 
       // References Edges

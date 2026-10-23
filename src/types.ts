@@ -135,6 +135,8 @@ export interface CapsuleNode {
   date: string;
   timestamp: number;
   inReplyTo?: string;
+  /** Parent page in the wiki tree (X-Capsule-Page-Parent), independent of threading. */
+  parentId?: string;
   references: string[];
   tags: string[];
   status: 'Active' | 'Archived' | 'Draft' | 'Synthesis';
@@ -162,6 +164,8 @@ export interface NodeMetadata {
   from: string;
   to: string;
   inReplyTo?: string;
+  /** Parent page in the wiki tree (X-Capsule-Page-Parent), independent of threading. */
+  parentId?: string;
   references: string[];
   tags: string[];
   status: 'Active' | 'Archived' | 'Draft' | 'Synthesis';
@@ -172,7 +176,7 @@ export interface NodeMetadata {
   byteOffsetBody?: number;
 }
 
-export type EdgeType = 'in_reply_to' | 'references' | 'tag_cluster' | 'backlink';
+export type EdgeType = 'in_reply_to' | 'references' | 'tag_cluster' | 'backlink' | 'page_parent';
 
 export interface GraphEdge {
   id: string;

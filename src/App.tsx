@@ -5,6 +5,7 @@ import { vaultStore } from './engine/vaultStore';
 import { offlineAiResponse } from './engine/offlineAi';
 import { assembleEml, parseEml } from './engine/mime';
 import { UndoHistory } from './engine/history';
+import { wouldCreatePageCycle } from './engine/hierarchy';
 import { Navbar, ActiveView } from './components/Navbar';
 import { VaultSidebar } from './components/VaultSidebar';
 import { BlockCanvasEditor } from './components/BlockCanvasEditor';
@@ -279,6 +280,38 @@ export default function App() {  const { t } = useI18n();
     setActiveView('canvas');
     showToast(t('app.toast.capsuleCreated'));
   }, [t]);
+
+  // Create a wiki sub-page. Hierarchy uses X-Capsule-Page-Parent, not
+  // In-Reply-To, so a page is not silently treated as a mail reply.
+  const handleCreateChildCapsule = useCallback((parentId: string) => {
+    const parent = graphState.nodes.get(parentId);
+    const child = vaultStore.createNewCapsule({
+      subject: t('app.newSubpageSubject', {
+        parent: parent?.subject || t('editor.untitled'),
+      }),
+      parentId,
+      tags: parent ? [...parent.tags] : [],
+    });
+
+    setSelectedMessageId(child.messageId);
+    setActiveView('canvas');
+    showToast(t('app.toast.subpageCreated', { subject: child.subject }));
+  }, [graphState.nodes, t]);
+
+  /** Move a page in the tree; cycles are rejected before the store is touched. */
+  const handleReparentCapsule = useCallback((pageId: string, parentId: string | null) => {
+    const node = vaultStore.getNode(pageId);
+    if (!node) return;
+
+    if (parentId && wouldCreatePageCycle(graphState.nodes, pageId, parentId)) {
+      showToast(t('app.toast.parentCycle'));
+      return;
+    }
+    if ((node.parentId || null) === (parentId || null)) return;
+
+    handleUpdateCapsule({ ...node, parentId: parentId || undefined });
+    showToast(t('app.toast.parentChanged'));
+  }, [graphState.nodes, handleUpdateCapsule, t]);
 
   // Create In-Reply-To child capsule. `blocks` lets the caller inject
   // AI-generated content (offline Co-Thinker) instead of the default template.
@@ -612,6 +645,7 @@ export default function App() {  const { t } = useI18n();
             setSelectedMessageId(id);
           }}
           onCreateNewCapsule={handleCreateNewCapsule}
+          onCreateChildCapsule={handleCreateChildCapsule}
           onDeleteCapsule={handleDeleteCapsule}
           onImportEml={handleImportEml}
           onExportVaultZip={handleExportVaultZip}
@@ -634,6 +668,10 @@ export default function App() {  const { t } = useI18n();
               onOpenParent={(parentId) => {
                 setSelectedMessageId(parentId);
               }}
+              onReparent={(parentId) =>
+                handleReparentCapsule(currentCapsule.messageId, parentId)
+              }
+              onCreateChild={() => handleCreateChildCapsule(currentCapsule.messageId)}
               onRequestAiAction={handleAiAction}
               isAiLoading={isAiLoading}
               onOpenCapsule={(id) => {

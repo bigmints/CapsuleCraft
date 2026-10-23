@@ -20,6 +20,12 @@ import { vaultStore } from '../engine/vaultStore';
 import { isDesktop, pickSavePath, writeTextFile } from '../engine/desktopStore';
 import { shouldOpenSlashMenu } from '../engine/textUtils';
 import {
+  nodeMap,
+  pageBreadcrumbs,
+  pageDescendantIds,
+} from '../engine/hierarchy';
+import { useI18n } from '../i18n';
+import {
   Sparkles,
   Plus,
   ArrowUp,
@@ -36,6 +42,9 @@ import {
   Palette,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
+  FilePlus,
+  FolderTree,
 } from 'lucide-react';
 
 interface Props {
@@ -43,6 +52,8 @@ interface Props {
   allCapsules: CapsuleNode[];
   onUpdateCapsule: (updated: CapsuleNode) => void;
   onOpenParent: (parentId: string) => void;
+  onReparent?: (parentId: string | null) => void;
+  onCreateChild?: () => void;
   onRequestAiAction: (action: 'critique' | 'continue' | 'reply_thread' | 'data_insight') => void;
   isAiLoading?: boolean;
   onOpenCapsule?: (messageId: string) => void;
@@ -53,6 +64,8 @@ export const BlockCanvasEditor: React.FC<Props> = ({
   allCapsules,
   onUpdateCapsule,
   onOpenParent,
+  onReparent,
+  onCreateChild,
   onRequestAiAction,
   isAiLoading,
   onOpenCapsule,
@@ -62,6 +75,22 @@ export const BlockCanvasEditor: React.FC<Props> = ({
   const [slashSource, setSlashSource] = useState<{ index: number; text: string } | null>(null);
   const [tagInput, setTagInput] = useState('');
   const [hoveredBlockIndex, setHoveredBlockIndex] = useState<number | null>(null);
+
+  const { t } = useI18n();
+
+  const pageNodes = nodeMap(allCapsules);
+  const breadcrumbs = pageBreadcrumbs(pageNodes, capsule.messageId);
+  const currentParentId =
+    capsule.parentId && pageNodes.has(capsule.parentId) && capsule.parentId !== capsule.messageId
+      ? capsule.parentId
+      : '';
+  const descendantIds = pageDescendantIds(pageNodes, capsule.messageId);
+  const parentOptions = allCapsules
+    .filter(
+      (candidate) =>
+        candidate.messageId !== capsule.messageId && !descendantIds.has(candidate.messageId),
+    )
+    .sort((a, b) => (a.subject || '').localeCompare(b.subject || ''));
 
   const handleExportMarkdown = () => exportCapsuleMarkdown(capsule);
 
@@ -349,6 +378,34 @@ export const BlockCanvasEditor: React.FC<Props> = ({
               <span className="truncate">{capsule.messageId}</span>
             </div>
 
+            {/* Page breadcrumb (wiki hierarchy, separate from mail threading) */}
+            <div className="flex flex-wrap items-center gap-1 text-[11px] font-mono text-slate-500 mb-2">
+              <span className="uppercase tracking-wider text-slate-600">
+                {t('editor.vaultRoot')}
+              </span>
+              {breadcrumbs.map((ref, index) => {
+                const isCurrent = index === breadcrumbs.length - 1;
+                return (
+                  <React.Fragment key={ref.messageId}>
+                    <ChevronRight className="w-3 h-3 text-slate-700 shrink-0" />
+                    {isCurrent ? (
+                      <span className="text-slate-300 truncate max-w-[16rem]">
+                        {ref.subject || t('editor.untitled')}
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => onOpenCapsule?.(ref.messageId)}
+                        className="hover:text-cyan-300 truncate max-w-[12rem] transition-colors"
+                      >
+                        {ref.subject || t('editor.untitled')}
+                      </button>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </div>
+
             {/* Subject Title */}
             <input
               type="text"
@@ -373,15 +430,56 @@ export const BlockCanvasEditor: React.FC<Props> = ({
                   <option value="Archived">Archived</option>
                 </select>
 
-                {/* Parent Link if present */}
+                {/* Wiki parent selector — cycle-safe candidates only */}
+                {onReparent && (
+                  <label
+                    className="inline-flex items-center gap-1 text-[11px] font-mono text-cyan-300 bg-cyan-950/40 border border-cyan-800/50 rounded-md px-2 py-1"
+                    title={t('editor.parentLabel')}
+                  >
+                    <FolderTree className="w-3 h-3 text-cyan-400" />
+                    <select
+                      value={currentParentId}
+                      onChange={(e) => onReparent(e.target.value || null)}
+                      className="bg-transparent text-cyan-200 outline-none max-w-[13rem] text-[11px] font-mono cursor-pointer"
+                    >
+                      <option value="" className="bg-slate-900 text-slate-300">
+                        {t('editor.noParent')}
+                      </option>
+                      {parentOptions.map((candidate) => (
+                        <option
+                          key={candidate.messageId}
+                          value={candidate.messageId}
+                          className="bg-slate-900 text-slate-200"
+                        >
+                          {candidate.subject || t('editor.untitled')}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+
+                {onCreateChild && (
+                  <button
+                    type="button"
+                    onClick={onCreateChild}
+                    className="inline-flex items-center gap-1 text-[11px] font-mono text-emerald-300 bg-emerald-950/40 hover:bg-emerald-900/50 px-2.5 py-1 rounded-md border border-emerald-800/60 transition-colors"
+                  >
+                    <FilePlus className="w-3 h-3 text-emerald-400" />
+                    <span>{t('editor.newSubpage')}</span>
+                  </button>
+                )}
+
+                {/* Mail thread parent (In-Reply-To) if present */}
                 {capsule.inReplyTo && (
                   <button
                     type="button"
                     onClick={() => onOpenParent(capsule.inReplyTo!)}
-                    className="inline-flex items-center gap-1 text-[11px] font-mono text-cyan-300 bg-cyan-950/50 hover:bg-cyan-900/60 px-2.5 py-1 rounded-md border border-cyan-800/60 transition-colors"
+                    className="inline-flex items-center gap-1 text-[11px] font-mono text-slate-300 bg-slate-800/60 hover:bg-slate-700/60 px-2.5 py-1 rounded-md border border-slate-700/60 transition-colors"
                   >
-                    <CornerDownRight className="w-3 h-3 text-cyan-400" />
-                    <span>Parent: {capsule.inReplyTo.substring(0, 16)}...</span>
+                    <CornerDownRight className="w-3 h-3 text-slate-400" />
+                    <span>
+                      {t('editor.replyTo')}: {capsule.inReplyTo.substring(0, 14)}…
+                    </span>
                   </button>
                 )}
 
