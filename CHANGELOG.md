@@ -5,6 +5,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), ver
 
 ## [Unreleased]
 
+### Added
+- **External email parser & dual preview modes** (`engine/emailParser.ts`): allows dropping raw `.eml` emails from Gmail, Outlook, Apple Mail, Thunderbird or newsletters directly into the vault folder.
+  - Recursively resolves MIME multiparts (`multipart/mixed`, `multipart/related`, `multipart/alternative`) and single-part emails.
+  - Decodes Quoted-Printable (RFC 2045) and encoded-word headers (RFC 2047 `B` & `Q` encodings with adjacent whitespace collapsing per Sec 6.2).
+  - Handles `Content-Transfer-Encoding: base64` for HTML/text bodies.
+  - Robust boundary parameter extraction and regex escaping.
+  - Full HTML entity decoding (`&copy;`, `&reg;`, `&trade;`, `&mdash;`, etc.) and automatic stripping of invisible preheader padding hacks (`&#847;`, `\u034F`, `\u200B`, `&zwnj;`).
+  - Converts email HTML into clean CapsuleOS note blocks (headings clamped to 1..3, tasks list, callout quotes, paragraphs) without duplicate content from layout `div`s.
+  - Resolves inline `cid:` images to Data URIs and preserves raw Base64 for binary attachments.
+  - **Dual preview modes** in `AutonomousHtmlPreview.tsx`: segmented toggle between **«Original Email»** (authentic email styling, white background, CID images, sandboxed) and **«Capsule Dashboard»** (dark theme block note view), plus contextual `.html` download.
+  - 22 new unit & integration tests (`emailParser.test.ts`), bringing the test suite to **136 tests**.
+
 ### Changed
 - **Zero demo content in block defaults.** Inserting a DataGrid no longer plants a `North/South/East` sample CSV or a Russian chart title: the block is created with an empty attachment and shows an explicit empty state with a real CSV file picker. A whiteboard starts with an empty scene instead of pre-placed "Cognitive Node A" shapes. New capsules and replies start with a single empty paragraph — no "Новая мысль" heading, no instructional filler, no auto-tags. Removed the unused `createChildReply()` path that injected canned Russian "AI" criticism. Known gaps are now tracked in [LIMITATIONS.md](LIMITATIONS.md).
 

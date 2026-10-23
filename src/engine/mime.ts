@@ -1,4 +1,5 @@
 import { CapsuleNode, CapsuleBlock, CapsuleAttachment } from '../types';
+import { decodeRfc2047, parseExternalEmail } from './emailParser';
 
 /**
  * Deterministic 8-char hash (FNV-1a based, base36).
@@ -134,6 +135,55 @@ export function assembleEml(capsule: CapsuleNode): string {
   return headers.join('\r\n') + '\r\n\r\n' + parts.join('\r\n');
 }
 
+function parseNativeAttachments(rawHeaders: string, rawBody: string, attachments: CapsuleAttachment[]): void {
+  const boundaryMatch = rawHeaders.match(/boundary=["']?([^"';]+)["']?/i);
+  if (boundaryMatch && boundaryMatch[1]) {
+    const boundary = boundaryMatch[1];
+    const parts = rawBody.split(new RegExp(`--${boundary}(?:--)?`));
+
+    for (const part of parts) {
+      if (!part.trim()) continue;
+
+      const contentIdMatch = part.match(/Content-ID:\s*<([^>]+)>/i);
+      const nameMatch = part.match(/filename=["']?([^"'\r\n]+)["']?|name=["']?([^"'\r\n]+)["']?/i);
+      const mimeMatch = part.match(/Content-Type:\s*([^;\r\n]+)/i);
+      const encodingMatch = part.match(/Content-Transfer-Encoding:\s*([\w-]+)/i);
+
+      // Resolve the part name from either regex group, then skip the
+      // internal canvas_state.json / html alternative sub-parts.
+      const resolvedName = nameMatch ? nameMatch[1] || nameMatch[2] : undefined;
+      if (resolvedName && resolvedName.toLowerCase() === 'canvas_state.json') continue;
+
+      if (resolvedName) {
+        const name = resolvedName;
+        const cid = contentIdMatch ? contentIdMatch[1] : name.replace(/[^a-zA-Z0-9_]/g, '_');
+        const mimeType = mimeMatch ? mimeMatch[1].trim() : 'text/plain';
+
+        // Extract content after double newline
+        const bodySplit = part.indexOf('\r\n\r\n') !== -1 ? part.indexOf('\r\n\r\n') + 4 : part.indexOf('\n\n') + 2;
+        let content = bodySplit > 1 ? part.substring(bodySplit).trim() : '';
+
+        // Honor Content-Transfer-Encoding (base64 attachments, e.g. audio/binary data)
+        if (encodingMatch && encodingMatch[1].toLowerCase() === 'base64' && content) {
+          try {
+            content = fromBase64(content);
+          } catch {
+            console.warn(`parseEml: failed to decode base64 attachment "${name}"`);
+          }
+        }
+
+        attachments.push({
+          name,
+          cid,
+          mimeType,
+          content,
+          sizeBytes: content.length,
+        });
+      }
+    }
+  }
+}
+
 export function parseEml(rawEml: string, fileName?: string): CapsuleNode {
   // Fast Header Scanner: find first double newline (\r\n\r\n or \n\n)
   let headerEndPos = rawEml.indexOf('\r\n\r\n');
@@ -168,9 +218,10 @@ export function parseEml(rawEml: string, fileName?: string): CapsuleNode {
     ? `<capsule-${fileName.toLowerCase().replace(/\.eml$/i, '').replace(/[^a-z0-9_-]/g, '_')}@vault.local>`
     : `<capsule-${Math.random().toString(36).substring(2, 10)}@vault.local>`;
   const messageId = headersMap.get('message-id') || fallbackId;
-  const subject = headersMap.get('subject') || 'Untitled Capsule';
-  const from = headersMap.get('from') || 'Alexey <user@local>';
-  const to = headersMap.get('to') || 'Co-Thinker <agent@local>';
+  const rawSubject = headersMap.get('subject') || 'Untitled Capsule';
+  const subject = decodeRfc2047(rawSubject);
+  const from = decodeRfc2047(headersMap.get('from') || 'Alexey <user@local>');
+  const to = decodeRfc2047(headersMap.get('to') || 'Co-Thinker <agent@local>');
   const dateStr = headersMap.get('date') || new Date().toUTCString();
   const inReplyTo = headersMap.get('in-reply-to') || undefined;
   
@@ -191,80 +242,47 @@ export function parseEml(rawEml: string, fileName?: string): CapsuleNode {
   const attachments: CapsuleAttachment[] = [];
 
   try {
-    // 1. Try to find canvas_state.json block in rawBody
+    // 1. Try to find canvas_state.json block in rawBody (native CapsuleOS capsules)
     const jsonMatch = rawBody.match(/Content-Type:\s*application\/json;[^\r\n]*name=["']?canvas_state\.json["']?[\s\S]*?\r?\n\r?\n([\s\S]*?)(?=\r?\n--|$)/i);
+    let isNativeCapsule = false;
+
     if (jsonMatch && jsonMatch[1]) {
-      const parsedJson = JSON.parse(jsonMatch[1].trim());
-      if (parsedJson.blocks && Array.isArray(parsedJson.blocks)) {
-        blocks = parsedJson.blocks;
+      try {
+        const parsedJson = JSON.parse(jsonMatch[1].trim());
+        if (parsedJson.blocks && Array.isArray(parsedJson.blocks)) {
+          blocks = parsedJson.blocks;
+          isNativeCapsule = true;
+        }
+      } catch {
+        // Corrupted JSON payload, will fallback to external parser
       }
     }
 
-    // 2. Parse all attachments
-    const boundaryMatch = rawHeaders.match(/boundary=["']?([^"';]+)["']?/i);
-    if (boundaryMatch && boundaryMatch[1]) {
-      const boundary = boundaryMatch[1];
-      const parts = rawBody.split(new RegExp(`--${boundary}(?:--)?`));
-
-      for (const part of parts) {
-        if (!part.trim()) continue;
-
-        const contentIdMatch = part.match(/Content-ID:\s*<([^>]+)>/i);
-        const nameMatch = part.match(/filename=["']?([^"'\r\n]+)["']?|name=["']?([^"'\r\n]+)["']?/i);
-        const mimeMatch = part.match(/Content-Type:\s*([^;\r\n]+)/i);
-        const encodingMatch = part.match(/Content-Transfer-Encoding:\s*([\w-]+)/i);
-
-        // Resolve the part name from either regex group, then skip the
-        // internal canvas_state.json / html alternative sub-parts.
-        const resolvedName = nameMatch ? nameMatch[1] || nameMatch[2] : undefined;
-        if (resolvedName && resolvedName.toLowerCase() === 'canvas_state.json') continue;
-
-        if (resolvedName) {
-          const name = resolvedName;
-          const cid = contentIdMatch ? contentIdMatch[1] : name.replace(/[^a-zA-Z0-9_]/g, '_');
-          const mimeType = mimeMatch ? mimeMatch[1].trim() : 'text/plain';
-
-          // Extract content after double newline
-          const bodySplit = part.indexOf('\r\n\r\n') !== -1 ? part.indexOf('\r\n\r\n') + 4 : part.indexOf('\n\n') + 2;
-          let content = bodySplit > 1 ? part.substring(bodySplit).trim() : '';
-
-          // Honor Content-Transfer-Encoding (base64 attachments, e.g. audio/binary data)
-          if (encodingMatch && encodingMatch[1].toLowerCase() === 'base64' && content) {
-            try {
-              content = fromBase64(content);
-            } catch {
-              console.warn(`parseEml: failed to decode base64 attachment "${name}"`);
-            }
-          }
-
-          attachments.push({
-            name,
-            cid,
-            mimeType,
-            content,
-            sizeBytes: content.length,
-          });
-        }
-      }
+    if (isNativeCapsule) {
+      // Native CapsuleOS attachment parsing
+      parseNativeAttachments(rawHeaders, rawBody, attachments);
+    } else {
+      // External email (Gmail, Outlook, Thunderbird, Coursera, etc.)
+      const externalResult = parseExternalEmail(rawBody, rawHeaders, subject);
+      blocks = externalResult.blocks;
+      attachments.push(...externalResult.attachments);
     }
   } catch (err) {
     console.warn('Error parsing MIME parts:', err);
-  }
-
-  // Fallback blocks if no canvas_state.json found
-  if (blocks.length === 0) {
-    blocks = [
-      {
-        id: `blk_heading_${Date.now()}`,
-        type: 'heading',
-        data: { level: 1, text: subject },
-      },
-      {
-        id: `blk_body_${Date.now()}`,
-        type: 'paragraph',
-        data: { text: rawBody.substring(0, 500) || 'Imported Capsule content.' },
-      },
-    ];
+    if (blocks.length === 0) {
+      blocks = [
+        {
+          id: `blk_heading_${Date.now()}`,
+          type: 'heading',
+          data: { level: 1, text: subject },
+        },
+        {
+          id: `blk_body_${Date.now()}`,
+          type: 'paragraph',
+          data: { text: rawBody.substring(0, 500) || 'Imported Capsule content.' },
+        },
+      ];
+    }
   }
 
   return {
