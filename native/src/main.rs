@@ -150,6 +150,10 @@ struct NativeApp {
     link_index: Vec<(String, String, usize)>,
     /// Pages that link to the selected page.
     backlinks: Vec<(usize, String)>,
+    /// Full-text index over the vault, rebuilt with the link index.
+    search_index: search::Bm25Index,
+    /// Lowercased-free page text per capsule, used for search snippets.
+    page_texts: Vec<String>,
 }
 
 struct SnapshotJob {
@@ -176,7 +180,7 @@ impl NativeApp {
             vault,
             selected,
             collapsed: HashSet::new(),
-            search: String::new(),
+            search: launch.search.clone().unwrap_or_default(),
             dirty: false,
             last_edit: Instant::now(),
             status: t(locale, Key::Saved).to_string(),
@@ -195,6 +199,8 @@ impl NativeApp {
             snapshot_job,
             link_index: Vec::new(),
             backlinks: Vec::new(),
+            search_index: search::Bm25Index::default(),
+            page_texts: Vec::new(),
         }
         .with_links()
     }
@@ -207,6 +213,13 @@ impl NativeApp {
     /// Recompute the link index and this page's backlinks. CPU-bound (it reads
     /// every page's text), so callers do it on navigation rather than per frame.
     fn refresh_links(&mut self) {
+        self.page_texts = self.vault.capsules.iter().map(links::page_text).collect();
+        self.search_index.clear();
+        for (index, capsule) in self.vault.capsules.iter().enumerate() {
+            let text = self.page_texts.get(index).map(String::as_str).unwrap_or("");
+            let tokens = search::capsule_tokens("", &capsule.tags, text, "");
+            self.search_index.add(&capsule.message_id, tokens);
+        }
         self.link_index = self
             .vault
             .capsules
@@ -323,6 +336,8 @@ impl NativeApp {
                 self.dirty = false;
                 self.status = format!("Saved {}", chrono::Local::now().format("%H:%M:%S"));
                 self.status_error = false;
+                // Keep search and backlinks in sync with what is on disk.
+                self.refresh_links();
                 true
             }
             Err(err) => {
@@ -873,6 +888,8 @@ impl eframe::App for NativeApp {
                         self.selected,
                         &mut self.search,
                         &mut self.collapsed,
+                        &self.search_index,
+                        &self.page_texts,
                         self.locale,
                     )
                 })
@@ -1421,6 +1438,7 @@ fn vault_switcher(ui: &mut Ui, vault: &Vault) -> Response {
 // Shell: sidebar
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::too_many_arguments)]
 fn draw_sidebar(
     ui: &mut Ui,
     vault: &Vault,
@@ -1428,6 +1446,8 @@ fn draw_sidebar(
     selected: Option<usize>,
     search: &mut String,
     collapsed: &mut HashSet<String>,
+    index: &search::Bm25Index,
+    page_texts: &[String],
     locale: Locale,
 ) -> ShellAction {
     let mut action = ShellAction::default();
@@ -1546,21 +1566,30 @@ fn draw_sidebar(
                     action.select = Some(index);
                 }
             } else {
-                let mut matches = 0usize;
-                for (index, capsule) in vault.capsules.iter().enumerate() {
-                    if capsule.subject.to_lowercase().contains(&query)
-                        || capsule
-                            .tags
-                            .iter()
-                            .any(|tag| tag.to_lowercase().contains(&query))
-                    {
-                        matches += 1;
-                        if draw_search_row(ui, &vault.capsules, tree, index, selected) {
-                            action.select = Some(index);
-                        }
-                    }
+                // BM25 over the whole page text, not a substring of the
+                // subject: a query must be able to find prose.
+                let mut rows: Vec<(usize, f32, Option<String>)> = Vec::new();
+                for hit in index.rank(search) {
+                    let Some(position) = vault
+                        .capsules
+                        .iter()
+                        .position(|capsule| capsule.message_id == hit.id)
+                    else {
+                        continue;
+                    };
+                    let capsule = &vault.capsules[position];
+                    let boost = search::subject_boost(search, &capsule.subject, &capsule.tags);
+                    let text = page_texts.get(position).map(String::as_str).unwrap_or("");
+                    rows.push((
+                        position,
+                        hit.score + boost,
+                        search::snippet(text, search, 44),
+                    ));
                 }
-                if matches == 0 {
+                rows.sort_by(|a, b| {
+                    b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
+                });
+                if rows.is_empty() {
                     ui.add_space(18.0);
                     ui.label(
                         RichText::new(format!(
@@ -1574,6 +1603,25 @@ fn draw_sidebar(
                     ui.add_space(6.0);
                     if text_button(ui, None, t(locale, Key::ClearSearch), false).clicked() {
                         search.clear();
+                    }
+                } else {
+                    let _ = hud(
+                        ui,
+                        &format!("{} · {}", rows.len(), t(locale, Key::Results)),
+                        theme::FAINT,
+                    );
+                    for (index, score, snippet) in rows.iter().take(60) {
+                        if draw_search_row(
+                            ui,
+                            &vault.capsules,
+                            tree,
+                            *index,
+                            selected,
+                            *score,
+                            snippet.as_deref(),
+                        ) {
+                            action.select = Some(*index);
+                        }
                     }
                 }
             }
@@ -1899,10 +1947,12 @@ fn draw_search_row(
     tree: &PageTree,
     index: usize,
     selected: Option<usize>,
+    score: f32,
+    snippet: Option<&str>,
 ) -> bool {
     let capsule = &capsules[index];
     let (rect, response) = ui.allocate_exact_size(
-        vec2(ui.available_width(), 38.0),
+        vec2(ui.available_width(), 42.0),
         Sense::click(),
     );
     let is_selected = selected == Some(index);
@@ -1928,34 +1978,48 @@ fn draw_search_row(
     };
     icons::paint(
         ui.painter(),
-        Rect::from_center_size(pos2(rect.left() + 15.0, rect.top() + 14.0), vec2(13.0, 13.0)),
+        Rect::from_center_size(pos2(rect.left() + 15.0, rect.top() + 16.0), vec2(13.0, 13.0)),
         Icon::Doc,
         ink,
     );
-    let title = truncate_chars(&capsule.subject, 32);
-    ui.painter().text(
-        pos2(rect.left() + 30.0, rect.top() + 13.0),
+    let title = truncate_chars(&capsule.subject, 24);
+    let title_clip = Rect::from_min_max(
+        pos2(rect.left() + 30.0, rect.top()),
+        pos2(rect.right() - 34.0, rect.top() + 24.0),
+    );
+    ui.painter().with_clip_rect(title_clip).text(
+        pos2(rect.left() + 30.0, rect.top() + 15.0),
         Align2::LEFT_CENTER,
         title,
         FontId::new(12.5, theme::medium()),
         ink,
     );
-    let parent = tree
-        .parent_of(index)
-        .and_then(|parent| capsules.get(parent))
-        .map(|parent| format!("in {}", truncate_chars(&parent.subject, 30)))
-        .unwrap_or_else(|| "Root page".to_string());
+    let second = match snippet {
+        Some(snippet) => truncate_chars(snippet, 40),
+        None => tree
+            .parent_of(index)
+            .and_then(|parent| capsules.get(parent))
+            .map(|parent| format!("in {}", truncate_chars(&parent.subject, 26)))
+            .unwrap_or_else(|| "Root page".to_string()),
+    };
     ui.painter().text(
-        pos2(rect.left() + 30.0, rect.top() + 27.0),
+        pos2(rect.left() + 30.0, rect.top() + 30.0),
         Align2::LEFT_CENTER,
-        parent,
+        second,
         FontId::new(9.5, theme::mono()),
+        theme::FAINT,
+    );
+    ui.painter().text(
+        pos2(rect.right() - 10.0, rect.top() + 15.0),
+        Align2::RIGHT_CENTER,
+        format!("{score:.1}"),
+        FontId::new(9.0, theme::mono()),
         theme::FAINT,
     );
     if !capsule.native {
         icons::paint(
             ui.painter(),
-            Rect::from_center_size(pos2(rect.right() - 12.0, rect.center().y), vec2(11.0, 11.0)),
+            Rect::from_center_size(pos2(rect.right() - 12.0, rect.top() + 30.0), vec2(11.0, 11.0)),
             Icon::Lock,
             theme::BADGE_BETA,
         );

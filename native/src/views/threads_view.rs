@@ -59,7 +59,21 @@ pub fn draw(
             .max_rect(bar_rect.shrink2(vec2(VIEW_PAD, 0.0)))
             .layout(Layout::left_to_right(Align::Center)),
     );
-    let _ = hud(&mut bar, t(locale, Key::ThreadsEmpty), theme::FAINT);
+    let _ = hud(
+        &mut bar,
+        &format!(
+            "{} {} · {} {}",
+            shown.len(),
+            if state.show_all {
+                t(locale, Key::AllPages)
+            } else {
+                t(locale, Key::ThreadsOnly)
+            },
+            replies,
+            t(locale, Key::Reply)
+        ),
+        theme::FAINT,
+    );
     bar.with_layout(Layout::right_to_left(Align::Center), |ui| {
         match super::segments(
             ui,
@@ -111,64 +125,69 @@ pub fn draw(
                                 .max_rect(rect.shrink2(vec2(8.0, 0.0)))
                                 .layout(Layout::left_to_right(Align::Center)),
                         );
-                        let ui = &mut row;
-                        ui.spacing_mut().item_spacing.x = 8.0;
-                        let arrow = crate::chevron(ui, theme::FAINT);
-                        if arrow.clicked() {
-                            if collapsed {
-                                state.collapsed.remove(&root.message_id);
-                            } else {
-                                state.collapsed.insert(root.message_id.clone());
+                        // Scoped so the row's child UI cannot shadow the list UI:
+                        // replies must be appended to the list, not to the row.
+                        {
+                            let row_ui = &mut row;
+                            row_ui.spacing_mut().item_spacing.x = 8.0;
+                            let arrow = crate::chevron(row_ui, theme::FAINT);
+                            if arrow.clicked() {
+                                if collapsed {
+                                    state.collapsed.remove(&root.message_id);
+                                } else {
+                                    state.collapsed.insert(root.message_id.clone());
+                                }
                             }
-                        }
-                        crate::icons::paint(
-                            ui.painter(),
-                            egui::Rect::from_min_size(
-                                ui.cursor().min + vec2(1.0, 4.0),
-                                vec2(13.0, 13.0),
-                            ),
-                            Icon::Mail,
-                            theme::MUTED,
-                        );
-                        ui.add_space(19.0);
-                        ui.vertical(|ui| {
-                            ui.spacing_mut().item_spacing.y = 1.0;
-                            ui.add(
-                                egui::Label::new(
-                                    RichText::new(truncate_chars(
-                                        &if root.subject.is_empty() {
-                                            t(locale, Key::Untitled).to_string()
-                                        } else {
-                                            root.subject.clone()
-                                        },
-                                        72,
-                                    ))
-                                    .family(theme::medium())
-                                    .size(12.5)
-                                    .color(theme::INK),
-                                )
-                                .truncate(),
-                            );
-                            let _ = hud(
-                                ui,
-                                &format!(
-                                    "{} · {} · {} {}",
-                                    truncate_chars(&root.from, 28),
-                                    root.date,
-                                    chain.replies.len(),
-                                    t(locale, Key::Reply)
+                            crate::icons::paint(
+                                row_ui.painter(),
+                                egui::Rect::from_min_size(
+                                    row_ui.cursor().min + vec2(1.0, 4.0),
+                                    vec2(13.0, 13.0),
                                 ),
-                                theme::FAINT,
+                                Icon::Mail,
+                                theme::MUTED,
                             );
-                        });
-                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            for tag in root.tags.iter().take(2) {
-                                let _ = tag_chip(ui, tag, theme::MUTED);
-                            }
-                            if !root.native {
-                                let _ = tag_chip(ui, t(locale, Key::ReadOnly), theme::BADGE_BETA);
-                            }
-                        });
+                            row_ui.add_space(19.0);
+                            row_ui.vertical(|ui| {
+                                ui.spacing_mut().item_spacing.y = 1.0;
+                                ui.set_max_width((rect.width() - 210.0).max(140.0));
+                                ui.add(
+                                    egui::Label::new(
+                                        RichText::new(truncate_chars(
+                                            &if root.subject.is_empty() {
+                                                t(locale, Key::Untitled).to_string()
+                                            } else {
+                                                root.subject.clone()
+                                            },
+                                            72,
+                                        ))
+                                        .family(theme::medium())
+                                        .size(12.5)
+                                        .color(theme::INK),
+                                    )
+                                    .truncate(),
+                                );
+                                let _ = hud(
+                                    ui,
+                                    &format!(
+                                        "{} · {} · {} {}",
+                                        truncate_chars(&root.from, 24),
+                                        truncate_chars(&root.date, 22),
+                                        chain.replies.len(),
+                                        t(locale, Key::Reply)
+                                    ),
+                                    theme::FAINT,
+                                );
+                            });
+                            row_ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                for tag in root.tags.iter().take(2) {
+                                    let _ = tag_chip(ui, tag, theme::MUTED);
+                                }
+                                if !root.native {
+                                    let _ = tag_chip(ui, t(locale, Key::ReadOnly), theme::BADGE_BETA);
+                                }
+                            });
+                        }
                         if response.clicked() {
                             action.select_id = Some(root.message_id.clone());
                         }

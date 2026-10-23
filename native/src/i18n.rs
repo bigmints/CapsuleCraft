@@ -124,6 +124,7 @@ strings! {
     NoPageSelected => ("Страница не выбрана", "No page selected"),
     SearchPlaceholder => ("Поиск по хранилищу", "Search the vault"),
     NoMatches => ("Ничего не найдено", "No pages match"),
+    Results => ("найдено", "found"),
     ClearSearch => ("Сбросить поиск", "Clear search"),
     ChangeFolder => ("Сменить папку…", "Change folder…"),
     ZeroDb => ("Zero-DB хранилище", "Zero-DB vault"),

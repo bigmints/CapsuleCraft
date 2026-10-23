@@ -24,6 +24,8 @@ pub struct Launch {
     pub frames: u32,
     /// Locale override (otherwise the saved / OS default is used).
     pub locale: Option<Locale>,
+    /// Pre-filled sidebar search, so a snapshot can show ranked results.
+    pub search: Option<String>,
     /// Print the parsed launch configuration and exit.
     pub print_config: bool,
 }
@@ -68,6 +70,7 @@ pub fn parse(args: &[String]) -> Launch {
             "--locale" => {
                 launch.locale = take_value(&mut index).and_then(|v| parse_locale(&v));
             }
+            "--search" => launch.search = take_value(&mut index),
             "--print-config" => launch.print_config = true,
             other if !other.starts_with('-') => {
                 if launch.vault.is_none() {
@@ -134,6 +137,12 @@ mod tests {
         assert_eq!(launch.view, Some(View::Graph));
         assert_eq!(launch.page, Some(3));
         assert_eq!(launch.frames, 12);
+    }
+
+    #[test]
+    fn search_query_is_preserved() {
+        let launch = parse(&args(&["--search", "mmap headers"]));
+        assert_eq!(launch.search.as_deref(), Some("mmap headers"));
     }
 
     #[test]

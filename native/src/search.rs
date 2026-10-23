@@ -431,7 +431,8 @@ pub fn snippet(text: &str, query: &str, radius: usize) -> Option<String> {
     if to < chars.len() {
         out.push('…');
     }
-    Some(out)
+    // Page text contains newlines; a sidebar row is one line.
+    Some(out.split_whitespace().collect::<Vec<_>>().join(" "))
 }
 
 /// Simple subject/tag boost applied on top of BM25.
