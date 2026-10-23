@@ -287,6 +287,35 @@ impl NativeApp {
         self.toast = Some((text.into(), Instant::now()));
     }
 
+    /// Dim the window while files are held over it, so the drop target is
+    /// explicit instead of a surprise import.
+    fn draw_drop_hint(&self, ctx: &egui::Context) {
+        let hovering = ctx.input(|i| !i.raw.hovered_files.is_empty());
+        if !hovering {
+            return;
+        }
+        let rect = ctx.content_rect();
+        let painter = ctx.layer_painter(egui::LayerId::new(
+            egui::Order::Tooltip,
+            egui::Id::new("drop-hint"),
+        ));
+        painter.rect_filled(rect, 0.0, Color32::from_black_alpha(180));
+        painter.rect_stroke(
+            rect.shrink(48.0),
+            theme::RADIUS,
+            Stroke::new(1.5, theme::ACCENT),
+            egui::StrokeKind::Inside,
+        );
+        painter.text(
+            rect.center(),
+            Align2::CENTER_CENTER,
+            t(self.locale, Key::DropHint),
+            FontId::new(17.0, theme::display()),
+            theme::INK,
+        );
+        ctx.request_repaint();
+    }
+
     /// `--snapshot`: let fonts and layout settle, capture the framebuffer, quit.
     fn drive_snapshot(&mut self, ctx: &egui::Context) {
         let Some(job) = self.snapshot_job.as_mut() else {
@@ -610,9 +639,30 @@ impl NativeApp {
         else {
             return;
         };
+        self.import_paths(paths);
+    }
+
+    /// Copy `.eml` files into the vault. Dropped files and the import dialog
+    /// share this path, so both behave the same and both keep the original
+    /// bytes (an imported mail is never re-encoded on the way in).
+    fn import_paths(&mut self, paths: Vec<PathBuf>) {
+        if !self.save_selected() {
+            return;
+        }
         let mut imported = 0usize;
+        let mut skipped = 0usize;
         for path in paths {
-            let Ok(raw) = std::fs::read_to_string(&path) else {
+            let is_eml = path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| ext.eq_ignore_ascii_case("eml"))
+                .unwrap_or(false);
+            if !is_eml {
+                skipped += 1;
+                continue;
+            }
+            let Ok(bytes) = std::fs::read(&path) else {
+                skipped += 1;
                 continue;
             };
             let name = path
@@ -620,16 +670,23 @@ impl NativeApp {
                 .and_then(|name| name.to_str())
                 .unwrap_or("imported.eml");
             let target = unique_path(&self.vault.dir, name);
-            if std::fs::write(&target, &raw).is_ok() {
+            if std::fs::write(&target, &bytes).is_ok() {
                 imported += 1;
+            } else {
+                skipped += 1;
             }
         }
         if imported > 0 {
             self.reload();
             self.toast(format!(
-                "{} · {} .eml",
+                "{} · {} .eml{}",
                 t(self.locale, Key::Imported),
-                imported
+                imported,
+                if skipped > 0 {
+                    format!(" · {} {}", skipped, t(self.locale, Key::SkippedFiles))
+                } else {
+                    String::new()
+                }
             ));
         } else {
             self.toast(t(self.locale, Key::AttachFailed));
@@ -797,6 +854,19 @@ impl eframe::App for NativeApp {
         let ctx = ui.ctx().clone();
         self.sync_snapshot();
         self.drive_snapshot(&ctx);
+
+        // Drag and drop: `.eml` files land in the vault folder untouched.
+        let dropped: Vec<PathBuf> = ctx.input(|i| {
+            i.raw
+                .dropped_files
+                .iter()
+                .map(|file| file.path().to_path_buf())
+                .collect()
+        });
+        if !dropped.is_empty() {
+            self.import_paths(dropped);
+        }
+        self.draw_drop_hint(&ctx);
 
         let (cmd, shift) = ctx.input(|i| (i.modifiers.command, i.modifiers.shift));
         if cmd && ctx.input(|i| i.key_pressed(egui::Key::S)) {

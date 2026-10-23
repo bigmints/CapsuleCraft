@@ -244,17 +244,25 @@ pub fn segments(ui: &mut Ui, options: &[(&str, bool)]) -> Option<usize> {
 }
 
 /// Small statistic block: big number over a caps label.
+///
+/// The box is measured from the label so several stats can sit side by side in
+/// a right-to-left toolbar without the first one swallowing the whole row.
 pub fn stat(ui: &mut Ui, value: &str, label: &str, color: Color32) {
-    ui.vertical(|ui| {
-        ui.spacing_mut().item_spacing.y = 1.0;
-        ui.label(
-            RichText::new(value)
-                .family(theme::display())
-                .size(22.0)
-                .color(color),
-        );
-        let _ = crate::hud(ui, label, theme::FAINT);
-    });
+    let width = (label.chars().count() as f32 * 6.2).max(48.0) + 10.0;
+    ui.allocate_ui_with_layout(
+        vec2(width, 32.0),
+        Layout::top_down(Align::Max),
+        |ui| {
+            ui.spacing_mut().item_spacing.y = 1.0;
+            ui.label(
+                RichText::new(value)
+                    .family(theme::display())
+                    .size(20.0)
+                    .color(color),
+            );
+            let _ = crate::hud(ui, label, theme::FAINT);
+        },
+    );
 }
 
 /// Quiet empty state used by every view.

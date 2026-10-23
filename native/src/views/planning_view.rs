@@ -148,31 +148,43 @@ pub fn draw(
         }
     }
 
-    bar.with_layout(Layout::right_to_left(Align::Center), |ui| {
-        if ghost(
-            ui,
-            Icon::Download,
-            Some("ICS"),
-            t(locale, Key::ExportIcs),
-            !all_tasks.is_empty(),
-            28.0,
-        )
-        .clicked()
-        {
-            export_ics(vault, locale);
-        }
-        ui.add_space(12.0);
-        stat(
-            ui,
-            &stats.overdue.to_string(),
-            t(locale, Key::TasksOverdue),
-            if stats.overdue > 0 { theme::BAD } else { theme::FAINT },
-        );
-        ui.add_space(10.0);
-        stat(ui, &format!("{}%", stats.completion_rate), t(locale, Key::TasksDone), theme::INK);
-        ui.add_space(10.0);
-        stat(ui, &stats.open.to_string(), t(locale, Key::TasksOpen), theme::INK);
-    });
+    // The right group gets its own right-to-left child anchored to the toolbar
+    // edge: sharing the left-to-right cursor made the stats collide with the
+    // segmented control whenever a filter chip was visible.
+    let mut right = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(bar_rect.shrink2(vec2(super::VIEW_PAD, 4.0)))
+            .layout(Layout::right_to_left(Align::Center)),
+    );
+    right.spacing_mut().item_spacing.x = 0.0;
+    if ghost(
+        &mut right,
+        Icon::Download,
+        Some("ICS"),
+        t(locale, Key::ExportIcs),
+        !all_tasks.is_empty(),
+        28.0,
+    )
+    .clicked()
+    {
+        export_ics(vault, locale);
+    }
+    right.add_space(12.0);
+    stat(
+        &mut right,
+        &stats.overdue.to_string(),
+        t(locale, Key::TasksOverdue),
+        if stats.overdue > 0 { theme::BAD } else { theme::FAINT },
+    );
+    right.add_space(10.0);
+    stat(
+        &mut right,
+        &format!("{}%", stats.completion_rate),
+        t(locale, Key::TasksDone),
+        theme::INK,
+    );
+    right.add_space(10.0);
+    stat(&mut right, &stats.open.to_string(), t(locale, Key::TasksOpen), theme::INK);
 
     if state.show_filters {
         filter_bar(ui, state, &all_tasks, locale);

@@ -320,6 +320,8 @@ strings! {
     AttachFailed => ("Не удалось добавить вложение", "Could not add the attachment"),
     ImportEml => ("Импорт .eml…", "Import .eml…"),
     Imported => ("Импортировано", "Imported"),
+    DropHint => ("Отпустите файлы .eml, чтобы добавить их в хранилище", "Drop .eml files to add them to the vault"),
+    SkippedFiles => ("пропущено", "skipped"),
     ExportVault => ("Экспорт хранилища…", "Export vault…"),
     VaultExported => ("Хранилище скопировано", "Vault exported"),
     DeletePage => ("Удалить страницу", "Delete page"),
