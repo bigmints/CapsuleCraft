@@ -1,30 +1,61 @@
 <div align="center">
 
-# 🧠 CapsuleOS
+<img src="screenshots/capsulecraft-mascot.png" alt="CapsuleCraft — маскот с капсулой .eml" width="180">
+
+# CapsuleCraft
 
 ### Ваша база знаний — это папка с письмами.
 
 **Мультимодальное рабочее пространство и персональный движок знаний без базы данных.**
-Каждая заметка, таблица, вайтборд и голосовая memorandum — обычное **RFC 5322 `.eml`-сообщение**:
+Каждая заметка, таблица, вайтборд и голосовая заметка — обычное **RFC 5322 `.eml`-сообщение**:
 без SQL, без документных СУБД, без облака и vendor lock-in. Файлы, которые открываются в любом почтовом клиенте, ищутся `grep`-ом, диффятся и хранятся десятилетиями.
 
 [![Release](https://img.shields.io/github/v/release/kostyk348/capsuleos?sort=semver&color=0ea5e9&label=release)](https://github.com/kostyk348/capsuleos/releases)
 [![CI](https://github.com/kostyk348/capsuleos/actions/workflows/ci.yml/badge.svg)](https://github.com/kostyk348/capsuleos/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/тесты-151%20passing-22c55e)](https://github.com/kostyk348/capsuleos/actions/workflows/ci.yml)
+[![тесты движка](https://img.shields.io/badge/тесты%20движка-151%20passing-22c55e)](https://github.com/kostyk348/capsuleos/actions/workflows/ci.yml)
+[![тесты native](https://img.shields.io/badge/тесты%20native-69%20passing-22c55e)](native/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Tauri](https://img.shields.io/badge/Tauri-2-FFC131?logo=tauri&logoColor=black)](https://v2.tauri.app/)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev/)
+[![Rust](https://img.shields.io/badge/Rust-1.77+-DEA584?logo=rust&logoColor=white)](native/)
+[![egui](https://img.shields.io/badge/egui-0.37-0ea5e9)](https://github.com/emilk/egui)
 [![No DB](https://img.shields.io/badge/БД-нет-orange)](#-почему)
 [![Offline](https://img.shields.io/badge/offline-first-success)](#-данные-и-приватность)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](CONTRIBUTING.md)
 
 [English](README.md) · **Русский**
 
-<img src="screenshots/capsuleos-editor.png" alt="Редактор CapsuleOS — RFC 5322 заголовки, теги, панель ИИ-соавтора" width="100%">
+[Почему](#-почему) · [Экскурсия](#-экскурсия-по-фичам) · [Native-оболочка](#native-оболочка-на-egui-эксперимент) · [Формат](#-формат-капсулы) · [Начало работы](#-начало-работы) · [Архитектура](#-архитектура) · [Роадмап](#-роадмап)
 
 </div>
 
 ---
+
+## 🆕 Что нового в v1.5 — переименование в CapsuleCraft
+
+> Тот же формат, то же хранилище, новое имя и вторая оболочка без webview. [Полный changelog →](CHANGELOG.md)
+
+| | |
+|---|---|
+| 🫧 **CapsuleCraft** | Проект, известный как CapsuleOS. Новый маскот и набор иконок (`.ico` для Windows, `.icns` для macOS, PNG для Linux, favicon), обновлённая документация. Формат `.eml`, заголовки `X-Capsule-*`, папка данных и стиль Message-ID не изменились — все существующие хранилища открываются как раньше |
+| 🖥 **Native-оболочка на egui (эксперимент)** | Второй бинарник над той же папкой, без браузерного движка: дерево страниц и блочный редактор, `[[wiki-ссылки]]` с обратными ссылками, поиск BM25 с выдержками, планирование, граф, треды, MIME и вид письма |
+| 🔗 **Ссылки живут после переименования** | Переименование страницы переписывает все `[[старое имя]]` в хранилище — вики не рассыпается; импортированные письма не трогаются |
+| 👀 **Слежение за папкой** | Native-оболочка перечитывает `.eml`, изменённый на диске, и никогда не делает это при несохранённых правках |
+| 📸 **Скриншоты из приложения** | `--snapshot` рендерит реальное окно в PNG, поэтому картинки ниже — вывод кода, а не макеты |
+
+<img src="screenshots/capsulecraft-native-page.png" alt="Native-оболочка CapsuleCraft — страница с wiki-ссылками, тегами и задачами" width="100%">
+
+<img src="screenshots/capsulecraft-native-backlinks.png" alt="Native-оболочка — обратные ссылки, сохранённый код и хлебные крошки" width="100%">
+
+<details>
+<summary><b>Ещё скриншоты</b> — планирование, граф, треды, поиск</summary>
+
+| | |
+|---|---|
+| <img src="screenshots/capsulecraft-native-planning.png" alt="Планирование: повестка, канбан, гантт, календарь"> | <img src="screenshots/capsulecraft-native-graph.png" alt="Граф связей с подписями узлов"> |
+| <img src="screenshots/capsulecraft-native-threads.png" alt="Цепочки ответов из заголовков In-Reply-To"> | <img src="screenshots/capsulecraft-native-search.png" alt="Поиск BM25 с подсветкой выдержек"> |
+
+</details>
 
 ## 🧭 Коротко
 
@@ -93,9 +124,9 @@
 
 Большинство заметочных приложений хранят знания в проприетарной базе. Ваши заметки принадлежат вам лишь до тех пор, пока живо приложение и не поменялась схема.
 
-CapsuleOS переворачивает это:
+CapsuleCraft переворачивает это:
 
-| Обычный PKM | CapsuleOS |
+| Обычный PKM | CapsuleCraft |
 |---|---|
 | SQLite / проприетарное хранилище | Обычные `.eml`-файлы на диске |
 | Экспорт = потери при конвертации в Markdown | Экспорт = файл, который у вас уже есть |
@@ -106,6 +137,9 @@ CapsuleOS переворачивает это:
 Вся база знаний — это **папка с сообщениями**: ищется grep-ом, диффится, резервируется любым инструментом, читается десятилетиями.
 
 ## ✨ Экскурсия по фичам
+
+> Скриншоты в этом разделе и в заметках о релизах ниже сделаны до переименования и
+> показывают прежнее имя. Свежие native-скриншоты — в начале README.
 
 ### 🧱 Блочный редактор
 
@@ -224,10 +258,10 @@ JSON-часть — структурированный блочный холст
 
 | Файл | Что это |
 |---|---|
-| `CapsuleOS_*_x64_en-US.msi` | Пакет Windows Installer |
-| `CapsuleOS_*_x64-setup.exe` | Инсталлятор NSIS |
-| `CapsuleOS_*_amd64.AppImage` | Linux — портативный, `chmod +x` и запуск |
-| `CapsuleOS_*_amd64.deb` | Linux — пакет Debian / Ubuntu |
+| `CapsuleCraft_*_x64_en-US.msi` | Пакет Windows Installer |
+| `CapsuleCraft_*_x64-setup.exe` | Инсталлятор NSIS |
+| `CapsuleCraft_*_amd64.AppImage` | Linux — портативный, `chmod +x` и запуск |
+| `CapsuleCraft_*_amd64.deb` | Linux — пакет Debian / Ubuntu |
 
 - Windows требует **WebView2 Runtime** от Microsoft Edge (предустановлен в Windows 10/11; иначе [скачайте](https://developer.microsoft.com/microsoft-edge/webview2/)).
 - Linux-сборки ориентированы на **glibc 2.35+** (собраны на Ubuntu 22.04); WebKitGTK 4.1 — рантайм-зависимость (`sudo apt install libwebkit2gtk-4.1-0`), AppImage вшивает большинство библиотек.
@@ -238,9 +272,9 @@ JSON-часть — структурированный блочный холст
 
 ### Первый запуск
 
-CapsuleOS стартует с **пустого хранилища** — никаких демо-заметок. Вместо них — встроенный онбординг-экран: он объясняет концепцию `.eml`, отвечает на частые вопросы и предлагает два действия — создать капсулу или импортировать `.eml`. FAQ доступен в любой момент по кнопке **FAQ** в верхней панели.
+CapsuleCraft стартует с **пустого хранилища** — никаких демо-заметок. Вместо них — встроенный онбординг-экран: он объясняет концепцию `.eml`, отвечает на частые вопросы и предлагает два действия — создать капсулу или импортировать `.eml`. FAQ доступен в любой момент по кнопке **FAQ** в верхней панели.
 
-<img src="screenshots/capsuleos-faq.png" alt="Первый запуск CapsuleOS — пустое хранилище со встроенным FAQ" width="100%">
+<img src="screenshots/capsuleos-faq.png" alt="Первый запуск CapsuleCraft — пустое хранилище со встроенным FAQ" width="100%">
 
 ### Сборка из исходников
 
@@ -327,7 +361,10 @@ src-tauri/                Rust-оболочка: файловый IO, диало
 - ✅ v1.0 — блочный канвас, `.eml`-vault, граф, треды, оболочка Tauri
 - ✅ v1.1 — точность движка + тесты, настоящий звук, честный бенчмарк, HTML-экспорт, онбординг с пустым хранилищем и FAQ
 - ✅ v1.2 — ранжирование поиска по Okapi BM25 с баллами релевантности, Linux-сборки (AppImage / deb) в релизном пайплайне
-- ⬜ Слежение за папкой — живая синхронизация vault без перезапуска
+- ✅ v1.3 — контент-зависимый офлайн Co-Thinker, связанные капсулы по tf-idf
+- ✅ v1.4 — слой планирования (повестка, канбан, гантт, календарь), иерархия страниц, импорт писем, фильтры задач
+- ✅ v1.5 — переименование в CapsuleCraft + иконки-маскот, native-оболочка на egui (wiki-ссылки, поиск, слежение за папкой)
+- ⬜ Воспроизведение аудио и исполнение кода в native-оболочке
 - ⬜ GPG-подпись капсул (подлинность мыслей)
 - ⬜ Python-ячейки через Pyodide, Rust-ячейки через WASM
 - ⬜ Сборки macOS в релизном пайплайне
@@ -335,15 +372,16 @@ src-tauri/                Rust-оболочка: файловый IO, диало
 
 ## 📊 Статус
 
-`v1.3.0` — десктоп-приложение работоспособно от начала до конца. Движок покрыт suite'ом vitest (MIME round-trip, ранжирование BM25, контент-зависимый офлайн-ИИ, CSV-аналитика, регрессия фантомных вложений, хелперы редактора). Известные шероховатости:
+`v1.5.0` — две оболочки над одним форматом. Веб-приложение (Tauri) работоспособно от начала до конца, движок покрыт suite'ом vitest (MIME round-trip, ранжирование BM25, контент-зависимый офлайн-ИИ, CSV-аналитика, регрессия фантомных вложений, хелперы редактора). Native-оболочка на egui — экспериментальный второй фронтенд со своими cargo-тестами (69 unit-тестов: ссылки, поиск, планирование, история, i18n, CLI, слежение за папкой). Известные шероховатости:
 
 - инсталляторы не подписаны кодовой подписью (SmartScreen предупреждает);
 - Python/Rust-ячейки хранятся и версионируются, но не исполняются офлайн (WASM-интерпретаторы не вшиты);
-- браузерный бенчмарк парсит 50k синтетических капсул за ~1.3 с — реальный холодный скан папки медленнее.
+- браузерный бенчмарк парсит 50k синтетических капсул за ~1.3 с — реальный холодный скан папки медленнее;
+- native-оболочка пока не воспроизводит аудио и не исполняет код — см. [LIMITATIONS.md](LIMITATIONS.md#native-egui-prototype).
 
 ## ⁇ FAQ
 
-**Что такое CapsuleOS — в двух словах?**
+**Что такое CapsuleCraft — в двух словах?**
 Локальный «рабочий стол для мышления». Каждая мысль — настоящее письмо RFC 5322 (файл `.eml`): блочный редактор вместо Markdown, треды как в почте, граф связей и офлайн Co-Thinker. Никакой базы данных — папка `.eml`-файлов и есть вся база знаний.
 
 **Где физически хранятся мои заметки?**
@@ -370,7 +408,7 @@ Issues и PR приветствуются — см. [CONTRIBUTING.md](CONTRIBUTI
 
 <div align="center">
 
-**CapsuleOS** — ваши мысли, хранящиеся как почта.
+**CapsuleCraft** — ваши мысли, хранящиеся как почта.
 
 [Скачать](https://github.com/kostyk348/capsuleos/releases/latest) · [Changelog](CHANGELOG.md) · [Сообщить о баге](https://github.com/kostyk348/capsuleos/issues) · [Лицензия MIT](LICENSE)
 

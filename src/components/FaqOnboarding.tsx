@@ -31,7 +31,7 @@ export interface FaqItem {
 // indirectly on purpose.
 export const FAQ_ITEMS: FaqItem[] = [
   {
-    q: 'Что такое CapsuleOS — в двух словах?',
+    q: 'Что такое CapsuleCraft — в двух словах?',
     a: (
       <>
         Локальный «рабочий стол для мышления». Каждая мысль — настоящее письмо
@@ -200,7 +200,7 @@ export const EmptyVaultState: React.FC<EmptyVaultProps> = ({
             Хранилище пусто — и это нормально
           </h1>
           <p className="mt-3 text-sm text-slate-400 leading-relaxed max-w-xl mx-auto">
-            CapsuleOS не создаёт демо-заметок: ваша база знаний начинается с
+            CapsuleCraft не создаёт демо-заметок: ваша база знаний начинается с
             чистого vault. Каждая мысль здесь — настоящий .eml файл (RFC 5322),
             который всегда можно открыть в почтовом клиенте, отдать другому
             человеку или положить в git. Вместо свалки примеров — короткий FAQ.
@@ -305,7 +305,7 @@ export const FaqModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({
             <div>
               <h2 className="text-sm font-bold text-white">FAQ — частые вопросы</h2>
               <p className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">
-                CapsuleOS knowledge vault
+                CapsuleCraft knowledge vault
               </p>
             </div>
           </div>

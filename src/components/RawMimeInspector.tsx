@@ -133,7 +133,7 @@ export const RawMimeInspector: React.FC<Props> = ({ capsule, onDownloadEml }) =>
           </div>
 
           <div className="pt-4 border-t border-slate-800 text-[10px] text-slate-500 leading-relaxed font-sans">
-            RFC 5322 ensures that every node opens seamlessly both in standard email clients (Apple Mail, Thunderbird) and inside CapsuleOS.
+            RFC 5322 ensures that every node opens seamlessly both in standard email clients (Apple Mail, Thunderbird) and inside CapsuleCraft.
           </div>
         </div>
 

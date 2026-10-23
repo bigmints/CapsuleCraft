@@ -116,7 +116,7 @@ macro_rules! strings {
 
 strings! {
     // Shell
-    AppName => ("CapsuleOS", "CapsuleOS"),
+    AppName => ("CapsuleCraft", "CapsuleCraft"),
     NativeBadge => ("NATIVE", "NATIVE"),
     Pages => ("Страницы", "Pages"),
     NewPage => ("Новая страница", "New page"),
@@ -128,6 +128,7 @@ strings! {
     ClearSearch => ("Сбросить поиск", "Clear search"),
     ChangeFolder => ("Сменить папку…", "Change folder…"),
     ZeroDb => ("Zero-DB хранилище", "Zero-DB vault"),
+    Watching => ("папка под наблюдением", "folder watched"),
     PageCount => ("стр. .eml", ".eml pages"),
     PageOne => ("страница", "page"),
     PageFew => ("страницы", "pages"),
@@ -315,7 +316,7 @@ strings! {
     Headers => ("Заголовки", "Headers"),
     Body => ("Тело", "Body"),
     ExternalPreview => ("Импортированное письмо", "Imported email"),
-    ExternalReadOnlyNotice => ("Файл не создан CapsuleOS. Нативная версия показывает текст письма и никогда его не перезаписывает.", "This file was not written by CapsuleOS. The native app renders its text and never rewrites it."),
+    ExternalReadOnlyNotice => ("Файл не создан CapsuleCraft. Нативная версия показывает текст письма и никогда его не перезаписывает.", "This file was not written by CapsuleCraft. The native app renders its text and never rewrites it."),
     HtmlRenderingNotice => ("Упрощённый рендер: теги и ссылки разбираются, CSS не применяется.", "Simplified rendering: tags and links are parsed, CSS is not applied."),
     NoBody => ("Тело письма пустое или не распознано", "The message body is empty or unrecognised"),
     PlainPart => ("text/plain", "text/plain"),

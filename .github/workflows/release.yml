@@ -73,21 +73,21 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
-          releaseName: ${{ startsWith(github.ref, 'refs/tags/v') && format('CapsuleOS {0}', github.ref_name) || '' }}
+          releaseName: ${{ startsWith(github.ref, 'refs/tags/v') && format('CapsuleCraft {0}', github.ref_name) || '' }}
           releaseBody: |
-            ## CapsuleOS ${{ github.ref_name }}
+            ## CapsuleCraft ${{ github.ref_name }}
 
             Zero-DB, pure-MIME multimodal workspace. Native desktop builds (Tauri 2 + React 19).
 
             ### Windows x64
-            - `CapsuleOS_*_x64_en-US.msi` — Windows Installer package
-            - `CapsuleOS_*_x64-setup.exe` — NSIS installer
+            - `CapsuleCraft_*_x64_en-US.msi` — Windows Installer package
+            - `CapsuleCraft_*_x64-setup.exe` — NSIS installer
 
             Requires Microsoft Edge WebView2 Runtime (preinstalled on Windows 10/11).
 
             ### Linux x64
-            - `CapsuleOS_*_amd64.AppImage` — portable, `chmod +x` and run
-            - `CapsuleOS_*_amd64.deb` — Debian / Ubuntu package
+            - `CapsuleCraft_*_amd64.AppImage` — portable, `chmod +x` and run
+            - `CapsuleCraft_*_amd64.deb` — Debian / Ubuntu package
 
             Built on Ubuntu 22.04 (glibc 2.35+). WebKitGTK 4.1 is a runtime dependency on Linux (`sudo apt install libwebkit2gtk-4.1-0`), AppImage bundles most libraries.
 

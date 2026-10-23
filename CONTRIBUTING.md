@@ -1,4 +1,4 @@
-# Contributing to CapsuleOS
+# Contributing to CapsuleCraft
 
 [English](#english) · [Русский](#русский)
 
@@ -6,11 +6,11 @@
 
 ## English
 
-Thanks for taking the time to help. CapsuleOS is small on purpose — please keep changes focused.
+Thanks for taking the time to help. CapsuleCraft is small on purpose — please keep changes focused.
 
 ### Ground rules
 
-1. **The `.eml` format is the contract.** A capsule must stay valid RFC 5322 + MIME. Never introduce a side channel that only CapsuleOS can read.
+1. **The `.eml` format is the contract.** A capsule must stay valid RFC 5322 + MIME. Never introduce a side channel that only CapsuleCraft can read.
 2. **No new runtime infrastructure.** No database, no server, no telemetry, no external API calls at runtime.
 3. **Local-first.** Offline behaviour is the default path, not a fallback.
 4. **Zero-DB, not zero-structure.** If a feature needs state, it goes into the capsule or the vault folder.
@@ -54,7 +54,7 @@ CI runs exactly these checks on Linux plus a Windows release build on tags.
 
 ### Reporting bugs
 
-Use the issue templates. Useful details: OS, CapsuleOS version, what you expected, what happened, and — if possible — the offending `.eml` with private content removed.
+Use the issue templates. Useful details: OS, CapsuleCraft version, what you expected, what happened, and — if possible — the offending `.eml` with private content removed.
 
 Security issues: please do **not** open a public issue, mail the maintainer instead.
 
@@ -66,7 +66,7 @@ Security issues: please do **not** open a public issue, mail the maintainer inst
 
 ### Основные правила
 
-1. **Формат `.eml` — это контракт.** Капсула должна оставаться валидным RFC 5322 + MIME. Никаких побочных каналов, читаемых только CapsuleOS.
+1. **Формат `.eml` — это контракт.** Капсула должна оставаться валидным RFC 5322 + MIME. Никаких побочных каналов, читаемых только CapsuleCraft.
 2. **Никакой новой инфраструктуры.** Ни БД, ни сервера, ни телеметрии, ни внешних API в рантайме.
 3. **Local-first.** Офлайновое поведение — основной путь, а не запасной.
 4. **Zero-DB, но не zero-structure.** Нужно состояние — оно едет в капсуле или в папке хранилища.
@@ -110,6 +110,6 @@ CI гоняет ровно эти проверки на Linux, плюс рели
 
 ### Баг-репорты
 
-Используйте шаблоны issue. Полезно указать: ОС, версию CapsuleOS, ожидаемое и фактическое поведение, а по возможности — проблемный `.eml` без приватных данных.
+Используйте шаблоны issue. Полезно указать: ОС, версию CapsuleCraft, ожидаемое и фактическое поведение, а по возможности — проблемный `.eml` без приватных данных.
 
 Об уязвимостях: **не** открывайте публичный issue, напишите мейнтейнеру.

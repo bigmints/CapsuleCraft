@@ -535,7 +535,7 @@ class VaultStore {
         const rawEml = await readVaultFile(fileName);
         if (rawEml === null) continue;
 
-        // Self-write loop guard: if rawEml matches our synced cache, it's CapsuleOS's own write
+        // Self-write loop guard: if rawEml matches our synced cache, it's CapsuleCraft's own write
         const cached = this.syncedEmlByFile.get(fileName);
         if (cached === rawEml) {
           continue;
@@ -592,7 +592,7 @@ class VaultStore {
       messageId,
       subject: overrides?.subject || '',
       from: overrides?.from || 'Local user <user@capsuleos.local>',
-      to: overrides?.to || 'CapsuleOS Vault <vault@capsuleos.local>',
+      to: overrides?.to || 'CapsuleCraft Vault <vault@capsuleos.local>',
       date: new Date().toUTCString(),
       timestamp: Date.now(),
       inReplyTo: overrides?.inReplyTo,
@@ -833,7 +833,7 @@ class VaultStore {
 
   public async exportVaultZip(): Promise<Blob> {
     const zip = new JSZip();
-    const folder = zip.folder('CapsuleOS_Vault');
+    const folder = zip.folder('CapsuleCraft_Vault');
 
     for (const node of this.nodes.values()) {
       const emlContent = node.rawEml || assembleEml(node);

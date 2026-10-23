@@ -258,7 +258,7 @@ export default function App() {  const { t } = useI18n();
       messageId: newId,
       subject: t('app.newCapsuleSubject'),
       from: 'Local user <user@capsuleos.local>',
-      to: 'CapsuleOS Vault <vault@capsuleos.local>',
+      to: 'CapsuleCraft Vault <vault@capsuleos.local>',
       date: new Date().toUTCString(),
       timestamp: Date.now(),
       references: [],
@@ -323,7 +323,7 @@ export default function App() {  const { t } = useI18n();
       messageId: newId,
       subject: finalTitle,
       from: 'Alexey <alexey@workspace.local>',
-      to: 'CapsuleOS Knowledge Vault <vault@capsuleos.local>',
+      to: 'CapsuleCraft Knowledge Vault <vault@capsuleos.local>',
       date: new Date().toUTCString(),
       timestamp: Date.now(),
       inReplyTo: parentId,
@@ -405,7 +405,7 @@ export default function App() {  const { t } = useI18n();
     const url = URL.createObjectURL(zipBlob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `CapsuleOS_Vault_${new Date().toISOString().slice(0, 10)}.zip`;
+    a.download = `CapsuleCraft_Vault_${new Date().toISOString().slice(0, 10)}.zip`;
     a.click();
     URL.revokeObjectURL(url);
     showToast(t('app.toast.vaultExported', { count: allNodes.length }));

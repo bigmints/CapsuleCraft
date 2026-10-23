@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "CapsuleOS",
-  "version": "1.4.0",
+  "productName": "CapsuleCraft",
+  "version": "1.5.0",
   "identifier": "com.capsuleos.app",
   "build": {
     "frontendDist": "../dist",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "CapsuleOS",
+        "title": "CapsuleCraft",
         "width": 1500,
         "height": 950,
         "resizable": true,

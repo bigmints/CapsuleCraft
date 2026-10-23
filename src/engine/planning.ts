@@ -481,7 +481,7 @@ function icsPriority(priority: TaskPriority | undefined): number {
 export function buildIcs(tasks: PlannedTask[], options: IcsOptions = {}): string {
   const now = options.now || new Date();
   const stamp = formatUtcStamp(now);
-  const calendarName = options.calendarName || 'CapsuleOS Planning';
+  const calendarName = options.calendarName || 'CapsuleCraft Planning';
   const selected = options.includeCompleted
     ? tasks
     : tasks.filter((t) => taskStatus(t.item) !== 'done');
@@ -489,7 +489,7 @@ export function buildIcs(tasks: PlannedTask[], options: IcsOptions = {}): string
   const lines: string[] = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//CapsuleOS//Planning//RU',
+    'PRODID:-//CapsuleCraft//Planning//RU',
     'CALSCALE:GREGORIAN',
     'METHOD:PUBLISH',
     `X-WR-CALNAME:${escapeIcsText(calendarName)}`,

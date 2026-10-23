@@ -313,7 +313,7 @@ export const en: Dictionary = {
   // ── Empty vault / FAQ ──────────────────────────────────────────────────────
   'empty.title': 'The vault is empty — and that is fine',
   'empty.subtitle':
-    'CapsuleOS does not seed demo notes: your knowledge base starts from a clean vault. Every thought is a real .eml file (RFC 5322) you can open in a mail client, hand to another person, or commit to git.',
+    'CapsuleCraft does not seed demo notes: your knowledge base starts from a clean vault. Every thought is a real .eml file (RFC 5322) you can open in a mail client, hand to another person, or commit to git.',
   'empty.create': 'New .eml',
   'empty.import': 'Import .eml',
   'empty.step1.title': '1. Create a capsule',

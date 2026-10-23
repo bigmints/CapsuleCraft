@@ -3,7 +3,7 @@
 //! The web app remains the source of truth for the `.eml` layout. This module
 //! writes the same shape: RFC 5322 headers, a `multipart/mixed` root, a
 //! `canvas_state.json` payload and optional attachment parts. Parsing is
-//! intentionally focused on CapsuleOS capsules; arbitrary HTML newsletters are
+//! intentionally focused on CapsuleCraft capsules; arbitrary HTML newsletters are
 //! reported as non-native and opened read-only instead of being silently
 //! rewritten with a lossy HTML-to-text conversion.
 
@@ -41,7 +41,7 @@ pub struct Capsule {
     pub file_name: String,
     pub blocks: Vec<Value>,
     pub attachments: Vec<Attachment>,
-    /// True when this file carried a CapsuleOS canvas payload and can be saved
+    /// True when this file carried a CapsuleCraft canvas payload and can be saved
     /// back without destroying unknown blocks.
     pub native: bool,
     pub parse_note: Option<String>,
@@ -61,7 +61,7 @@ impl Capsule {
             message_id,
             subject,
             from: "Local user <user@capsuleos.local>".to_string(),
-            to: "CapsuleOS Vault <vault@capsuleos.local>".to_string(),
+            to: "CapsuleCraft Vault <vault@capsuleos.local>".to_string(),
             date: now.to_rfc2822(),
             timestamp: now.timestamp_millis(),
             in_reply_to: None,
@@ -149,7 +149,7 @@ pub fn parse_eml(raw: &str, file_name: &str, fallback_timestamp: i64) -> Capsule
         headers
             .get("to")
             .map(String::as_str)
-            .unwrap_or("CapsuleOS Vault <vault@local>"),
+            .unwrap_or("CapsuleCraft Vault <vault@local>"),
     );
     let date = headers
         .get("date")
@@ -209,7 +209,7 @@ pub fn parse_eml(raw: &str, file_name: &str, fallback_timestamp: i64) -> Capsule
         }
     } else {
         parse_note = Some(
-            "No CapsuleOS canvas payload. This imported email is rendered as text and never rewritten."
+            "No CapsuleCraft canvas payload. This imported email is rendered as text and never rewritten."
                 .to_string(),
         );
     }
@@ -453,7 +453,7 @@ pub fn assemble_eml(capsule: &Capsule) -> String {
 
     let canvas = CanvasState {
         version: "1.0",
-        generator: "CapsuleOS Native egui prototype (Zero-DB Pure-MIME)",
+        generator: "CapsuleCraft Native egui prototype (Zero-DB Pure-MIME)",
         message_id: &capsule.message_id,
         subject: &capsule.subject,
         tags: &capsule.tags,
@@ -575,14 +575,14 @@ fn generate_html(capsule: &Capsule) -> String {
             }
             other => {
                 body.push_str(&format!(
-                    "<p><em>[{other} block — open in CapsuleOS web for its canvas]</em></p>"
+                    "<p><em>[{other} block — open in CapsuleCraft web for its canvas]</em></p>"
                 ));
             }
         }
     }
 
     format!(
-        "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"generator\" content=\"CapsuleOS Native\"></head><body style=\"font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:720px;margin:32px auto;line-height:1.55;color:#23201c;background:#faf8f4;\"><h1>{}</h1>{}<hr><p style=\"color:#8a8175;font-size:12px\">Exported from CapsuleOS Native · {}</p></body></html>",
+        "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"generator\" content=\"CapsuleCraft Native\"></head><body style=\"font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:720px;margin:32px auto;line-height:1.55;color:#23201c;background:#faf8f4;\"><h1>{}</h1>{}<hr><p style=\"color:#8a8175;font-size:12px\">Exported from CapsuleCraft Native · {}</p></body></html>",
         escape_html(&capsule.subject),
         body,
         escape_html(&capsule.message_id)

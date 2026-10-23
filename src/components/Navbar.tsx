@@ -54,7 +54,7 @@ export const Navbar: React.FC<Props> = ({
         </div>
         <div className="flex flex-col">
           <span className="text-sm font-bold tracking-tight text-white flex items-center whitespace-nowrap">
-            CapsuleOS <span className="text-cyan-400 font-mono text-[10px] ml-1.5 opacity-80 font-normal">v{APP_VERSION}</span>
+            CapsuleCraft <span className="text-cyan-400 font-mono text-[10px] ml-1.5 opacity-80 font-normal">v{APP_VERSION}</span>
           </span>
           <span className="hidden xl:block text-[10px] text-slate-500 font-mono">~/vault/local-research</span>
         </div>

@@ -64,7 +64,7 @@ export const AutonomousHtmlPreview: React.FC<Props> = ({ capsule, onDownloadEml 
               </span>
             </div>
             <div className="text-[11px] text-slate-400 mt-0.5">
-              Self-contained HTML5 dashboard viewable in Apple Mail, Thunderbird, Gmail or any browser without installing CapsuleOS.
+              Self-contained HTML5 dashboard viewable in Apple Mail, Thunderbird, Gmail or any browser without installing CapsuleCraft.
             </div>
           </div>
         </div>
@@ -93,7 +93,7 @@ export const AutonomousHtmlPreview: React.FC<Props> = ({ capsule, onDownloadEml 
                     ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
                     : 'text-slate-400 hover:text-white'
                 }`}
-                title="Автономный дашборд блоков CapsuleOS"
+                title="Автономный дашборд блоков CapsuleCraft"
               >
                 <Monitor className="w-3.5 h-3.5" />
                 <span>Capsule Dashboard</span>

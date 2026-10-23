@@ -276,7 +276,7 @@ export const PlanningView: React.FC<Props> = ({
   const exportIcs = () => {
     // Export what the user currently sees; displayTasks already applied the
     // completed-task visibility rule, so allow completed rows through.
-    const ics = buildIcs(displayTasks, { includeCompleted: true, calendarName: 'CapsuleOS Planning' });
+    const ics = buildIcs(displayTasks, { includeCompleted: true, calendarName: 'CapsuleCraft Planning' });
     downloadText(icsFileName(), ics, 'text/calendar;charset=utf-8');
   };
 

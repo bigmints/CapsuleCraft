@@ -1,4 +1,4 @@
-// CapsuleOS — Tauri (Rust) native backend.
+// CapsuleCraft — Tauri (Rust) native backend.
 // Provides real filesystem persistence + native dialogs for the React core.
 use notify_debouncer_mini::notify::RecommendedWatcher;
 use notify_debouncer_mini::{new_debouncer, notify::RecursiveMode, DebounceEventResult, Debouncer};
@@ -26,7 +26,7 @@ fn read_text_file(path: String) -> Result<String, String> {
 /// Write a UTF-8 text file to disk (atomic-ish: write to temp, then rename).
 #[tauri::command]
 fn write_text_file(path: String, content: String) -> Result<(), String> {
-    eprintln!("[CapsuleOS] write_text_file called: {}", path);
+    eprintln!("[CapsuleCraft] write_text_file called: {}", path);
     let tmp = format!("{path}.tmp");
     fs::write(&tmp, content).map_err(|e| format!("write failed: {e}"))?;
     fs::rename(&tmp, &path).map_err(|e| format!("commit failed: {e}"))
@@ -41,7 +41,7 @@ fn path_exists(path: String) -> bool {
 /// Create a directory (and parents) if missing.
 #[tauri::command]
 fn mkdir_dir(path: String) -> Result<(), String> {
-    eprintln!("[CapsuleOS] mkdir_dir called: {}", path);
+    eprintln!("[CapsuleCraft] mkdir_dir called: {}", path);
     fs::create_dir_all(&path).map_err(|e| format!("mkdir failed: {e}"))
 }
 
@@ -123,7 +123,7 @@ async fn pick_open_path(
 /// Cross-platform app data directory (per-user, versioned). Creates it if missing.
 #[tauri::command]
 fn app_data_dir(app: AppHandle) -> Result<String, String> {
-    eprintln!("[CapsuleOS] app_data_dir called");
+    eprintln!("[CapsuleCraft] app_data_dir called");
     let dir = app
         .path()
         .app_data_dir()
@@ -141,13 +141,13 @@ pub fn run() {
             let dir = match app.path().app_data_dir() {
                 Ok(d) => d,
                 Err(e) => {
-                    eprintln!("[CapsuleOS] Failed to get app_data_dir for watcher: {e}");
+                    eprintln!("[CapsuleCraft] Failed to get app_data_dir for watcher: {e}");
                     return Ok(());
                 }
             };
             let vault_dir = dir.join("vault");
             if let Err(e) = fs::create_dir_all(&vault_dir) {
-                eprintln!("[CapsuleOS] Failed to create vault dir: {e}");
+                eprintln!("[CapsuleCraft] Failed to create vault dir: {e}");
                 return Ok(());
             }
 
@@ -190,24 +190,24 @@ pub fn run() {
                             if !changes.is_empty() {
                                 if let Err(e) = handle_for_watcher.emit("vault:fs-change", &changes)
                                 {
-                                    eprintln!("[CapsuleOS] emit vault:fs-change failed: {e}");
+                                    eprintln!("[CapsuleCraft] emit vault:fs-change failed: {e}");
                                 }
                             }
                         }
                         Err(err) => {
-                            eprintln!("[CapsuleOS] Watcher error: {:?}", err);
+                            eprintln!("[CapsuleCraft] Watcher error: {:?}", err);
                         }
                     }
                 },
             ) {
                 Ok(mut d) => {
                     if let Err(e) = d.watcher().watch(&vault_dir, RecursiveMode::NonRecursive) {
-                        eprintln!("[CapsuleOS] Watcher watch failed: {e}");
+                        eprintln!("[CapsuleCraft] Watcher watch failed: {e}");
                     }
                     Some(d)
                 }
                 Err(e) => {
-                    eprintln!("[CapsuleOS] Failed to create debouncer: {e}");
+                    eprintln!("[CapsuleCraft] Failed to create debouncer: {e}");
                     None
                 }
             };

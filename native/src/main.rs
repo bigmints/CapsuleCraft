@@ -1,4 +1,4 @@
-//! CapsuleOS native egui prototype.
+//! CapsuleCraft native egui prototype.
 //!
 //! A separate binary, not a rewrite of the React app. It opens the same `.eml`
 //! vault folder, edits a small honest subset of the block model and writes the
@@ -7,9 +7,10 @@
 //!
 //! The shell follows ArtCraft's native visual system: undecorated window, a
 //! custom title bar, a flush sidebar, a centred document panel and intentional
-//! typography. The product remains CapsuleOS: local folder, one `.eml` per
+//! typography. The product remains CapsuleCraft: local folder, one `.eml` per
 //! page, no telemetry.
 
+mod brand;
 mod chrome;
 mod cli;
 mod graph;
@@ -25,6 +26,7 @@ mod snapshot;
 mod theme;
 mod vault;
 mod views;
+mod watch;
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -69,19 +71,23 @@ fn main() -> eframe::Result<()> {
     } else {
         [1380.0, 880.0]
     };
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_inner_size(window)
+        .with_min_inner_size([980.0, 640.0])
+        .with_decorations(false)
+        .with_resizable(true)
+        .with_title("CapsuleCraft");
+    if let Some(icon) = brand::window_icon() {
+        viewport = viewport.with_icon(Arc::new(icon));
+    }
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size(window)
-            .with_min_inner_size([980.0, 640.0])
-            .with_decorations(false)
-            .with_resizable(true)
-            .with_title("CapsuleOS"),
+        viewport,
         renderer: eframe::Renderer::Glow,
         ..Default::default()
     };
 
     eframe::run_native(
-        "CapsuleOS",
+        "CapsuleCraft",
         options,
         Box::new(move |cc| {
             theme::apply(&cc.egui_ctx);
@@ -156,6 +162,12 @@ struct NativeApp {
     page_texts: Vec<String>,
     /// Fixed document scroll offset (screenshots only).
     document_scroll: Option<f32>,
+    /// Watches the vault folder so external edits show up without a restart.
+    watcher: Option<watch::VaultWatch>,
+    /// A watched change arrived while we had unsaved edits; reload when safe.
+    external_pending: bool,
+    /// When the app itself last wrote to the vault, to ignore its own events.
+    last_write: Instant,
 }
 
 struct SnapshotJob {
@@ -178,7 +190,7 @@ impl NativeApp {
             frames_left: launch.frames.max(1),
             requested: false,
         });
-        Self {
+        let mut app = Self {
             vault,
             selected,
             collapsed: HashSet::new(),
@@ -204,13 +216,38 @@ impl NativeApp {
             search_index: search::Bm25Index::default(),
             page_texts: Vec::new(),
             document_scroll: launch.scroll,
+            watcher: None,
+            external_pending: false,
+            last_write: Instant::now(),
         }
-        .with_links()
+        .with_links();
+        app.watcher = watch::VaultWatch::start(&app.vault.dir);
+        app
     }
 
     fn with_links(mut self) -> Self {
         self.refresh_links();
         self
+    }
+
+    /// Reload when a watched `.eml` changed and there is nothing unsaved.
+    ///
+    /// Our own writes also produce events, so anything within the debounce
+    /// window after a save is ignored — otherwise autosave would reload the
+    /// page under the cursor.
+    fn poll_watcher(&mut self) {
+        if let Some(watcher) = self.watcher.as_ref() {
+            if watcher.changed() {
+                self.external_pending = true;
+            }
+        }
+        if self.external_pending
+            && !self.dirty
+            && self.last_write.elapsed() > Duration::from_millis(700)
+        {
+            self.external_pending = false;
+            self.reload();
+        }
     }
 
     /// Recompute the link index and this page's backlinks. CPU-bound (it reads
@@ -256,7 +293,7 @@ impl NativeApp {
     /// Resolve a link target against the cached index.
     /// After a rename, rewrite every page that linked to the old title.
     ///
-    /// Only pages CapsuleOS owns are touched: an imported email is never
+    /// Only pages CapsuleCraft owns are touched: an imported email is never
     /// rewritten, even if its text happens to look like a link.
     fn propagate_rename(&mut self, old: &str) {
         let Some(index) = self.selected else {
@@ -410,6 +447,7 @@ impl NativeApp {
         match self.vault.save(index) {
             Ok(()) => {
                 self.dirty = false;
+                self.last_write = Instant::now();
                 self.status = format!("Saved {}", chrono::Local::now().format("%H:%M:%S"));
                 self.status_error = false;
                 // Keep search and backlinks in sync with what is on disk.
@@ -501,6 +539,7 @@ impl NativeApp {
         self.dirty = false;
         self.status = "Reloaded".to_string();
         self.status_error = false;
+        self.last_write = Instant::now();
         self.refresh_links();
     }
 
@@ -509,7 +548,7 @@ impl NativeApp {
             return;
         }
         if let Some(dir) = rfd::FileDialog::new()
-            .set_title("Choose a CapsuleOS .eml vault folder")
+            .set_title("Choose a CapsuleCraft .eml vault folder")
             .set_directory(&self.vault.dir)
             .pick_folder()
         {
@@ -522,6 +561,8 @@ impl NativeApp {
             self.history = history::HistoryStore::default();
             self.status = t(self.locale, Key::VaultOpened).to_string();
             self.status_error = false;
+            self.last_write = Instant::now();
+            self.watcher = watch::VaultWatch::start(&self.vault.dir);
             self.refresh_links();
         }
     }
@@ -759,6 +800,7 @@ impl NativeApp {
         self.vault.reload();
         self.selected = self.vault.selected_root();
         self.confirm_delete = false;
+        self.last_write = Instant::now();
         self.refresh_links();
         self.toast(t(self.locale, Key::PageDeleted));
     }
@@ -904,6 +946,7 @@ impl eframe::App for NativeApp {
         let ctx = ui.ctx().clone();
         self.sync_snapshot();
         self.drive_snapshot(&ctx);
+        self.poll_watcher();
 
         // Drag and drop: `.eml` files land in the vault folder untouched.
         let dropped: Vec<PathBuf> = ctx.input(|i| {
@@ -1010,6 +1053,7 @@ impl eframe::App for NativeApp {
                         &mut self.collapsed,
                         &self.search_index,
                         &self.page_texts,
+                        self.watcher.is_some(),
                         self.locale,
                     )
                 })
@@ -1370,25 +1414,35 @@ fn draw_titlebar(
     // Mark: a capsule outline with one filled end.
     let (mark, _) = ui.allocate_exact_size(vec2(24.0, 24.0), Sense::hover());
     let mark_rect = Rect::from_center_size(mark.center(), vec2(20.0, 20.0));
-    ui.painter().rect_stroke(
-        mark_rect,
-        egui::CornerRadius::same(6),
-        Stroke::new(1.5, theme::ACCENT),
-        egui::StrokeKind::Inside,
-    );
-    ui.painter().circle_filled(
-        mark_rect.center() + vec2(-3.2, 0.0),
-        2.0,
-        theme::ACCENT,
-    );
-    ui.painter().circle_filled(
-        mark_rect.center() + vec2(3.2, 0.0),
-        2.0,
-        theme::fade(theme::ACCENT, 0.35),
-    );
+    if let Some(texture) = brand::texture(ui.ctx()) {
+        ui.painter().image(
+            texture.id(),
+            mark_rect,
+            Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
+            Color32::WHITE,
+        );
+    } else {
+        // Vector fallback: two dots in a capsule outline.
+        ui.painter().rect_stroke(
+            mark_rect,
+            egui::CornerRadius::same(6),
+            Stroke::new(1.5, theme::ACCENT),
+            egui::StrokeKind::Inside,
+        );
+        ui.painter().circle_filled(
+            mark_rect.center() + vec2(-3.2, 0.0),
+            2.0,
+            theme::ACCENT,
+        );
+        ui.painter().circle_filled(
+            mark_rect.center() + vec2(3.2, 0.0),
+            2.0,
+            theme::fade(theme::ACCENT, 0.35),
+        );
+    }
 
     ui.label(
-        RichText::new("CapsuleOS")
+        RichText::new(t(locale, Key::AppName))
             .family(theme::display())
             .size(15.0)
             .color(theme::INK),
@@ -1572,6 +1626,7 @@ fn draw_sidebar(
     collapsed: &mut HashSet<String>,
     index: &search::Bm25Index,
     page_texts: &[String],
+    watching: bool,
     locale: Locale,
 ) -> ShellAction {
     let mut action = ShellAction::default();
@@ -1761,7 +1816,15 @@ fn draw_sidebar(
         .painter()
         .hline(footer_rect.x_range(), footer_rect.top(), theme::hairline());
     footer.add_space(10.0);
-    let _ = hud(&mut footer, t(locale, Key::ZeroDb), theme::FAINT);
+    let _ = hud(
+        &mut footer,
+        &if watching {
+            format!("{} · {}", t(locale, Key::ZeroDb), t(locale, Key::Watching))
+        } else {
+            t(locale, Key::ZeroDb).to_string()
+        },
+        theme::FAINT,
+    );
     footer.add_space(4.0);
     let counts = if vault.load_errors.is_empty() {
         format!(
@@ -4776,7 +4839,7 @@ pub(crate) fn info_popover(ui: &mut Ui, capsule: &Capsule) {
         ui,
         "Format",
         if capsule.native {
-            "CapsuleOS canvas · writable"
+            "CapsuleCraft canvas · writable"
         } else {
             "Imported email · read-only"
         },

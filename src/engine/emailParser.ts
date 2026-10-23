@@ -228,7 +228,7 @@ export function stripHtmlTags(html: string): string {
 }
 
 /**
- * Converts sanitized HTML content into structured CapsuleOS blocks.
+ * Converts sanitized HTML content into structured CapsuleCraft blocks.
  * Prevents nested duplicates (e.g. <div> containing <p> or <li>).
  */
 export function htmlToBlocks(rawHtml: string): CapsuleBlock[] {
@@ -538,7 +538,7 @@ export interface ExternalEmailResult {
 }
 
 /**
- * Parses an external email (RFC 5322 / MIME) into CapsuleOS blocks and attachments.
+ * Parses an external email (RFC 5322 / MIME) into CapsuleCraft blocks and attachments.
  * Supports both Multipart and Single-part emails.
  */
 export function parseExternalEmail(

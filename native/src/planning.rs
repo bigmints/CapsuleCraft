@@ -764,7 +764,7 @@ pub struct IcsOptions {
 impl Default for IcsOptions {
     fn default() -> Self {
         Self {
-            calendar_name: "CapsuleOS Planning".to_string(),
+            calendar_name: "CapsuleCraft Planning".to_string(),
             include_completed: false,
         }
     }
@@ -776,7 +776,7 @@ pub fn build_ics(tasks: &[PlannedTask], options: &IcsOptions, now: chrono::DateT
     let mut lines: Vec<String> = vec![
         "BEGIN:VCALENDAR".into(),
         "VERSION:2.0".into(),
-        "PRODID:-//CapsuleOS//Planning//RU".into(),
+        "PRODID:-//CapsuleCraft//Planning//RU".into(),
         "CALSCALE:GREGORIAN".into(),
         "METHOD:PUBLISH".into(),
         format!("X-WR-CALNAME:{}", escape_ics_text(&options.calendar_name)),

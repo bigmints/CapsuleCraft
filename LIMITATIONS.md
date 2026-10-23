@@ -1,6 +1,6 @@
 # Known limitations
 
-Honest list of what CapsuleOS does **not** do yet. Updated as features land — if a
+Honest list of what CapsuleCraft does **not** do yet. Updated as features land — if a
 limitation below is fixed, it gets removed instead of being quietly forgotten.
 
 _Last updated: 2026-10-23 (v1.5 in progress)_
@@ -88,14 +88,16 @@ folder. It is honest about what it does not do yet:
   fake waveform player.
 - **No code execution.** Code blocks are syntax-labelled text; "Run" is
   unavailable, and the source is only ever written to the `.eml`.
-- **No live folder watching.** The web/Tauri build watches the vault folder;
-  the native shell needs **Reload** (`Ctrl/Cmd` + reload button) to see files
-  edited outside the app.
+- **Folder watching is debounced and best-effort.** The native shell polls the
+  watcher once per frame and waits for unsaved edits to flush before reloading;
+  on network shares or filesystems without change notifications it falls back to
+  the manual **Reload** button.
 - **Search index is rebuilt on save and on navigation**, not incrementally while
   typing. On a very large vault the first search after a bulk import can pause.
 - **Links are title-based.** A `[[link]]` matches a page subject (case- and
-  whitespace-insensitive) or an explicit `[[<message-id>]]`; renaming a page does
-  not rewrite links that point at its old title.
+  whitespace-insensitive) or an explicit `[[<message-id>]]`. Renaming a page
+  rewrites title links across the vault, but a link written as a Message-ID keeps
+  pointing at the same page (that is the point) and is not rewritten.
 - **Backlinks are computed on navigation**, not per keystroke, so a page shows
   the backlinks it had when you opened it.
 - **Imported email is read-only.** The native shell renders `text/plain` /

@@ -23,12 +23,12 @@ describe('blockPlainText', () => {
   it('flattens every text-bearing block and strips wikilink brackets', () => {
     const text = blockPlainText([
       { id: '1', type: 'heading', data: { level: 1, text: 'Title' } },
-      { id: '2', type: 'paragraph', data: { text: 'См. [[CapsuleOS Genesis]]' } },
+      { id: '2', type: 'paragraph', data: { text: 'См. [[CapsuleCraft Genesis]]' } },
       { id: '3', type: 'callout', data: { title: 'Note', content: 'Body', tone: 'blue' } },
       { id: '4', type: 'todo_list', data: { items: [{ id: 't', text: 'Ship it', done: false }] } },
     ] as any);
     expect(text).toContain('Title');
-    expect(text).toContain('См. CapsuleOS Genesis');
+    expect(text).toContain('См. CapsuleCraft Genesis');
     expect(text).toContain('Note');
     expect(text).toContain('Body');
     expect(text).toContain('Ship it');

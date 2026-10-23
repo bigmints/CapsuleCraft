@@ -39,7 +39,7 @@ export const CodeReplBlock: React.FC<Props> = ({ block, onChange, onDelete }) =>
         output: undefined,
         error:
           langLabel +
-          ' — интерпретатор не входит в offline-сборку CapsuleOS (zero-dependency). ' +
+          ' — интерпретатор не входит в offline-сборку CapsuleCraft (zero-dependency). ' +
           'Код сохранён в .eml как текст. Исполняемые языки сейчас: JavaScript, JSON.',
       });
       return;

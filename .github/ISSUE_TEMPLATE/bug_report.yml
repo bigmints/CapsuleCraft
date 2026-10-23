@@ -1,5 +1,5 @@
 name: Bug report
-description: Something is broken in CapsuleOS
+description: Something is broken in CapsuleCraft
 labels: ["bug"]
 body:
   - type: markdown
@@ -27,7 +27,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: CapsuleOS version
+      label: CapsuleCraft version
       description: Release tag, or the commit hash for a source build.
       placeholder: v1.0.0
     validations:

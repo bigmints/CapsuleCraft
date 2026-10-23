@@ -1,11 +1,11 @@
 name: Feature request
-description: Propose a capability for CapsuleOS
+description: Propose a capability for CapsuleCraft
 labels: ["enhancement"]
 body:
   - type: markdown
     attributes:
       value: |
-        CapsuleOS has two hard constraints: **everything is a `.eml` file** and **there is no server or database**.
+        CapsuleCraft has two hard constraints: **everything is a `.eml` file** and **there is no server or database**.
         Please frame the idea inside those limits.
   - type: textarea
     id: problem

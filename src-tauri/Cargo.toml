@@ -1,8 +1,8 @@
 [package]
 name = "capsuleos"
-version = "1.4.0"
-description = "CapsuleOS — Zero-DB Pure-MIME workspace (native desktop)"
-authors = ["CapsuleOS Contributors"]
+version = "1.5.0"
+description = "CapsuleCraft вЂ” Zero-DB Pure-MIME workspace (native desktop)"
+authors = ["CapsuleCraft Contributors"]
 license = "MIT"
 repository = "https://github.com/kostyk348/capsuleos"
 edition = "2021"
