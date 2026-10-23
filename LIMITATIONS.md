@@ -33,6 +33,14 @@ _Last updated: 2026-10-23 (v1.5 in progress)_
 - Status model is `todo / doing / done`; no custom columns, WIP limits or swimlanes.
 - Completing a blocked task is not prevented — the UI warns, but the action is
   allowed (a warning, not a hard gate).
+- Task filters are session-only: there are no saved views, named lists or
+  persisted filter sets yet. A reload returns to the unfiltered planning view.
+- Filtering is deliberately simple: case-insensitive substring search, one
+  status / priority / capsule / tag at a time, and fixed due buckets
+  (`overdue`, `today`, next 7 days, no date). No fuzzy search, boolean
+  operators, custom date ranges or multi-select facets.
+- Quick-add clears the active filters on purpose; without that, a task added to
+  Inbox while filtering another capsule would look like a lost write.
 
 ## Editor & data
 

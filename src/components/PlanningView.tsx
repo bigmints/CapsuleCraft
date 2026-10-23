@@ -9,12 +9,15 @@ import {
   Download,
   ExternalLink,
   Flag,
+  Filter,
   Link2,
   ListTodo,
   Lock,
   Plus,
   RotateCcw,
+  Search,
   Sun,
+  X,
 } from 'lucide-react';
 import { CapsuleNode, TaskStatus, TodoItem, TodoPriority } from '../types';
 import {
@@ -23,9 +26,12 @@ import {
   addDays,
   collectTasks,
   daysBetween,
+  EMPTY_TASK_FILTERS,
+  filterTasks,
   ganttRange,
   groupByStatus,
   groupTasks,
+  hasActiveTaskFilters,
   humanDate,
   icsFileName,
   isBlocked,
@@ -39,10 +45,14 @@ import {
   taskStart,
   taskStats,
   taskStatus,
+  taskTags,
   tasksOnDay,
   toDateKey,
   wouldCreateCycle,
   type BucketId,
+  type TaskDueFilter,
+  type TaskFilterStatus,
+  type TaskFilters,
 } from '../engine/planning';
 import { useI18n, type TranslationKey } from '../i18n';
 
@@ -83,6 +93,25 @@ const STATUS_KEY: Record<TaskStatus, TranslationKey> = {
   todo: 'status.todo',
   doing: 'status.doing',
   done: 'status.done',
+};
+
+const FILTER_STATUSES: TaskFilterStatus[] = ['all', 'open', 'todo', 'doing', 'done'];
+const FILTER_DUES: TaskDueFilter[] = ['all', 'overdue', 'today', 'week', 'none'];
+
+const FILTER_STATUS_KEY: Record<TaskFilterStatus, TranslationKey> = {
+  all: 'planning.filter.anyStatus',
+  open: 'planning.filter.open',
+  todo: 'status.todo',
+  doing: 'status.doing',
+  done: 'status.done',
+};
+
+const FILTER_DUE_KEY: Record<TaskDueFilter, TranslationKey> = {
+  all: 'planning.filter.anyDue',
+  overdue: 'planning.filter.overdue',
+  today: 'planning.filter.today',
+  week: 'planning.filter.week',
+  none: 'planning.filter.none',
 };
 
 const STATUS_ACCENT: Record<TaskStatus, string> = {
@@ -140,13 +169,35 @@ export const PlanningView: React.FC<Props> = ({
   const [focusDay, setFocusDay] = useState<string | null>(null);
   const [showDone, setShowDone] = useState(false);
   const [viewMode, setViewMode] = useState<'agenda' | 'kanban' | 'gantt'>('agenda');
+  const [filters, setFilters] = useState<TaskFilters>(EMPTY_TASK_FILTERS);
   const [draggingTask, setDraggingTask] = useState<string | null>(null);
   const [quickText, setQuickText] = useState('');
   const [quickDue, setQuickDue] = useState(today);
   const [quickPriority, setQuickPriority] = useState<TodoPriority>('normal');
 
-  const tasks = useMemo(() => collectTasks(nodes), [nodes]);
+  const allTasks = useMemo(() => collectTasks(nodes), [nodes]);
+  const tasks = useMemo(
+    () => filterTasks(allTasks, filters, today),
+    [allTasks, filters, today],
+  );
+  const filtersActive = hasActiveTaskFilters(filters);
+  // `showDone` is the quick toggle; an explicit `done` status filter wins.
+  const displayTasks = useMemo(
+    () =>
+      showDone || filters.status === 'done'
+        ? tasks
+        : tasks.filter((task) => taskStatus(task.item) !== 'done'),
+    [tasks, showDone, filters.status],
+  );
   const stats = useMemo(() => taskStats(tasks, today), [tasks, today]);
+  const capsuleOptions = useMemo(() => {
+    const byId = new Map<string, string>();
+    for (const task of allTasks) byId.set(task.capsuleId, task.capsuleSubject);
+    return Array.from(byId, ([id, subject]) => ({ id, subject })).sort((a, b) =>
+      (a.subject || '').localeCompare(b.subject || ''),
+    );
+  }, [allTasks]);
+  const tagOptions = useMemo(() => taskTags(allTasks), [allTasks]);
   const cells = useMemo(() => monthGrid(cursor.year, cursor.month), [cursor]);
   const currentMonth = useMemo(
     () => new Date(cursor.year, cursor.month, 1).getMonth(),
@@ -156,23 +207,20 @@ export const PlanningView: React.FC<Props> = ({
   /** Open tasks per day, for the calendar dots. */
   const countByDay = useMemo(() => {
     const map = new Map<string, number>();
-    for (const task of tasks) {
-      if (task.item.done || !task.item.due) continue;
+    for (const task of displayTasks) {
+      if (taskStatus(task.item) === 'done' || !task.item.due) continue;
       map.set(task.item.due, (map.get(task.item.due) || 0) + 1);
     }
     return map;
-  }, [tasks]);
+  }, [displayTasks]);
 
-  const sections = useMemo(() => {
-    const visible = showDone ? tasks : tasks.filter((t) => taskStatus(t.item) !== 'done');
-    return groupTasks(visible, today);
-  }, [tasks, today, showDone]);
+  const sections = useMemo(() => groupTasks(displayTasks, today), [displayTasks, today]);
 
-  const board = useMemo(() => groupByStatus(tasks), [tasks]);
+  const board = useMemo(() => groupByStatus(displayTasks), [displayTasks]);
 
   const ganttTasks = useMemo(
     () =>
-      tasks
+      displayTasks
         .filter((task) => taskStart(task.item))
         .sort((a, b) => {
           const startA = taskStart(a.item) || '';
@@ -180,9 +228,12 @@ export const PlanningView: React.FC<Props> = ({
           if (startA !== startB) return startA < startB ? -1 : 1;
           return (a.item.due || '').localeCompare(b.item.due || '');
         }),
-    [tasks],
+    [displayTasks],
   );
-  const undatedTasks = useMemo(() => tasks.filter((task) => !taskStart(task.item)), [tasks]);
+  const undatedTasks = useMemo(
+    () => displayTasks.filter((task) => !taskStart(task.item)),
+    [displayTasks],
+  );
   const range = useMemo(() => ganttRange(ganttTasks, today), [ganttTasks, today]);
   const totalDays = useMemo(() => daysBetween(range.start, range.end) + 1, [range]);
   const barsByKey = useMemo(() => {
@@ -195,7 +246,7 @@ export const PlanningView: React.FC<Props> = ({
   }, [ganttTasks, range]);
   const todayOffset = useMemo(() => daysBetween(range.start, today), [range.start, today]);
 
-  const focusTasks = focusDay ? tasksOnDay(tasks, focusDay, showDone) : [];
+  const focusTasks = focusDay ? tasksOnDay(displayTasks, focusDay, true) : [];
 
   const shiftMonth = (delta: number) => {
     setCursor((prev) => {
@@ -216,10 +267,16 @@ export const PlanningView: React.FC<Props> = ({
     if (!text) return;
     onAddTask(text, quickDue || undefined, quickPriority);
     setQuickText('');
+    // A new task that the current filter hides would look like a lost write.
+    if (filtersActive) setFilters(EMPTY_TASK_FILTERS);
   };
 
+  const clearFilters = () => setFilters(EMPTY_TASK_FILTERS);
+
   const exportIcs = () => {
-    const ics = buildIcs(tasks, { includeCompleted: showDone, calendarName: 'CapsuleOS Planning' });
+    // Export what the user currently sees; displayTasks already applied the
+    // completed-task visibility rule, so allow completed rows through.
+    const ics = buildIcs(displayTasks, { includeCompleted: true, calendarName: 'CapsuleOS Planning' });
     downloadText(icsFileName(), ics, 'text/calendar;charset=utf-8');
   };
 
@@ -380,7 +437,7 @@ export const PlanningView: React.FC<Props> = ({
             <button
               type="button"
               onClick={exportIcs}
-              disabled={tasks.length === 0}
+              disabled={displayTasks.length === 0}
               className="inline-flex items-center gap-1.5 text-[11px] font-mono px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-900 text-slate-300 hover:text-cyan-300 hover:border-cyan-700/60 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               title={t('planning.exportTitle')}
             >
@@ -388,6 +445,150 @@ export const PlanningView: React.FC<Props> = ({
               {t('planning.export')}
             </button>
           </div>
+        </div>
+
+        {/* Cross-project task filters */}
+        <div
+          className="rounded-xl border border-slate-800 bg-slate-900/40 p-2.5 flex flex-wrap items-center gap-2"
+          data-testid="task-filters"
+        >
+          <div className="flex items-center gap-2 px-1 text-cyan-400 shrink-0">
+            <Filter className="w-3.5 h-3.5" />
+            <span className="text-[10px] font-mono uppercase tracking-wider text-slate-500">
+              {t('planning.filter.title')}
+            </span>
+          </div>
+
+          <div className="relative flex-1 min-w-[180px]">
+            <Search className="w-3.5 h-3.5 absolute left-2.5 top-2 text-slate-500" />
+            <input
+              type="text"
+              value={filters.text || ''}
+              onChange={(event) =>
+                setFilters((prev) => ({ ...prev, text: event.target.value }))
+              }
+              placeholder={t('planning.filter.text')}
+              className="w-full bg-slate-950/70 border border-slate-800 rounded-md pl-8 pr-7 py-1.5 text-[11px] font-mono text-slate-200 placeholder:text-slate-600 outline-none focus:border-cyan-500/60"
+            />
+            {!!filters.text && (
+              <button
+                type="button"
+                onClick={() => setFilters((prev) => ({ ...prev, text: '' }))}
+                className="absolute right-1.5 top-1.5 p-0.5 text-slate-500 hover:text-slate-200"
+                title={t('planning.filter.clearText')}
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+
+          <select
+            value={filters.status || 'all'}
+            onChange={(event) =>
+              setFilters((prev) => ({
+                ...prev,
+                status: event.target.value as TaskFilterStatus,
+              }))
+            }
+            className="text-[11px] font-mono bg-slate-950/70 border border-slate-800 rounded-md px-2 py-1.5 text-slate-300"
+            title={t('planning.filter.statusTitle')}
+          >
+            {FILTER_STATUSES.map((status) => (
+              <option key={status} value={status}>
+                {t(FILTER_STATUS_KEY[status])}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={filters.priority || 'all'}
+            onChange={(event) =>
+              setFilters((prev) => ({
+                ...prev,
+                priority: event.target.value as TodoPriority | 'all',
+              }))
+            }
+            className="text-[11px] font-mono bg-slate-950/70 border border-slate-800 rounded-md px-2 py-1.5 text-slate-300"
+            title={t('planning.priorityTitle')}
+          >
+            <option value="all">{t('planning.filter.anyPriority')}</option>
+            {(Object.keys(PRIORITY_KEY) as TodoPriority[]).map((value) => (
+              <option key={value} value={value}>
+                {t(PRIORITY_KEY[value])}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={filters.due || 'all'}
+            onChange={(event) =>
+              setFilters((prev) => ({
+                ...prev,
+                due: event.target.value as TaskDueFilter,
+              }))
+            }
+            className="text-[11px] font-mono bg-slate-950/70 border border-slate-800 rounded-md px-2 py-1.5 text-slate-300"
+            title={t('planning.dueTitle')}
+          >
+            {FILTER_DUES.map((due) => (
+              <option key={due} value={due}>
+                {t(FILTER_DUE_KEY[due])}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={filters.capsuleId || ''}
+            onChange={(event) =>
+              setFilters((prev) => ({ ...prev, capsuleId: event.target.value || null }))
+            }
+            className="text-[11px] font-mono bg-slate-950/70 border border-slate-800 rounded-md px-2 py-1.5 text-slate-300 max-w-[190px]"
+            title={t('planning.filter.capsuleTitle')}
+          >
+            <option value="">{t('planning.filter.allCapsules')}</option>
+            {capsuleOptions.map((capsule) => (
+              <option key={capsule.id} value={capsule.id}>
+                {capsule.subject || t('editor.untitled')}
+              </option>
+            ))}
+          </select>
+
+          {tagOptions.length > 0 && (
+            <select
+              value={filters.tag || ''}
+              onChange={(event) =>
+                setFilters((prev) => ({ ...prev, tag: event.target.value || null }))
+              }
+              className="text-[11px] font-mono bg-slate-950/70 border border-slate-800 rounded-md px-2 py-1.5 text-slate-300"
+              title={t('planning.filter.tagTitle')}
+            >
+              <option value="">{t('planning.filter.allTags')}</option>
+              {tagOptions.map((tag) => (
+                <option key={tag} value={tag}>
+                  {tag}
+                </option>
+              ))}
+            </select>
+          )}
+
+          {filtersActive && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-1.5 rounded-md border border-rose-800/60 text-rose-300 bg-rose-950/30 hover:bg-rose-900/40 transition-colors"
+              title={t('planning.filter.clear')}
+            >
+              <X className="w-3 h-3" />
+              {t('planning.filter.clearShort')}
+            </button>
+          )}
+
+          <span className="ml-auto text-[10px] font-mono text-slate-500 tabular-nums">
+            {t('planning.filter.count', {
+              shown: displayTasks.length,
+              total: allTasks.length,
+            })}
+          </span>
         </div>
 
         {/* Stats */}
@@ -567,10 +768,23 @@ export const PlanningView: React.FC<Props> = ({
             ) : sections.length === 0 ? (
               <div className="py-16 text-center space-y-2">
                 <ListTodo className="w-8 h-8 text-slate-700 mx-auto" />
-                <p className="text-sm text-slate-400">{t('planning.emptyTitle')}</p>
-                <p className="text-[11px] text-slate-600 font-mono max-w-sm mx-auto">
-                  {t('planning.emptyHint', { command: '/todo' })}
+                <p className="text-sm text-slate-400">
+                  {filtersActive ? t('planning.filter.noneMatch') : t('planning.emptyTitle')}
                 </p>
+                <p className="text-[11px] text-slate-600 font-mono max-w-sm mx-auto">
+                  {filtersActive
+                    ? t('planning.filter.noneMatchHint')
+                    : t('planning.emptyHint', { command: '/todo' })}
+                </p>
+                {filtersActive && (
+                  <button
+                    type="button"
+                    onClick={clearFilters}
+                    className="text-[11px] font-mono px-2.5 py-1 rounded border border-slate-700 text-slate-300 hover:text-cyan-300 hover:border-cyan-700/60"
+                  >
+                    {t('planning.filter.clear')}
+                  </button>
+                )}
               </div>
             ) : (
               <div className="space-y-3">
@@ -604,7 +818,7 @@ export const PlanningView: React.FC<Props> = ({
                 onDrop={(event) => {
                   event.preventDefault();
                   const key = event.dataTransfer.getData('text/plain');
-                  const task = tasks.find((candidate) => `${candidate.blockId}:${candidate.item.id}` === key);
+                  const task = displayTasks.find((candidate) => `${candidate.blockId}:${candidate.item.id}` === key);
                   setDraggingTask(null);
                   if (!task) return;
                   onUpdateTask(task.capsuleId, task.blockId, task.item.id, {
@@ -757,7 +971,7 @@ export const PlanningView: React.FC<Props> = ({
                       {ganttTasks.map((task, index) => {
                         const key = taskKey(task);
                         const bar = barsByKey.get(key);
-                        const blocked = isBlocked(task, tasks);
+                        const blocked = isBlocked(task, allTasks);
                         const start = taskStart(task.item)!;
                         return (
                           <div
@@ -878,19 +1092,19 @@ export const PlanningView: React.FC<Props> = ({
                 <Link2 className="w-3 h-3" />
                 {t('gantt.editor')}
               </div>
-              {tasks.length === 0 ? (
+              {displayTasks.length === 0 ? (
                 <p className="text-[10px] font-mono text-slate-600 py-2">{t('planning.emptyTitle')}</p>
               ) : (
                 <div className="space-y-1.5">
-                  {tasks.map((task) => {
+                  {displayTasks.map((task) => {
                     const key = taskKey(task);
                     const start = taskStart(task.item) || '';
                     const due = task.item.due || '';
                     const blocker = (task.item.blockedBy || [])[0] || '';
-                    const candidates = tasks.filter((candidate) => {
+                    const candidates = allTasks.filter((candidate) => {
                       const candidateKey = taskKey(candidate);
                       return (
-                        candidateKey !== key && !wouldCreateCycle(tasks, key, candidateKey)
+                        candidateKey !== key && !wouldCreateCycle(allTasks, key, candidateKey)
                       );
                     });
                     return (

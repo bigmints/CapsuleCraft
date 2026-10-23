@@ -22,6 +22,39 @@ export interface PlannedTask {
 
 export type BucketId = 'overdue' | 'today' | 'tomorrow' | 'week' | 'later' | 'none' | 'done';
 
+export type TaskFilterStatus = 'all' | 'open' | TaskStatus;
+export type TaskDueFilter = 'all' | 'overdue' | 'today' | 'week' | 'none';
+
+export interface TaskFilters {
+  /** Case-insensitive substring over task text, capsule subject, list title and tags. */
+  text?: string;
+  status?: TaskFilterStatus;
+  priority?: TodoPriority | 'all';
+  due?: TaskDueFilter;
+  capsuleId?: string | null;
+  tag?: string | null;
+}
+
+export const EMPTY_TASK_FILTERS: TaskFilters = {
+  text: '',
+  status: 'all',
+  priority: 'all',
+  due: 'all',
+  capsuleId: null,
+  tag: null,
+};
+
+export function hasActiveTaskFilters(filters: TaskFilters): boolean {
+  return (
+    !!filters.text?.trim() ||
+    (!!filters.status && filters.status !== 'all') ||
+    (!!filters.priority && filters.priority !== 'all') ||
+    (!!filters.due && filters.due !== 'all') ||
+    !!filters.capsuleId ||
+    !!filters.tag
+  );
+}
+
 export interface TaskSection {
   id: BucketId;
   title: string;
@@ -135,6 +168,69 @@ export function collectTasks(capsules: CapsuleNode[]): PlannedTask[] {
     }
   }
   return tasks;
+}
+
+/** Distinct capsule tags present on task-owning capsules, alphabetically. */
+export function taskTags(tasks: PlannedTask[]): string[] {
+  const tags = new Set<string>();
+  for (const task of tasks) {
+    for (const tag of task.capsuleTags) tags.add(tag);
+  }
+  return Array.from(tags).sort((a, b) => a.localeCompare(b));
+}
+
+/**
+ * Cross-project task filter. Pure and composable: every field is optional,
+ * `all` / empty means "do not filter by this dimension".
+ */
+export function filterTasks(
+  tasks: PlannedTask[],
+  filters: TaskFilters,
+  today: string,
+): PlannedTask[] {
+  const needle = (filters.text || '').trim().toLowerCase();
+  const status = filters.status || 'all';
+  const priority = filters.priority || 'all';
+  const due = filters.due || 'all';
+  const weekEnd = addDays(today, 7);
+
+  return tasks.filter((task) => {
+    if (needle) {
+      const haystack = [
+        task.item.text,
+        task.capsuleSubject,
+        task.blockTitle || '',
+        task.capsuleTags.join(' '),
+      ]
+        .join('\n')
+        .toLowerCase();
+      if (!haystack.includes(needle)) return false;
+    }
+
+    const currentStatus = taskStatus(task.item);
+    if (status === 'open' && currentStatus === 'done') return false;
+    if (status !== 'all' && status !== 'open' && currentStatus !== status) return false;
+
+    if (priority !== 'all' && (task.item.priority || 'normal') !== priority) return false;
+
+    if (filters.capsuleId && task.capsuleId !== filters.capsuleId) return false;
+    if (filters.tag && !task.capsuleTags.includes(filters.tag)) return false;
+
+    if (due !== 'all') {
+      const day = task.item.due;
+      if (due === 'none') {
+        if (isDateKey(day)) return false;
+      } else if (due === 'overdue') {
+        if (!isDateKey(day) || day! >= today || currentStatus === 'done') return false;
+      } else if (due === 'today') {
+        if (day !== today) return false;
+      } else if (due === 'week') {
+        if (!isDateKey(day) || day! < today || day! > weekEnd) return false;
+      }
+    }
+
+    return true;
+  });
 }
 
 export function bucketOf(task: PlannedTask, today: string): BucketId {
@@ -286,7 +382,7 @@ export function taskStats(tasks: PlannedTask[], today: string): TaskStats {
   let overdue = 0;
   let dueToday = 0;
   for (const task of tasks) {
-    if (task.item.done) {
+    if (taskStatus(task.item) === 'done') {
       done += 1;
       continue;
     }
@@ -307,7 +403,11 @@ export function taskStats(tasks: PlannedTask[], today: string): TaskStats {
 
 /** Tasks due on one specific calendar day (open only, unless asked otherwise). */
 export function tasksOnDay(tasks: PlannedTask[], day: string, includeDone = false): PlannedTask[] {
-  return sortTasks(tasks.filter((t) => t.item.due === day && (includeDone || !t.item.done)));
+  return sortTasks(
+    tasks.filter(
+      (t) => t.item.due === day && (includeDone || taskStatus(t.item) !== 'done'),
+    ),
+  );
 }
 
 // ── ICS (RFC 5545) export ─────────────────────────────────────────────────────

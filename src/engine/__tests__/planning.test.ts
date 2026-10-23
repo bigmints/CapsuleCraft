@@ -19,7 +19,10 @@ import {
   taskKey,
   taskStats,
   taskStatus,
+  taskTags,
   tasksOnDay,
+  filterTasks,
+  hasActiveTaskFilters,
   toDateKey,
   wouldCreateCycle,
 } from '../planning';
@@ -335,5 +338,66 @@ describe('task dependencies', () => {
     b.item.status = 'done';
     tasks = [a, b];
     expect(isBlocked(a, tasks)).toBe(false);
+  });
+});
+
+describe('cross-project task filters', () => {
+  const today = '2026-10-22';
+
+  const build = () => {
+    const a = task('a', 'Write spec', false, '2026-10-20');
+    a.item.status = 'todo';
+    a.item.priority = 'high';
+
+    const b = task('b', 'Ship build', false, '2026-10-22');
+    b.item.status = 'doing';
+    b.item.priority = 'normal';
+    b.capsuleId = 'c2';
+    b.capsuleSubject = 'Capsule c2';
+    b.capsuleTags = ['#personal'];
+
+    const c = task('c', 'Old chore', true, '2026-10-21');
+    c.item.status = 'done';
+
+    const d = task('d', 'Someday');
+    d.item.status = 'todo';
+    d.item.priority = 'low';
+
+    return [a, b, c, d];
+  };
+
+  const ids = (tasks: PlannedTask[]) => tasks.map((t) => t.item.id);
+
+  it('matches text across task, capsule and tags', () => {
+    expect(ids(filterTasks(build(), { text: 'ship' }, today))).toEqual(['b']);
+    expect(ids(filterTasks(build(), { text: 'personal' }, today))).toEqual(['b']);
+    expect(ids(filterTasks(build(), { text: 'nothing' }, today))).toEqual([]);
+  });
+
+  it('filters by exact status and by open', () => {
+    expect(ids(filterTasks(build(), { status: 'open' }, today))).toEqual(['a', 'b', 'd']);
+    expect(ids(filterTasks(build(), { status: 'doing' }, today))).toEqual(['b']);
+    expect(ids(filterTasks(build(), { status: 'done' }, today))).toEqual(['c']);
+  });
+
+  it('filters by priority, capsule and tag', () => {
+    expect(ids(filterTasks(build(), { priority: 'high' }, today))).toEqual(['a']);
+    expect(ids(filterTasks(build(), { priority: 'normal' }, today))).toEqual(['b', 'c']);
+    expect(ids(filterTasks(build(), { capsuleId: 'c2' }, today))).toEqual(['b']);
+    expect(ids(filterTasks(build(), { tag: '#personal' }, today))).toEqual(['b']);
+  });
+
+  it('filters due buckets without UTC drift', () => {
+    expect(ids(filterTasks(build(), { due: 'overdue' }, today))).toEqual(['a']);
+    expect(ids(filterTasks(build(), { due: 'today' }, today))).toEqual(['b']);
+    expect(ids(filterTasks(build(), { due: 'week' }, today))).toEqual(['b']);
+    expect(ids(filterTasks(build(), { due: 'none' }, today))).toEqual(['d']);
+  });
+
+  it('composes dimensions and reports active state', () => {
+    expect(ids(filterTasks(build(), { status: 'todo', priority: 'low' }, today))).toEqual(['d']);
+    expect(hasActiveTaskFilters({ status: 'all', priority: 'all', due: 'all' })).toBe(false);
+    expect(hasActiveTaskFilters({ status: 'todo' })).toBe(true);
+    expect(taskTags(build())).toEqual(['#personal', '#work']);
   });
 });
