@@ -123,6 +123,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), ver
 - GitHub Actions: Windows x64 release pipeline (MSI + NSIS, `SHA256SUMS.txt`) on tags and manual dispatch.
 - CI: TypeScript typecheck, Vite build, `cargo check`, `cargo fmt --check`, `cargo clippy -D warnings`.
 
-[Unreleased]: https://github.com/kostyk348/capsuleos/compare/v1.1.0...HEAD
-[1.1.0]: https://github.com/kostyk348/capsuleos/releases/tag/v1.1.0
-[1.0.0]: https://github.com/kostyk348/capsuleos/releases/tag/v1.0.0
+[Unreleased]: https://github.com/kostyk348/CapsuleCraft/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/kostyk348/CapsuleCraft/releases/tag/v1.1.0
+[1.0.0]: https://github.com/kostyk348/CapsuleCraft/releases/tag/v1.0.0
