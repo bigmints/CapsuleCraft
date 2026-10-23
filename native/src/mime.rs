@@ -45,6 +45,13 @@ pub struct Capsule {
     /// back without destroying unknown blocks.
     pub native: bool,
     pub parse_note: Option<String>,
+    /// Decoded `text/plain` part of an imported email (read-only pages only).
+    pub plain_body: Option<String>,
+    /// Raw `text/html` part of an imported email (read-only pages only).
+    pub html_body: Option<String>,
+    /// The exact bytes this page was parsed from, so an imported email can be
+    /// exported without a lossy re-assembly. Native pages regenerate instead.
+    pub raw_eml: Option<String>,
 }
 
 impl Capsule {
@@ -71,12 +78,27 @@ impl Capsule {
             attachments: Vec::new(),
             native: true,
             parse_note: None,
+            plain_body: None,
+            html_body: None,
+            raw_eml: None,
         }
     }
 }
 
-pub fn new_block_id(kind: &str) -> String {
-    let nanos = std::time::SystemTime::now()
+impl Capsule {
+    /// Bytes to write when the user exports or opens this page as MIME.
+    /// Native pages are regenerated so edits are never stale; imported emails
+    /// are returned byte-for-byte because they are never rewritten.
+    pub fn export_eml(&self) -> String {
+        if self.native {
+            assemble_eml(self)
+        } else {
+            self.raw_eml.clone().unwrap_or_else(|| assemble_eml(self))
+        }
+    }
+}
+
+pub fn new_block_id(kind: &str) -> String {    let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
@@ -187,7 +209,7 @@ pub fn parse_eml(raw: &str, file_name: &str, fallback_timestamp: i64) -> Capsule
         }
     } else {
         parse_note = Some(
-            "No CapsuleOS canvas payload. External email HTML preview/edit is not ported yet; opened read-only."
+            "No CapsuleOS canvas payload. This imported email is rendered as text and never rewritten."
                 .to_string(),
         );
     }
@@ -195,7 +217,16 @@ pub fn parse_eml(raw: &str, file_name: &str, fallback_timestamp: i64) -> Capsule
     let attachments = if native {
         parse_attachments(boundary.as_deref(), raw_body)
     } else {
-        Vec::new()
+        // Imported emails keep their parts visible, but the page itself stays
+        // read-only: nothing here is ever written back.
+        parse_attachments(boundary.as_deref(), raw_body)
+    };
+
+    let (plain_body, html_body) = if native {
+        (None, None)
+    } else {
+        let body = external_body(raw);
+        (body.plain, body.html)
     };
 
     Capsule {
@@ -215,7 +246,149 @@ pub fn parse_eml(raw: &str, file_name: &str, fallback_timestamp: i64) -> Capsule
         attachments,
         native,
         parse_note,
+        plain_body,
+        html_body,
+        raw_eml: Some(raw.to_string()),
     }
+}
+
+/// The readable parts of an imported email.
+#[derive(Clone, Debug, Default)]
+pub struct ExternalBody {
+    pub plain: Option<String>,
+    pub html: Option<String>,
+}
+
+/// Walk `multipart/*` up to a sane depth and return the first `text/plain` and
+/// `text/html` parts. Quoted-printable and base64 are decoded; charset is
+/// respected when it is one of the encodings `encoding_rs`-free decoding can
+/// handle (UTF-8, Latin-1, Windows-1251 subset).
+pub fn external_body(raw: &str) -> ExternalBody {
+    let (raw_headers, raw_body) = split_headers_body(raw);
+    let headers = parse_headers(raw_headers);
+    let content_type = headers
+        .get("content-type")
+        .cloned()
+        .unwrap_or_else(|| "text/plain".to_string());
+    let boundary = header_param(&content_type, "boundary");
+    let mut body = ExternalBody::default();
+    collect_text_parts(
+        boundary.as_deref(),
+        raw_body,
+        0,
+        headers.get("content-transfer-encoding"),
+        Some(content_type.as_str()),
+        &mut body,
+    );
+    body
+}
+
+fn collect_text_parts(
+    boundary: Option<&str>,
+    body: &str,
+    depth: usize,
+    top_encoding: Option<&String>,
+    top_type: Option<&str>,
+    out: &mut ExternalBody,
+) {
+    if depth > 4 {
+        return;
+    }
+    let Some(boundary) = boundary else {
+        let mime = top_type
+            .unwrap_or("text/plain")
+            .split(';')
+            .next()
+            .unwrap_or("text/plain")
+            .trim()
+            .to_ascii_lowercase();
+        if !mime.starts_with("text/") {
+            return;
+        }
+        let decoded = decode_part(
+            body,
+            top_encoding.map(String::as_str).unwrap_or(""),
+            top_type.unwrap_or("text/plain"),
+        );
+        if mime == "text/html" {
+            if out.html.is_none() {
+                out.html = Some(decoded);
+            }
+        } else if out.plain.is_none() {
+            out.plain = Some(decoded);
+        }
+        return;
+    };
+
+    let delimiter = format!("--{boundary}");
+    for raw_part in body.split(&delimiter) {
+        let part = raw_part.trim_start_matches("\r\n").trim_start_matches('\n');
+        if part.is_empty() || part.starts_with("--") {
+            continue;
+        }
+        let (raw_headers, raw_body) = split_headers_body(part);
+        let headers = parse_headers(raw_headers);
+        let content_type = headers
+            .get("content-type")
+            .cloned()
+            .unwrap_or_else(|| "text/plain".to_string());
+        let mime = content_type
+            .split(';')
+            .next()
+            .unwrap_or("text/plain")
+            .trim()
+            .to_ascii_lowercase();
+        let nested = header_param(&content_type, "boundary");
+        if mime.starts_with("multipart/") {
+            collect_text_parts(
+                nested.as_deref(),
+                raw_body,
+                depth + 1,
+                None,
+                None,
+                out,
+            );
+            continue;
+        }
+        let is_attachment = headers
+            .get("content-disposition")
+            .map(|value| value.to_ascii_lowercase().contains("attachment"))
+            .unwrap_or(false);
+        if is_attachment {
+            continue;
+        }
+        let raw_body = raw_body
+            .strip_suffix("\r\n")
+            .or_else(|| raw_body.strip_suffix('\n'))
+            .unwrap_or(raw_body);
+        let decoded = decode_part(
+            raw_body,
+            headers
+                .get("content-transfer-encoding")
+                .map(String::as_str)
+                .unwrap_or(""),
+            &content_type,
+        );
+        if mime == "text/html" && out.html.is_none() {
+            out.html = Some(decoded);
+        } else if mime == "text/plain" && out.plain.is_none() {
+            out.plain = Some(decoded);
+        }
+    }
+}
+
+fn decode_part(body: &str, encoding: &str, content_type: &str) -> String {
+    let charset = header_param(content_type, "charset").unwrap_or_else(|| "utf-8".to_string());
+    let encoding = encoding.trim().to_ascii_lowercase();
+    let bytes = match encoding.as_str() {
+        "base64" => {
+            let compact: String = body.chars().filter(|c| !c.is_whitespace()).collect();
+            BASE64.decode(compact).unwrap_or_else(|_| body.as_bytes().to_vec())
+        }
+        "quoted-printable" => decode_q_encoding(body),
+        _ => body.as_bytes().to_vec(),
+    };
+    decode_charset(&bytes, &charset)
 }
 
 #[derive(Serialize)]

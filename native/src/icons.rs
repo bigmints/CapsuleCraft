@@ -11,6 +11,7 @@ pub enum Icon {
     Plus,
     ChevronRight,
     ChevronDown,
+    ChevronLeft,
     Check,
     ArrowUp,
     ArrowDown,
@@ -20,6 +21,20 @@ pub enum Icon {
     Save,
     Reload,
     Lock,
+    Graph,
+    Calendar,
+    Mail,
+    Code,
+    Table,
+    Audio,
+    Board,
+    Filter,
+    Copy,
+    Download,
+    Command,
+    Tag,
+    Globe,
+    Close,
 }
 
 fn at(rect: Rect, x: f32, y: f32) -> Pos2 {
@@ -149,6 +164,122 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             }
             p.add(Shape::line(pts, stroke));
             dot(0.5, 0.63, 0.05);
+        }
+        Icon::ChevronLeft => line(&[(0.6, 0.25), (0.38, 0.5), (0.6, 0.75)]),
+        Icon::Graph => {
+            dot(0.5, 0.2, 0.09);
+            dot(0.2, 0.76, 0.09);
+            dot(0.8, 0.76, 0.09);
+            line(&[(0.44, 0.28), (0.27, 0.66)]);
+            line(&[(0.56, 0.28), (0.73, 0.66)]);
+            line(&[(0.29, 0.78), (0.71, 0.78)]);
+        }
+        Icon::Calendar => {
+            p.rect_stroke(
+                Rect::from_min_max(at(rect, 0.18, 0.24), at(rect, 0.82, 0.82)),
+                1.5,
+                stroke,
+                egui::StrokeKind::Inside,
+            );
+            line(&[(0.18, 0.4), (0.82, 0.4)]);
+            line(&[(0.34, 0.15), (0.34, 0.3)]);
+            line(&[(0.66, 0.15), (0.66, 0.3)]);
+            dot(0.34, 0.58, 0.05);
+            dot(0.5, 0.58, 0.05);
+            dot(0.66, 0.58, 0.05);
+        }
+        Icon::Mail => {
+            p.rect_stroke(
+                Rect::from_min_max(at(rect, 0.15, 0.27), at(rect, 0.85, 0.75)),
+                1.5,
+                stroke,
+                egui::StrokeKind::Inside,
+            );
+            line(&[(0.18, 0.32), (0.5, 0.56), (0.82, 0.32)]);
+        }
+        Icon::Code => {
+            line(&[(0.36, 0.3), (0.16, 0.5), (0.36, 0.7)]);
+            line(&[(0.64, 0.3), (0.84, 0.5), (0.64, 0.7)]);
+            line(&[(0.56, 0.22), (0.44, 0.78)]);
+        }
+        Icon::Table => {
+            p.rect_stroke(
+                Rect::from_min_max(at(rect, 0.16, 0.24), at(rect, 0.84, 0.78)),
+                1.5,
+                stroke,
+                egui::StrokeKind::Inside,
+            );
+            line(&[(0.16, 0.42), (0.84, 0.42)]);
+            line(&[(0.46, 0.24), (0.46, 0.78)]);
+            line(&[(0.16, 0.6), (0.84, 0.6)]);
+        }
+        Icon::Audio => {
+            for (x, h) in [(0.22, 0.2), (0.34, 0.5), (0.46, 0.34), (0.58, 0.66), (0.7, 0.28), (0.82, 0.44)] {
+                line(&[(x, 0.5 - h / 2.0), (x, 0.5 + h / 2.0)]);
+            }
+        }
+        Icon::Board => {
+            p.rect_stroke(
+                Rect::from_min_max(at(rect, 0.14, 0.26), at(rect, 0.86, 0.76)),
+                1.5,
+                stroke,
+                egui::StrokeKind::Inside,
+            );
+            line(&[(0.28, 0.34), (0.44, 0.34), (0.44, 0.6), (0.28, 0.6), (0.28, 0.34)]);
+            line(&[(0.56, 0.44), (0.72, 0.44), (0.72, 0.68), (0.56, 0.68), (0.56, 0.44)]);
+        }
+        Icon::Filter => {
+            line(&[(0.16, 0.26), (0.84, 0.26), (0.58, 0.52), (0.58, 0.8), (0.42, 0.72), (0.42, 0.52), (0.16, 0.26)]);
+        }
+        Icon::Copy => {
+            p.rect_stroke(
+                Rect::from_min_max(at(rect, 0.3, 0.3), at(rect, 0.84, 0.84)),
+                1.0,
+                stroke,
+                egui::StrokeKind::Inside,
+            );
+            p.rect_stroke(
+                Rect::from_min_max(at(rect, 0.16, 0.16), at(rect, 0.7, 0.7)),
+                1.0,
+                stroke,
+                egui::StrokeKind::Inside,
+            );
+        }
+        Icon::Download => {
+            line(&[(0.5, 0.16), (0.5, 0.62)]);
+            line(&[(0.3, 0.45), (0.5, 0.65), (0.7, 0.45)]);
+            line(&[(0.2, 0.82), (0.8, 0.82)]);
+        }
+        Icon::Command => {
+            for (x, y) in [(0.3, 0.3), (0.7, 0.3), (0.3, 0.7), (0.7, 0.7)] {
+                p.circle_stroke(at(rect, x, y), rect.width() * 0.1, stroke);
+            }
+            line(&[(0.4, 0.4), (0.6, 0.6)]);
+            line(&[(0.6, 0.4), (0.4, 0.6)]);
+        }
+        Icon::Tag => {
+            line(&[(0.16, 0.42), (0.42, 0.16), (0.84, 0.16), (0.84, 0.58), (0.58, 0.84), (0.16, 0.42)]);
+            dot(0.66, 0.34, 0.05);
+        }
+        Icon::Globe => {
+            p.circle_stroke(at(rect, 0.5, 0.5), rect.width() * 0.32, stroke);
+            line(&[(0.18, 0.5), (0.82, 0.5)]);
+            p.add(Shape::line(
+                (0..=12)
+                    .map(|i| {
+                        let a = std::f32::consts::PI * 2.0 * i as f32 / 12.0;
+                        pos2(
+                            rect.center().x + rect.width() * 0.14 * a.sin(),
+                            rect.center().y + rect.height() * 0.32 * a.cos(),
+                        )
+                    })
+                    .collect(),
+                stroke,
+            ));
+        }
+        Icon::Close => {
+            line(&[(0.28, 0.28), (0.72, 0.72)]);
+            line(&[(0.72, 0.28), (0.28, 0.72)]);
         }
     }
 }

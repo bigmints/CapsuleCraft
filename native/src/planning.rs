@@ -607,10 +607,10 @@ pub fn gantt_range(tasks: &[PlannedTask], today: &str) -> GanttRange {
         } else {
             (end, start)
         };
-        if min.as_deref().map(|m| lo < *m).unwrap_or(true) {
+        if min.as_deref().map(|m| lo.as_str() < m).unwrap_or(true) {
             min = Some(lo);
         }
-        if max.as_deref().map(|m| hi > *m).unwrap_or(true) {
+        if max.as_deref().map(|m| hi.as_str() > m).unwrap_or(true) {
             max = Some(hi);
         }
     }

@@ -229,6 +229,14 @@ strings! {
     Confidence => ("уверенность", "confidence"),
     SourceClaim => ("Исходное утверждение", "Source claim"),
 
+    // Wiki links
+    LinksTitle => ("Ссылки", "Links"),
+    NoLinks => ("Нет ссылок. Заключите название страницы в [[двойные скобки]].", "No links yet. Wrap a page title in [[double brackets]]."),
+    Backlinks => ("Обратные ссылки", "Linked from"),
+    OpenLinkedPage => ("Открыть страницу", "Open the page"),
+    CreateLinkedPage => ("Создать эту страницу", "Create this page"),
+    PageCreated => ("Страница создана", "Page created"),
+
     // Planning
     PlanningTitle => ("Планирование", "Planning"),
     Agenda => ("Повестка", "Agenda"),
@@ -278,6 +286,8 @@ strings! {
     TagCluster => ("тег", "tag"),
     ThreadsTitle => ("Треды мыслей", "Thought threads"),
     ThreadsEmpty => ("Нет цепочек ответов", "No reply chains"),
+    ThreadsOnly => ("Треды", "Threads"),
+    AllPages => ("Все страницы", "All pages"),
     CreateReply => ("Ответить", "Reply"),
     ReplyCreated => ("Ответ создан", "Reply created"),
     RootThread => ("Начало треда", "Thread root"),
@@ -347,6 +357,22 @@ strings! {
     EmptyVaultTitle => ("Хранилище пусто", "The vault is empty"),
     EmptyVaultBody => ("Одна страница — один .eml в локальной папке. Ни базы данных, ни сервера.", "One page is one .eml in a local folder. No database, no server."),
     CreateFirstPage => ("Создать первую страницу", "Create the first page"),
+    SlashHint => ("«/» в пустом абзаце открывает блоки", "Type “/” in an empty paragraph for blocks"),
+    NoTasks => ("Пока нет задач.", "No tasks yet."),
+    AddTaskShort => ("Задача", "Task"),
+    TaskStatus => ("Статус задачи", "Task status"),
+    DeleteTask => ("Удалить задачу", "Delete task"),
+    BlockPreserved => ("Сохранён", "Preserved"),
+    BlockPreservedHint => ("Этот тип блока не редактируется в нативном прототипе: он остаётся в canvas_state.json и открывается в веб-версии.", "This block type is not editable in the native prototype: it stays in canvas_state.json and opens in the web app."),
+    CodeOutput => ("Вывод", "Output"),
+    DataGridMissing => ("Источник данных не найден среди вложений", "The data source is not among the attachments"),
+    CanvasDelete => ("Удалить элемент", "Delete element"),
+    AttachAudio => ("Прикрепить аудио", "Attach audio"),
+    NoPlayback => ("Воспроизведение в нативном прототипе не реализовано.", "Playback is not implemented in the native prototype."),
+    EmptyAttachments => ("Вложений нет", "No attachments"),
+    AddColumn => ("Добавить столбец", "Add column"),
+    AddRow => ("Добавить строку", "Add row"),
+    RenameField => ("Название", "Name"),
 }
 
 pub fn t(locale: Locale, key: Key) -> &'static str {

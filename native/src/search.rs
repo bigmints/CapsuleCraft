@@ -246,6 +246,7 @@ impl Bm25Index {
 
 // ── Command palette ──────────────────────────────────────────────────────────
 
+#[derive(Clone)]
 pub struct PaletteCommand {
     pub id: &'static str,
     pub title: String,
@@ -386,6 +387,53 @@ pub fn highlight_matches(text: &str, query: &str) -> Vec<(String, bool)> {
     out
 }
 
+/// One-line excerpt around the first query match, for the sidebar.
+///
+/// Returns `None` when the page only matched through tags or the subject: a
+/// fabricated excerpt would be worse than none.
+pub fn snippet(text: &str, query: &str, radius: usize) -> Option<String> {
+    let tokens: Vec<String> = normalize(query)
+        .split_whitespace()
+        .filter(|token| token.chars().count() >= 2)
+        .map(str::to_string)
+        .collect();
+    if tokens.is_empty() || text.is_empty() {
+        return None;
+    }
+    let lower = text.to_lowercase();
+    let mut hit: Option<(usize, usize)> = None;
+    for token in &tokens {
+        if let Some(position) = lower.find(token.as_str()) {
+            let end = position + token.len();
+            hit = Some(match hit {
+                Some((start, stop)) if position >= start && end <= stop => (start, stop),
+                Some((start, stop)) => (start.min(position), stop.max(end)),
+                None => (position, end),
+            });
+        }
+    }
+    let (start, end) = hit?;
+    // `to_lowercase` can change byte lengths, so map back through character
+    // counts before slicing the original text.
+    let start_char = lower[..start].chars().count();
+    let end_char = start_char + lower[start..end].chars().count();
+    let chars: Vec<char> = text.chars().collect();
+    let from = start_char.saturating_sub(radius);
+    let to = (end_char + radius).min(chars.len());
+    if from >= to {
+        return None;
+    }
+    let mut out = String::new();
+    if from > 0 {
+        out.push('…');
+    }
+    out.push_str(chars[from..to].iter().collect::<String>().trim());
+    if to < chars.len() {
+        out.push('…');
+    }
+    Some(out)
+}
+
 /// Simple subject/tag boost applied on top of BM25.
 pub fn subject_boost(query: &str, subject: &str, tags: &[String]) -> f32 {
     let q = query.trim().to_lowercase();
@@ -446,7 +494,10 @@ mod tests {
 
     #[test]
     fn tokenizes_latin_and_cyrillic() {
-        assert_eq!(tokenize("Привет, mmap-vault! ok"), vec!["привет", "mmap-vault"]);
+        assert_eq!(
+            tokenize("Привет, mmap-vault! ok"),
+            vec!["привет", "mmap-vault", "ok"]
+        );
     }
 
     #[test]
@@ -495,5 +546,27 @@ mod tests {
         let segments = highlight_matches("Planning tasks", "plan");
         assert_eq!(segments[0], ("Plan".to_string(), true));
         assert_eq!(segments.last().unwrap().1, false);
+    }
+
+    #[test]
+    fn snippet_centres_on_the_match() {
+        let text = "The reader maps the file and parses headers lazily, so a ten-thousand page vault opens without a database.";
+        let snippet = snippet(text, "headers", 12).expect("match");
+        assert!(snippet.contains("headers"));
+        assert!(snippet.starts_with('…'));
+        assert!(snippet.ends_with('…'));
+    }
+
+    #[test]
+    fn snippet_handles_cyrillic_case_folding() {
+        let text = "Память отображается в адресное пространство, заголовки разбираются лениво.";
+        let snippet = snippet(text, "ЗАГОЛОВКИ", 8).expect("match");
+        assert!(snippet.contains("заголовки"));
+    }
+
+    #[test]
+    fn snippet_is_none_without_a_match() {
+        assert!(snippet("nothing here", "absent", 10).is_none());
+        assert!(snippet("", "x", 10).is_none());
     }
 }

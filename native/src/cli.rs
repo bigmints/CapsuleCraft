@@ -1,0 +1,153 @@
+//! Command line for the native shell.
+//!
+//! The app is still "double-click to open your vault": a single positional
+//! argument is the vault folder. The flags exist so the same binary can render
+//! deterministic screenshots for the README and for visual regressions without
+//! any window-manager automation.
+
+use std::path::PathBuf;
+
+use crate::i18n::Locale;
+use crate::views::View;
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Launch {
+    /// Vault folder; `None` means "the default vault".
+    pub vault: Option<PathBuf>,
+    /// Where `--snapshot` writes its PNG.
+    pub snapshot: Option<PathBuf>,
+    /// View to render before capturing.
+    pub view: Option<View>,
+    /// Page index (sidebar order) to select before capturing.
+    pub page: Option<usize>,
+    /// Frames to draw before the capture, so layout and fonts settle.
+    pub frames: u32,
+    /// Locale override (otherwise the saved / OS default is used).
+    pub locale: Option<Locale>,
+    /// Print the parsed launch configuration and exit.
+    pub print_config: bool,
+}
+
+pub const DEFAULT_SNAPSHOT_FRAMES: u32 = 6;
+
+/// Parse the process arguments (without the program name).
+///
+/// Unknown flags are ignored rather than fatal: a typo must never stop the app
+/// from opening the user's vault.
+pub fn parse(args: &[String]) -> Launch {
+    let mut launch = Launch {
+        frames: DEFAULT_SNAPSHOT_FRAMES,
+        ..Launch::default()
+    };
+    let mut index = 0;
+    while index < args.len() {
+        let arg = args[index].clone();
+        let (flag, inline) = match arg.split_once('=') {
+            Some((flag, value)) => (flag.to_string(), Some(value.to_string())),
+            None => (arg.clone(), None),
+        };
+        let mut take_value = |consumed: &mut usize| -> Option<String> {
+            if let Some(value) = inline.clone() {
+                return Some(value);
+            }
+            let next = args.get(*consumed + 1).cloned();
+            if next.is_some() {
+                *consumed += 1;
+            }
+            next
+        };
+        match flag.as_str() {
+            "--snapshot" => launch.snapshot = take_value(&mut index).map(PathBuf::from),
+            "--view" => launch.view = take_value(&mut index).and_then(|v| parse_view(&v)),
+            "--page" => launch.page = take_value(&mut index).and_then(|v| v.parse().ok()),
+            "--frames" => {
+                launch.frames = take_value(&mut index)
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(DEFAULT_SNAPSHOT_FRAMES)
+            }
+            "--locale" => {
+                launch.locale = take_value(&mut index).and_then(|v| parse_locale(&v));
+            }
+            "--print-config" => launch.print_config = true,
+            other if !other.starts_with('-') => {
+                if launch.vault.is_none() {
+                    launch.vault = Some(PathBuf::from(other));
+                }
+            }
+            _ => {}
+        }
+        index += 1;
+    }
+    launch
+}
+
+fn parse_view(value: &str) -> Option<View> {
+    match value.trim().to_lowercase().as_str() {
+        "page" | "editor" => Some(View::Page),
+        "planning" | "tasks" => Some(View::Planning),
+        "graph" => Some(View::Graph),
+        "threads" => Some(View::Threads),
+        "mime" => Some(View::Mime),
+        "mail" | "email" => Some(View::Mail),
+        _ => None,
+    }
+}
+
+fn parse_locale(value: &str) -> Option<Locale> {
+    match value.trim().to_lowercase().as_str() {
+        "ru" => Some(Locale::Ru),
+        "en" => Some(Locale::En),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(list: &[&str]) -> Vec<String> {
+        list.iter().map(|value| value.to_string()).collect()
+    }
+
+    #[test]
+    fn vault_is_the_first_positional_argument() {
+        let launch = parse(&args(&["C:/vault"]));
+        assert_eq!(launch.vault, Some(PathBuf::from("C:/vault")));
+        assert!(launch.snapshot.is_none());
+        assert_eq!(launch.frames, DEFAULT_SNAPSHOT_FRAMES);
+    }
+
+    #[test]
+    fn snapshot_accepts_both_spellings() {
+        let spaced = parse(&args(&["C:/vault", "--snapshot", "shots/ui.png"]));
+        assert_eq!(spaced.snapshot, Some(PathBuf::from("shots/ui.png")));
+        assert_eq!(spaced.vault, Some(PathBuf::from("C:/vault")));
+
+        let inline = parse(&args(&["--snapshot=shots/ui.png", "C:/vault"]));
+        assert_eq!(inline.snapshot, Some(PathBuf::from("shots/ui.png")));
+        assert_eq!(inline.vault, Some(PathBuf::from("C:/vault")));
+    }
+
+    #[test]
+    fn view_and_page_are_typed() {
+        let launch = parse(&args(&["--view", "graph", "--page=3", "--frames", "12"]));
+        assert_eq!(launch.view, Some(View::Graph));
+        assert_eq!(launch.page, Some(3));
+        assert_eq!(launch.frames, 12);
+    }
+
+    #[test]
+    fn unknown_values_do_not_break_startup() {
+        let launch = parse(&args(&["--view", "nope", "--page", "x", "--frames", "y"]));
+        assert_eq!(launch.view, None);
+        assert_eq!(launch.page, None);
+        assert_eq!(launch.frames, DEFAULT_SNAPSHOT_FRAMES);
+    }
+
+    #[test]
+    fn a_trailing_flag_without_value_is_harmless() {
+        let launch = parse(&args(&["--view"]));
+        assert_eq!(launch.view, None);
+        assert_eq!(launch.vault, None);
+    }
+}

@@ -11,34 +11,67 @@
 //! page, no telemetry.
 
 mod chrome;
+mod cli;
+mod graph;
+mod history;
+mod i18n;
 mod icons;
+mod links;
+mod mail;
 mod mime;
+mod planning;
+mod search;
+mod snapshot;
 mod theme;
 mod vault;
+mod views;
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use base64::Engine as _;
 use eframe::egui::{
     self, pos2, vec2, Align, Align2, Color32, FontFamily, FontId, Frame, Galley, Label, Layout,
     Margin, Pos2, Rect, Response, RichText, ScrollArea, Sense, Stroke, TextEdit, Ui, UiBuilder,
     Vec2,
 };
+use i18n::{t, Key, Locale};
 use icons::Icon;
-use mime::{block_type, new_block_id, Capsule};
+use mime::{block_type, new_block_id, Attachment, Capsule};
 use serde_json::{json, Value};
 use vault::{default_vault_dir, PageTree, Vault};
+use views::graph_view::GraphState;
+use views::mail_view::MailState;
+use views::palette::{Command as PaletteCommand, PaletteState};
+use views::planning_view::PlanningState;
+use views::threads_view::ThreadsState;
+use views::{View, ViewAction};
 
 const CONTENT_MAX_WIDTH: f32 = 752.0;
 const SIDEBAR_WIDTH: f32 = 262.0;
 const GUTTER: f32 = 26.0;
 
+/// Set once the `--snapshot` capture has been written, so the app can close.
+static SNAPSHOT_WRITTEN: AtomicBool = AtomicBool::new(false);
+
 fn main() -> eframe::Result<()> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let launch = cli::parse(&args);
+    if launch.print_config {
+        println!("{launch:#?}");
+        return Ok(());
+    }
+    let window = if launch.snapshot.is_some() {
+        [1440.0, 900.0]
+    } else {
+        [1380.0, 880.0]
+    };
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1380.0, 880.0])
+            .with_inner_size(window)
             .with_min_inner_size([980.0, 640.0])
             .with_decorations(false)
             .with_resizable(true)
@@ -50,9 +83,9 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "CapsuleOS",
         options,
-        Box::new(|cc| {
+        Box::new(move |cc| {
             theme::apply(&cc.egui_ctx);
-            Ok(Box::new(NativeApp::new()))
+            Ok(Box::new(NativeApp::new(launch)))
         }),
     )
 }
@@ -60,6 +93,33 @@ fn main() -> eframe::Result<()> {
 // ---------------------------------------------------------------------------
 // App state
 // ---------------------------------------------------------------------------
+
+/// Everything an undo step restores for one page.
+#[derive(Clone)]
+struct PageSnapshot {
+    subject: String,
+    tags: Vec<String>,
+    status: String,
+    blocks: Vec<Value>,
+}
+
+impl PageSnapshot {
+    fn of(capsule: &Capsule) -> Self {
+        Self {
+            subject: capsule.subject.clone(),
+            tags: capsule.tags.clone(),
+            status: capsule.status.clone(),
+            blocks: capsule.blocks.clone(),
+        }
+    }
+
+    fn restore(&self, capsule: &mut Capsule) {
+        capsule.subject = self.subject.clone();
+        capsule.tags = self.tags.clone();
+        capsule.status = self.status.clone();
+        capsule.blocks = self.blocks.clone();
+    }
+}
 
 struct NativeApp {
     vault: Vault,
@@ -70,16 +130,48 @@ struct NativeApp {
     last_edit: Instant,
     status: String,
     status_error: bool,
+    locale: Locale,
+    view: View,
+    planning: PlanningState,
+    graph: GraphState,
+    mail: MailState,
+    threads: ThreadsState,
+    palette: PaletteState,
+    history: history::HistoryStore,
+    /// Snapshot of the page as it was before the latest edit.
+    snapshot: Option<(String, PageSnapshot)>,
+    toast: Option<(String, Instant)>,
+    confirm_delete: bool,
+    /// `--snapshot`: render a few frames, write a PNG, then close.
+    snapshot_job: Option<SnapshotJob>,
+    /// Cached `[[link]]` resolution targets: (normalised subject, normalised
+    /// Message-ID, index). Rebuilt when the vault or the selection changes, not
+    /// every frame.
+    link_index: Vec<(String, String, usize)>,
+    /// Pages that link to the selected page.
+    backlinks: Vec<(usize, String)>,
+}
+
+struct SnapshotJob {
+    path: PathBuf,
+    frames_left: u32,
+    requested: bool,
 }
 
 impl NativeApp {
-    fn new() -> Self {
-        let dir = std::env::args()
-            .nth(1)
-            .map(PathBuf::from)
-            .unwrap_or_else(default_vault_dir);
+    fn new(launch: cli::Launch) -> Self {
+        let dir = launch.vault.clone().unwrap_or_else(default_vault_dir);
         let vault = Vault::load(dir);
-        let selected = vault.selected_root();
+        let locale = launch.locale.unwrap_or_else(Locale::detect);
+        let selected = launch
+            .page
+            .filter(|index| *index < vault.capsules.len())
+            .or_else(|| vault.selected_root());
+        let snapshot_job = launch.snapshot.clone().map(|path| SnapshotJob {
+            path,
+            frames_left: launch.frames.max(1),
+            requested: false,
+        });
         Self {
             vault,
             selected,
@@ -87,8 +179,128 @@ impl NativeApp {
             search: String::new(),
             dirty: false,
             last_edit: Instant::now(),
-            status: "Saved".to_string(),
+            status: t(locale, Key::Saved).to_string(),
             status_error: false,
+            locale,
+            view: launch.view.unwrap_or(View::Page),
+            planning: PlanningState::default(),
+            graph: GraphState::new(),
+            mail: MailState::default(),
+            threads: ThreadsState::default(),
+            palette: PaletteState::default(),
+            history: history::HistoryStore::default(),
+            snapshot: None,
+            toast: None,
+            confirm_delete: false,
+            snapshot_job,
+            link_index: Vec::new(),
+            backlinks: Vec::new(),
+        }
+        .with_links()
+    }
+
+    fn with_links(mut self) -> Self {
+        self.refresh_links();
+        self
+    }
+
+    /// Recompute the link index and this page's backlinks. CPU-bound (it reads
+    /// every page's text), so callers do it on navigation rather than per frame.
+    fn refresh_links(&mut self) {
+        self.link_index = self
+            .vault
+            .capsules
+            .iter()
+            .enumerate()
+            .map(|(index, capsule)| {
+                (
+                    links::normalise(&capsule.subject),
+                    links::normalise(&capsule.message_id),
+                    index,
+                )
+            })
+            .collect();
+        self.backlinks = self
+            .selected
+            .map(|index| links::backlinks(&self.vault.capsules, index))
+            .unwrap_or_default()
+            .into_iter()
+            .map(|other| {
+                let subject = self
+                    .vault
+                    .capsules
+                    .get(other)
+                    .map(|capsule| capsule.subject.clone())
+                    .unwrap_or_default();
+                (other, subject)
+            })
+            .collect();
+    }
+
+    /// Resolve a link target against the cached index.
+    /// Snapshot of this page's outgoing links and backlinks for the document.
+    fn current_link_context(&self) -> LinkContext {
+        let mut context = LinkContext {
+            backlinks: self.backlinks.clone(),
+            ..LinkContext::default()
+        };
+        if let Some(index) = self.selected {
+            if let Some(capsule) = self.vault.capsules.get(index) {
+                context.outgoing = links::page_targets(capsule)
+                    .into_iter()
+                    .map(|title| {
+                        let resolved = self.resolve_link(&title);
+                        (title, resolved)
+                    })
+                    .collect();
+            }
+        }
+        context
+    }
+
+    fn resolve_link(&self, target: &str) -> Option<usize> {
+        let wanted = links::normalise(target);
+        if wanted.is_empty() {
+            return None;
+        }
+        self.link_index
+            .iter()
+            .find(|(_, id, _)| id == &wanted)
+            .or_else(|| self.link_index.iter().find(|(subject, _, _)| subject == &wanted))
+            .map(|(_, _, index)| *index)
+    }
+
+    fn toast(&mut self, text: impl Into<String>) {
+        self.toast = Some((text.into(), Instant::now()));
+    }
+
+    /// `--snapshot`: let fonts and layout settle, capture the framebuffer, quit.
+    fn drive_snapshot(&mut self, ctx: &egui::Context) {
+        let Some(job) = self.snapshot_job.as_mut() else {
+            return;
+        };
+        if !job.requested {
+            if job.frames_left > 0 {
+                job.frames_left -= 1;
+                ctx.request_repaint();
+                return;
+            }
+            job.requested = true;
+            let path = job.path.clone();
+            ctx.request_screenshot(move |image| {
+                match snapshot::write_png(&path, &image) {
+                    Ok(()) => println!("snapshot: {}", path.display()),
+                    Err(err) => eprintln!("snapshot failed: {err}"),
+                }
+                SNAPSHOT_WRITTEN.store(true, Ordering::SeqCst);
+            });
+            ctx.request_repaint();
+            return;
+        }
+        if SNAPSHOT_WRITTEN.load(Ordering::SeqCst) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        } else {
+            ctx.request_repaint();
         }
     }
 
@@ -130,6 +342,7 @@ impl NativeApp {
         }
         self.selected = Some(index);
         self.dirty = false;
+        self.refresh_links();
     }
 
     fn new_page(&mut self, parent: Option<String>) {
@@ -142,6 +355,33 @@ impl NativeApp {
                 self.dirty = false;
                 self.status = "New page".to_string();
                 self.status_error = false;
+                self.refresh_links();
+            }
+            Err(err) => {
+                self.status = err;
+                self.status_error = true;
+            }
+        }
+    }
+
+    /// Create a page whose subject is already known — used when clicking a
+    /// `[[link]]` that points at a page which does not exist yet.
+    fn create_page_titled(&mut self, title: &str) {
+        if !self.save_selected() {
+            return;
+        }
+        match self.vault.create_page(None) {
+            Ok(index) => {
+                if let Some(capsule) = self.vault.capsules.get_mut(index) {
+                    capsule.subject = title.trim().to_string();
+                }
+                self.selected = Some(index);
+                self.dirty = true;
+                self.status = t(self.locale, Key::PageCreated).to_string();
+                self.status_error = false;
+                self.save_selected();
+                self.refresh_links();
+                self.toast(t(self.locale, Key::PageCreated));
             }
             Err(err) => {
                 self.status = err;
@@ -170,6 +410,7 @@ impl NativeApp {
         self.dirty = false;
         self.status = "Reloaded".to_string();
         self.status_error = false;
+        self.refresh_links();
     }
 
     fn open_vault_dialog(&mut self) {
@@ -186,10 +427,288 @@ impl NativeApp {
             self.collapsed.clear();
             self.search.clear();
             self.dirty = false;
-            self.status = "Vault opened".to_string();
+            self.snapshot = None;
+            self.history = history::HistoryStore::default();
+            self.status = t(self.locale, Key::VaultOpened).to_string();
             self.status_error = false;
+            self.refresh_links();
         }
     }
+
+    /// Keep the undo baseline in sync with whatever page is selected.
+    fn sync_snapshot(&mut self) {
+        let Some(index) = self.selected else {
+            self.snapshot = None;
+            return;
+        };
+        let Some(capsule) = self.vault.capsules.get(index) else {
+            return;
+        };
+        let id = capsule.message_id.clone();
+        if self
+            .snapshot
+            .as_ref()
+            .map(|(snapshot_id, _)| snapshot_id != &id)
+            .unwrap_or(true)
+        {
+            self.snapshot = Some((id, PageSnapshot::of(capsule)));
+        }
+    }
+
+    /// Push the pre-edit state onto the page's undo stack, then re-baseline.
+    fn record_change(&mut self) {
+        let Some(index) = self.selected else {
+            return;
+        };
+        let Some(capsule) = self.vault.capsules.get(index) else {
+            return;
+        };
+        let id = capsule.message_id.clone();
+        let current = PageSnapshot::of(capsule);
+        if let Some((snapshot_id, previous)) = &self.snapshot {
+            if snapshot_id == &id && !same_snapshot(previous, &current) {
+                self.history
+                    .maybe_push(&id, snapshot_to_string(previous), now_millis());
+            }
+        }
+        self.snapshot = Some((id, current));
+        self.mark_dirty();
+    }
+
+    fn undo(&mut self) {
+        let Some(index) = self.selected else {
+            return;
+        };
+        let Some(id) = self.vault.capsules.get(index).map(|c| c.message_id.clone()) else {
+            return;
+        };
+        let current = match self.vault.capsules.get(index) {
+            Some(capsule) => snapshot_to_string(&PageSnapshot::of(capsule)),
+            None => return,
+        };
+        let previous = self.history.undo(&id, &current);
+        let Some(previous) = previous else {
+            self.toast(t(self.locale, Key::UndoEmpty));
+            return;
+        };
+        let Some(snapshot) = snapshot_from_string(&previous) else {
+            self.toast(t(self.locale, Key::UndoEmpty));
+            return;
+        };
+        if let Some(capsule) = self.vault.capsules.get_mut(index) {
+            snapshot.restore(capsule);
+        } else {
+            return;
+        }
+        self.snapshot = Some((id, snapshot));
+        self.mark_dirty();
+        self.toast(t(self.locale, Key::Undone));
+    }
+
+    fn redo(&mut self) {
+        let Some(index) = self.selected else {
+            return;
+        };
+        let Some(id) = self.vault.capsules.get(index).map(|c| c.message_id.clone()) else {
+            return;
+        };
+        let current = match self.vault.capsules.get(index) {
+            Some(capsule) => snapshot_to_string(&PageSnapshot::of(capsule)),
+            None => return,
+        };
+        let next = self.history.redo(&id, &current);
+        let Some(next) = next else {
+            self.toast(t(self.locale, Key::RedoEmpty));
+            return;
+        };
+        let Some(snapshot) = snapshot_from_string(&next) else {
+            self.toast(t(self.locale, Key::RedoEmpty));
+            return;
+        };
+        if let Some(capsule) = self.vault.capsules.get_mut(index) {
+            snapshot.restore(capsule);
+        } else {
+            return;
+        }
+        self.snapshot = Some((id, snapshot));
+        self.mark_dirty();
+        self.toast(t(self.locale, Key::Redone));
+    }
+
+    fn export_page(&mut self) {
+        let Some(index) = self.selected else {
+            return;
+        };
+        let Some(capsule) = self.vault.capsules.get(index) else {
+            return;
+        };
+        let Some(path) = rfd::FileDialog::new()
+            .set_title(t(self.locale, Key::ExportEml))
+            .set_file_name(&capsule.file_name)
+            .add_filter("email", &["eml"])
+            .save_file()
+        else {
+            return;
+        };
+        match std::fs::write(path, capsule.export_eml()) {
+            Ok(()) => self.toast(t(self.locale, Key::ExportEml)),
+            Err(err) => {
+                self.status = err.to_string();
+                self.status_error = true;
+            }
+        }
+    }
+
+    fn export_vault(&mut self) {
+        if !self.save_selected() {
+            return;
+        }
+        let Some(dir) = rfd::FileDialog::new()
+            .set_title(t(self.locale, Key::ExportVault))
+            .set_directory(&self.vault.dir)
+            .pick_folder()
+        else {
+            return;
+        };
+        let mut written = 0usize;
+        for capsule in &self.vault.capsules {
+            let path = dir.join(&capsule.file_name);
+            if std::fs::write(path, capsule.export_eml()).is_ok() {
+                written += 1;
+            }
+        }
+        self.toast(format!(
+            "{} · {} .eml",
+            t(self.locale, Key::VaultExported),
+            written
+        ));
+    }
+
+    fn import_eml(&mut self) {
+        if !self.save_selected() {
+            return;
+        }
+        let Some(paths) = rfd::FileDialog::new()
+            .set_title(t(self.locale, Key::ImportEml))
+            .add_filter("email", &["eml"])
+            .pick_files()
+        else {
+            return;
+        };
+        let mut imported = 0usize;
+        for path in paths {
+            let Ok(raw) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            let name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("imported.eml");
+            let target = unique_path(&self.vault.dir, name);
+            if std::fs::write(&target, &raw).is_ok() {
+                imported += 1;
+            }
+        }
+        if imported > 0 {
+            self.reload();
+            self.toast(format!(
+                "{} · {} .eml",
+                t(self.locale, Key::Imported),
+                imported
+            ));
+        } else {
+            self.toast(t(self.locale, Key::AttachFailed));
+        }
+    }
+
+    fn delete_selected_page(&mut self) {
+        let Some(index) = self.selected else {
+            return;
+        };
+        let Some(capsule) = self.vault.capsules.get(index) else {
+            return;
+        };
+        let path = self.vault.dir.join(&capsule.file_name);
+        let removed = std::fs::remove_file(&path);
+        if let Err(err) = removed {
+            self.status = err.to_string();
+            self.status_error = true;
+            return;
+        }
+        self.dirty = false;
+        self.snapshot = None;
+        self.vault.reload();
+        self.selected = self.vault.selected_root();
+        self.confirm_delete = false;
+        self.refresh_links();
+        self.toast(t(self.locale, Key::PageDeleted));
+    }
+
+    fn set_locale(&mut self, locale: Locale) {
+        self.locale = locale;
+        locale.persist();
+    }
+}
+
+fn same_snapshot(a: &PageSnapshot, b: &PageSnapshot) -> bool {
+    a.subject == b.subject
+        && a.tags == b.tags
+        && a.status == b.status
+        && Value::Array(a.blocks.clone()) == Value::Array(b.blocks.clone())
+}
+
+fn snapshot_to_string(snapshot: &PageSnapshot) -> String {
+    json!({
+        "subject": snapshot.subject,
+        "tags": snapshot.tags,
+        "status": snapshot.status,
+        "blocks": snapshot.blocks,
+    })
+    .to_string()
+}
+
+fn snapshot_from_string(raw: &str) -> Option<PageSnapshot> {
+    let value: Value = serde_json::from_str(raw).ok()?;
+    Some(PageSnapshot {
+        subject: value.get("subject")?.as_str()?.to_string(),
+        tags: value
+            .get("tags")?
+            .as_array()?
+            .iter()
+            .filter_map(|tag| tag.as_str().map(str::to_string))
+            .collect(),
+        status: value.get("status")?.as_str()?.to_string(),
+        blocks: value.get("blocks")?.as_array()?.clone(),
+    })
+}
+
+fn now_millis() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis())
+        .unwrap_or(0)
+}
+
+/// Pick `name`, or `name-2.eml`, `name-3.eml`, … so an import never overwrites
+/// an existing page.
+fn unique_path(dir: &Path, name: &str) -> PathBuf {
+    let candidate = dir.join(name);
+    if !candidate.exists() {
+        return candidate;
+    }
+    let path = Path::new(name);
+    let stem = path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("imported");
+    let ext = path.extension().and_then(|ext| ext.to_str()).unwrap_or("eml");
+    for suffix in 2..1000 {
+        let candidate = dir.join(format!("{stem}-{suffix}.{ext}"));
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+    dir.join(format!("{stem}-{}.{ext}", now_millis()))
 }
 
 #[derive(Default)]
@@ -199,6 +718,13 @@ struct ShellAction {
     new_page: bool,
     reload: bool,
     save: bool,
+    view: Option<View>,
+    toggle_locale: bool,
+    palette: bool,
+    import: bool,
+    export_vault: bool,
+    export_page: bool,
+    delete_page: bool,
 }
 
 impl ShellAction {
@@ -208,6 +734,13 @@ impl ShellAction {
         self.new_page |= other.new_page;
         self.reload |= other.reload;
         self.save |= other.save;
+        self.view = other.view.or(self.view);
+        self.toggle_locale |= other.toggle_locale;
+        self.palette |= other.palette;
+        self.import |= other.import;
+        self.export_vault |= other.export_vault;
+        self.export_page |= other.export_page;
+        self.delete_page |= other.delete_page;
     }
 }
 
@@ -218,6 +751,9 @@ struct EditorAction {
     new_subpage: bool,
     new_page: bool,
     open_vault: bool,
+    view: Option<View>,
+    /// Title of a page that a `[[link]]` points at but which does not exist.
+    create_page: Option<String>,
 }
 
 impl EditorAction {
@@ -227,18 +763,70 @@ impl EditorAction {
         self.new_subpage |= other.new_subpage;
         self.new_page |= other.new_page;
         self.open_vault |= other.open_vault;
+        self.view = other.view.or(self.view);
+        self.create_page = other.create_page.or_else(|| self.create_page.take());
     }
+}
+
+/// What the document knows about links before it borrows the page mutably.
+#[derive(Default)]
+struct LinkContext {
+    /// `(title as written, resolved page index)` for every outgoing link.
+    outgoing: Vec<(String, Option<usize>)>,
+    /// Pages that link here: `(index, subject)`.
+    backlinks: Vec<(usize, String)>,
 }
 
 impl eframe::App for NativeApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        self.sync_snapshot();
+        self.drive_snapshot(&ctx);
 
-        if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::S)) {
+        let (cmd, shift) = ctx.input(|i| (i.modifiers.command, i.modifiers.shift));
+        if cmd && ctx.input(|i| i.key_pressed(egui::Key::S)) {
             self.save_selected();
         }
-        if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::N)) {
+        if cmd && ctx.input(|i| i.key_pressed(egui::Key::N)) {
             self.new_page(None);
+        }
+        if cmd && ctx.input(|i| i.key_pressed(egui::Key::K)) {
+            self.palette.open = !self.palette.open;
+            self.palette.just_opened = self.palette.open;
+            self.palette.query.clear();
+            self.palette.cursor = 0;
+        }
+        if !self.palette.open {
+            if cmd && ctx.input(|i| i.key_pressed(egui::Key::Z)) {
+                if shift {
+                    self.redo();
+                } else {
+                    self.undo();
+                }
+            }
+            if cmd && ctx.input(|i| i.key_pressed(egui::Key::Y)) {
+                self.redo();
+            }
+            if cmd && ctx.input(|i| i.key_pressed(egui::Key::E)) {
+                self.export_page();
+            }
+            if ctx.input(|i| i.modifiers.alt) {
+                for (index, key) in [
+                    egui::Key::Num1,
+                    egui::Key::Num2,
+                    egui::Key::Num3,
+                    egui::Key::Num4,
+                    egui::Key::Num5,
+                    egui::Key::Num6,
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    if ctx.input(|i| i.key_pressed(key)) {
+                        self.view = View::all()[index];
+                    }
+                }
+            }
         }
         if ctx.input(|i| i.viewport().close_requested()) && !self.save_selected() {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
@@ -246,6 +834,8 @@ impl eframe::App for NativeApp {
 
         let tree = PageTree::build(&self.vault.capsules);
         let mut shell = ShellAction::default();
+        // Links are resolved before the document borrows its page mutably.
+        let link_context = self.current_link_context();
 
         egui::Panel::top("titlebar")
             .exact_size(chrome::TITLEBAR_HEIGHT)
@@ -261,6 +851,8 @@ impl eframe::App for NativeApp {
                     self.dirty,
                     &self.status,
                     self.status_error,
+                    self.view,
+                    self.locale,
                 ));
             });
 
@@ -281,6 +873,7 @@ impl eframe::App for NativeApp {
                         self.selected,
                         &mut self.search,
                         &mut self.collapsed,
+                        self.locale,
                     )
                 })
                 .inner
@@ -288,6 +881,7 @@ impl eframe::App for NativeApp {
         shell.absorb(sidebar_action);
 
         let mut editor = EditorAction::default();
+        let mut view_action = ViewAction::default();
         egui::CentralPanel::default()
             .frame(
                 Frame::new()
@@ -300,32 +894,118 @@ impl eframe::App for NativeApp {
                     .corner_radius(8)
                     .stroke(theme::hairline())
                     .inner_margin(Margin::same(0))
-                    .show(ui, |ui| {
-                        editor.absorb(draw_content_header(
-                            ui,
-                            self.selected,
-                            &self.vault.capsules,
-                            &tree,
-                        ));
-                        match self.selected {
-                            Some(index) if index < self.vault.capsules.len() => {
-                                editor.absorb(draw_document(
-                                    ui,
-                                    &mut self.vault.capsules[index],
-                                ));
+                    .show(ui, |ui| match self.view {
+                        View::Page => {
+                            editor.absorb(draw_content_header(
+                                ui,
+                                self.selected,
+                                &self.vault.capsules,
+                                &tree,
+                                self.locale,
+                            ));
+                            match self.selected {
+                                Some(index) if index < self.vault.capsules.len() => {
+                                    editor.absorb(draw_document(
+                                        ui,
+                                        &mut self.vault.capsules[index],
+                                        self.locale,
+                                        &link_context,
+                                    ));
+                                }
+                                _ => draw_empty_state(ui, &mut editor, self.locale),
                             }
-                            _ => draw_empty_state(ui, &mut editor),
+                        }
+                        View::Planning => view_action.absorb(views::planning_view::draw(
+                            ui,
+                            &mut self.vault,
+                            &mut self.planning,
+                            self.locale,
+                            self.selected,
+                        )),
+                        View::Graph => view_action.absorb(views::graph_view::draw(
+                            ui,
+                            &self.vault.capsules,
+                            &mut self.graph,
+                            self.locale,
+                            self.selected,
+                        )),
+                        View::Threads => view_action.absorb(views::threads_view::draw(
+                            ui,
+                            &self.vault.capsules,
+                            &mut self.threads,
+                            self.locale,
+                            self.selected,
+                        )),
+                        View::Mime => {
+                            let selected = self
+                                .selected
+                                .and_then(|index| self.vault.capsules.get(index));
+                            match selected {
+                                Some(capsule) => view_action.absorb(
+                                    views::mime_view::draw(ui, capsule, self.locale),
+                                ),
+                                None => views::empty_state(
+                                    ui,
+                                    Icon::Code,
+                                    t(self.locale, Key::MimeTitle),
+                                    t(self.locale, Key::NoPageSelected),
+                                ),
+                            }
+                        }
+                        View::Mail => {
+                            let selected = self
+                                .selected
+                                .and_then(|index| self.vault.capsules.get(index));
+                            match selected {
+                                Some(capsule) => view_action.absorb(views::mail_view::draw(
+                                    ui,
+                                    capsule,
+                                    &mut self.mail,
+                                    self.locale,
+                                )),
+                                None => views::empty_state(
+                                    ui,
+                                    Icon::Mail,
+                                    t(self.locale, Key::ExternalPreview),
+                                    t(self.locale, Key::NoPageSelected),
+                                ),
+                            }
                         }
                     });
             });
 
         if editor.changed {
-            self.mark_dirty();
+            self.record_change();
         }
-        if editor.new_page {
+        if view_action.changed {
+            self.record_change();
+        }
+        if let Some(toast) = view_action.toast.clone() {
+            self.toast(toast);
+        }
+        if let Some(id) = view_action.select_id.clone() {
+            self.select_by_id(&id);
+        }
+        if let Some(title) = editor.create_page.clone() {
+            // Clicking a link to a page that does not exist yet creates it with
+            // that title, so a wiki can grow from the text instead of a menu.
+            self.create_page_titled(&title);
+        } else if let Some(index) = view_action.select.or(editor.select).or(shell.select) {
+            self.select_page(index);
+        }
+        if let Some(view) = view_action.view.or(shell.view) {
+            self.view = view;
+        }
+        if view_action.request_palette || shell.palette {
+            self.palette.open = true;
+            self.palette.just_opened = true;
+            self.palette.query.clear();
+            self.palette.cursor = 0;
+        }
+        if editor.new_page || shell.new_page {
             self.new_page(None);
         }
-        if editor.open_vault {
+        if editor.open_vault || shell.open_vault {
             self.open_vault_dialog();
         }
         if editor.new_subpage {
@@ -335,21 +1015,38 @@ impl eframe::App for NativeApp {
                 .map(|capsule| capsule.message_id.clone());
             self.new_page(parent);
         }
-        if let Some(index) = editor.select.or(shell.select) {
-            self.select_page(index);
-        }
-        if shell.save {
+        if shell.save || view_action.request_save {
             self.save_selected();
-        }
-        if shell.new_page {
-            self.new_page(None);
         }
         if shell.reload {
             self.reload();
         }
-        if shell.open_vault {
-            self.open_vault_dialog();
+        if shell.toggle_locale {
+            let locale = self.locale.other();
+            self.set_locale(locale);
         }
+        if shell.import {
+            self.import_eml();
+        }
+        if shell.export_vault {
+            self.export_vault();
+        }
+        if shell.export_page {
+            self.export_page();
+        }
+        if shell.delete_page {
+            self.confirm_delete = true;
+        }
+
+        // Command palette: a pure overlay; the shell performs whatever it picks.
+        if let Some(command) =
+            views::palette::draw(&ctx, &self.vault.capsules, self.locale, &mut self.palette)
+        {
+            self.run_command(command);
+        }
+
+        self.draw_confirm_delete(&ctx);
+        self.draw_toast(&ctx);
 
         if self.dirty && self.last_edit.elapsed() > Duration::from_millis(750) {
             self.save_selected();
@@ -357,6 +1054,149 @@ impl eframe::App for NativeApp {
 
         chrome::window_edges(&ctx);
         ctx.request_repaint_after(Duration::from_millis(200));
+    }
+}
+
+impl NativeApp {
+    fn run_command(&mut self, command: PaletteCommand) {
+        match command {
+            PaletteCommand::NewPage => self.new_page(None),
+            PaletteCommand::SavePage => {
+                self.save_selected();
+            }
+            PaletteCommand::Undo => self.undo(),
+            PaletteCommand::Redo => self.redo(),
+            PaletteCommand::ExportPage => self.export_page(),
+            PaletteCommand::ExportVault => self.export_vault(),
+            PaletteCommand::ImportEml => self.import_eml(),
+            PaletteCommand::ToggleLocale => {
+                let locale = self.locale.other();
+                self.set_locale(locale);
+            }
+            PaletteCommand::SetView(view) => self.view = view,
+            PaletteCommand::OpenPage(index) => {
+                self.select_page(index);
+                self.view = View::Page;
+            }
+            PaletteCommand::DeletePage => self.confirm_delete = true,
+        }
+    }
+
+    fn select_by_id(&mut self, id: &str) {
+        if let Some(index) = self
+            .vault
+            .capsules
+            .iter()
+            .position(|capsule| capsule.message_id == id)
+        {
+            self.select_page(index);
+            self.view = View::Page;
+        }
+    }
+
+    fn draw_confirm_delete(&mut self, ctx: &egui::Context) {
+        if !self.confirm_delete {
+            return;
+        }
+        let mut close = false;
+        let mut confirm = false;
+        egui::Area::new(egui::Id::new("confirm-delete"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(ctx.content_rect().min)
+            .show(ctx, |ui| {
+                let (rect, _) = ui.allocate_exact_size(ctx.content_rect().size(), Sense::click());
+                ui.painter()
+                    .rect_filled(rect, 0.0, egui::Color32::from_black_alpha(150));
+                let panel = Rect::from_center_size(rect.center(), vec2(380.0, 150.0));
+                ui.painter().rect(
+                    panel,
+                    theme::RADIUS,
+                    theme::PANEL,
+                    Stroke::new(1.0, theme::LINE_STRONG),
+                    egui::StrokeKind::Inside,
+                );
+                let mut body = ui.new_child(
+                    UiBuilder::new()
+                        .max_rect(panel.shrink(20.0))
+                        .layout(Layout::top_down(Align::Min)),
+                );
+                body.label(
+                    RichText::new(t(self.locale, Key::DeletePage))
+                        .family(theme::medium())
+                        .size(14.0)
+                        .color(theme::INK),
+                );
+                body.add_space(6.0);
+                body.add(
+                    Label::new(
+                        RichText::new(t(self.locale, Key::DeletePageConfirm))
+                            .size(12.0)
+                            .color(theme::MUTED),
+                    )
+                    .wrap(),
+                );
+                body.add_space(14.0);
+                body.horizontal(|ui| {
+                    if primary_button(ui, t(self.locale, Key::Delete), 28.0).clicked() {
+                        confirm = true;
+                    }
+                    if secondary_button(ui, None, t(self.locale, Key::Cancel), 28.0).clicked() {
+                        close = true;
+                    }
+                });
+            });
+        if confirm {
+            self.delete_selected_page();
+        }
+        if close {
+            self.confirm_delete = false;
+        }
+    }
+
+    fn draw_toast(&mut self, ctx: &egui::Context) {
+        let Some((text, at)) = self.toast.clone() else {
+            return;
+        };
+        let elapsed = at.elapsed();
+        if elapsed > Duration::from_millis(2600) {
+            self.toast = None;
+            return;
+        }
+        let alpha = if elapsed > Duration::from_millis(2100) {
+            (1.0 - (elapsed.as_millis() as f32 - 2100.0) / 500.0).clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+    let screen = ctx.content_rect();
+        let galley = ctx.fonts_mut(|fonts| {
+            fonts.layout_no_wrap(
+                text.clone(),
+                egui::FontId::new(12.0, theme::medium()),
+                theme::INK,
+            )
+        });
+        let size = galley.size() + vec2(28.0, 18.0);
+        let rect = Rect::from_min_size(
+            pos2(screen.center().x - size.x / 2.0, screen.bottom() - size.y - 34.0),
+            size,
+        );
+        let painter = ctx.layer_painter(egui::LayerId::new(
+            egui::Order::Tooltip,
+            egui::Id::new("toast"),
+        ));
+        painter.rect(
+            rect,
+            theme::RADIUS,
+            theme::fade(theme::PANEL, alpha),
+            Stroke::new(1.0, theme::fade(theme::LINE_STRONG, alpha)),
+            egui::StrokeKind::Inside,
+        );
+        painter.galley(
+            rect.min + vec2(14.0, 9.0),
+            galley,
+            theme::fade(theme::INK, alpha),
+        );
+        ctx.request_repaint();
     }
 }
 
@@ -370,6 +1210,8 @@ fn draw_titlebar(
     dirty: bool,
     status: &str,
     status_error: bool,
+    view: View,
+    locale: Locale,
 ) -> ShellAction {
     let mut action = ShellAction::default();
     chrome::title_bar_drag(ui);
@@ -440,6 +1282,17 @@ fn draw_titlebar(
         action.open_vault = true;
     }
 
+    ui.add_space(6.0);
+    let (divider, _) = ui.allocate_exact_size(vec2(1.0, 18.0), Sense::hover());
+    ui.painter()
+        .vline(divider.center().x, divider.y_range(), theme::hairline());
+    ui.add_space(6.0);
+
+    // Workspace views. The page editor is one view among six.
+    if let Some(chosen) = views::nav(ui, view, locale) {
+        action.view = Some(chosen);
+    }
+
     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
         ui.spacing_mut().item_spacing.x = 2.0;
         if chrome::custom_caption_buttons() {
@@ -447,13 +1300,43 @@ fn draw_titlebar(
         }
         ui.add_space(8.0);
 
-        if icon_button(ui, Icon::Reload, "Reload from disk", true, false).clicked() {
+        if ghost(
+            ui,
+            Icon::Command,
+            Some("K"),
+            t(locale, Key::PaletteHint),
+            true,
+            26.0,
+        )
+        .clicked()
+        {
+            action.palette = true;
+        }
+        if ghost(
+            ui,
+            Icon::Globe,
+            Some(locale.label()),
+            t(locale, Key::CommandLocale),
+            true,
+            26.0,
+        )
+        .clicked()
+        {
+            action.toggle_locale = true;
+        }
+        ui.add_space(4.0);
+
+        if icon_button(ui, Icon::Reload, t(locale, Key::Reload), true, false).clicked() {
             action.reload = true;
         }
         if icon_button(
             ui,
             Icon::Save,
-            if dirty { "Save now (Ctrl+S)" } else { "All changes saved" },
+            if dirty {
+                t(locale, Key::SaveNow)
+            } else {
+                t(locale, Key::AllSaved)
+            },
             dirty,
             false,
         )
@@ -464,9 +1347,9 @@ fn draw_titlebar(
 
         ui.add_space(6.0);
         let (dot_color, text) = if status_error {
-            (theme::BAD, "Save failed")
+            (theme::BAD, t(locale, Key::SaveFailed))
         } else if dirty {
-            (theme::BADGE_BETA, "Unsaved")
+            (theme::BADGE_BETA, t(locale, Key::Unsaved))
         } else {
             (theme::ACCENT, status)
         };
@@ -545,12 +1428,13 @@ fn draw_sidebar(
     selected: Option<usize>,
     search: &mut String,
     collapsed: &mut HashSet<String>,
+    locale: Locale,
 ) -> ShellAction {
     let mut action = ShellAction::default();
     let outer = ui.max_rect();
     let inner = outer.shrink2(vec2(14.0, 8.0));
     let header_h = 122.0;
-    let footer_h = 82.0;
+    let footer_h = 122.0;
 
     let header_rect = Rect::from_min_max(inner.min, pos2(inner.right(), inner.top() + header_h));
     let footer_rect = Rect::from_min_max(
@@ -586,7 +1470,7 @@ fn draw_sidebar(
         );
         let label = caps(
             &header,
-            "Pages",
+            t(locale, Key::Pages),
             theme::HUD_SIZE,
             theme::mono_bold(),
             theme::LABEL_SPACING,
@@ -611,7 +1495,7 @@ fn draw_sidebar(
         );
         let plus = header
             .interact(plus_rect, header.scope_id().with("new-page"), Sense::click())
-            .on_hover_text("New top-level page")
+            .on_hover_text(t(locale, Key::NewPage))
             .on_hover_cursor(egui::CursorIcon::PointingHand);
         if plus.hovered() {
             header
@@ -679,12 +1563,16 @@ fn draw_sidebar(
                 if matches == 0 {
                     ui.add_space(18.0);
                     ui.label(
-                        RichText::new(format!("No pages match “{}”.", search.trim()))
-                            .size(12.0)
-                            .color(theme::MUTED),
+                        RichText::new(format!(
+                            "{} “{}”.",
+                            t(locale, Key::NoMatches),
+                            search.trim()
+                        ))
+                        .size(12.0)
+                        .color(theme::MUTED),
                     );
                     ui.add_space(6.0);
-                    if text_button(ui, None, "Clear search", false).clicked() {
+                    if text_button(ui, None, t(locale, Key::ClearSearch), false).clicked() {
                         search.clear();
                     }
                 }
@@ -699,24 +1587,21 @@ fn draw_sidebar(
     footer
         .painter()
         .hline(footer_rect.x_range(), footer_rect.top(), theme::hairline());
-    footer.add_space(12.0);
-    let _ = hud(&mut footer, "Zero-DB vault", theme::FAINT);
-    footer.add_space(5.0);
+    footer.add_space(10.0);
+    let _ = hud(&mut footer, t(locale, Key::ZeroDb), theme::FAINT);
+    footer.add_space(4.0);
     let counts = if vault.load_errors.is_empty() {
         format!(
-            "{} .eml {}",
+            "{} .eml · {}",
             vault.capsules.len(),
-            if vault.capsules.len() == 1 {
-                "page"
-            } else {
-                "pages"
-            }
+            t(locale, Key::PageCount)
         )
     } else {
         format!(
-            "{} .eml pages · {} read-only",
+            "{} .eml · {} {}",
             vault.capsules.len(),
-            vault.load_errors.len()
+            vault.load_errors.len(),
+            t(locale, Key::ReadOnlyCount)
         )
     };
     let counts_label = footer.label(
@@ -728,10 +1613,26 @@ fn draw_sidebar(
     if !vault.load_errors.is_empty() {
         counts_label.on_hover_text(vault.load_errors.join("\n"));
     }
-    footer.add_space(7.0);
-    if text_button(&mut footer, Some(Icon::Folder), "Change folder…", false).clicked() {
-        action.open_vault = true;
-    }
+    footer.add_space(8.0);
+    footer.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 2.0;
+        if icon_button(ui, Icon::Download, t(locale, Key::ImportEml), true, false).clicked() {
+            action.import = true;
+        }
+        if icon_button(ui, Icon::Copy, t(locale, Key::ExportVault), true, false).clicked() {
+            action.export_vault = true;
+        }
+        if icon_button(ui, Icon::Trash, t(locale, Key::DeletePage), selected.is_some(), false)
+            .clicked()
+        {
+            action.delete_page = true;
+        }
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            if text_button(ui, Some(Icon::Folder), t(locale, Key::ChangeFolder), false).clicked() {
+                action.open_vault = true;
+            }
+        });
+    });
 
     action
 }
@@ -1076,6 +1977,7 @@ fn draw_content_header(
     selected: Option<usize>,
     capsules: &[Capsule],
     tree: &PageTree,
+    locale: Locale,
 ) -> EditorAction {
     let mut action = EditorAction::default();
     let (rect, _) = ui.allocate_exact_size(
@@ -1092,10 +1994,14 @@ fn draw_content_header(
     );
     let ui = &mut bar;
     ui.spacing_mut().item_spacing.x = 7.0;
-    let _ = hud(ui, "Vault", theme::MUTED);
+    let _ = hud(ui, t(locale, Key::Vault), theme::MUTED);
 
     let Some(index) = selected.filter(|index| *index < capsules.len()) else {
-        ui.label(RichText::new("No page selected").size(12.0).color(theme::FAINT));
+        ui.label(
+            RichText::new(t(locale, Key::NoPageSelected))
+                .size(12.0)
+                .color(theme::FAINT),
+        );
         return action;
     };
     let capsule = &capsules[index];
@@ -1117,7 +2023,7 @@ fn draw_content_header(
 
     ui.label(
         RichText::new(if capsule.subject.is_empty() {
-            "Untitled"
+            t(locale, Key::Untitled)
         } else {
             &capsule.subject
         })
@@ -1127,14 +2033,18 @@ fn draw_content_header(
     );
     if !capsule.native {
         ui.add_space(3.0);
-        let _ = tag_chip(ui, "READ-ONLY", theme::BADGE_BETA);
+        let _ = tag_chip(ui, t(locale, Key::ReadOnly), theme::BADGE_BETA);
     }
 
     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-        let info = ghost(ui, Icon::Info, Some("Info"), "MIME and page details", true, 30.0);
-        if info.clicked() {
-            // The popup is opened by `Popup::menu` below.
-        }
+        let info = ghost(
+            ui,
+            Icon::Info,
+            Some(t(locale, Key::Info)),
+            t(locale, Key::MimeAndPage),
+            true,
+            30.0,
+        );
         egui::Popup::menu(&info)
             .frame(popover_frame())
             .align(egui::RectAlign::BOTTOM_END)
@@ -1143,8 +2053,8 @@ fn draw_content_header(
         if ghost(
             ui,
             Icon::Plus,
-            Some("Subpage"),
-            "Create a page under this one",
+            Some(t(locale, Key::NewSubpage)),
+            t(locale, Key::NewSubpageHint),
             true,
             30.0,
         )
@@ -1157,7 +2067,12 @@ fn draw_content_header(
     action
 }
 
-fn draw_document(ui: &mut Ui, capsule: &mut Capsule) -> EditorAction {
+fn draw_document(
+    ui: &mut Ui,
+    capsule: &mut Capsule,
+    locale: Locale,
+    link_context: &LinkContext,
+) -> EditorAction {
     let mut action = EditorAction::default();
     ScrollArea::vertical()
         .id_salt("document")
@@ -1183,7 +2098,7 @@ fn draw_document(ui: &mut Ui, capsule: &mut Capsule) -> EditorAction {
                                     .frame(Frame::NONE)
                                     .margin(Margin::same(0))
                                     .desired_width(f32::INFINITY)
-                                    .hint_text("Untitled"),
+                                    .hint_text(t(locale, Key::UntitledPage)),
                             );
                             if response.changed() {
                                 action.changed = true;
@@ -1192,7 +2107,7 @@ fn draw_document(ui: &mut Ui, capsule: &mut Capsule) -> EditorAction {
                             ui.add(
                                 Label::new(
                                     RichText::new(if capsule.subject.is_empty() {
-                                        "Untitled"
+                                        t(locale, Key::Untitled)
                                     } else {
                                         &capsule.subject
                                     })
@@ -1205,20 +2120,34 @@ fn draw_document(ui: &mut Ui, capsule: &mut Capsule) -> EditorAction {
                         }
 
                         ui.add_space(12.0);
-                        document_meta(ui, capsule);
+                        if document_meta(ui, capsule, locale) {
+                            action.changed = true;
+                        }
                         ui.add_space(28.0);
 
                         if !capsule.native {
-                            read_only_notice(ui, capsule);
-                            ui.add_space(80.0);
+                            read_only_notice(ui, capsule, locale);
+                            ui.add_space(18.0);
+                            if secondary_button(ui, Some(Icon::Mail), t(locale, Key::NavPreview), 30.0)
+                                .clicked()
+                            {
+                                action.view = Some(View::Mail);
+                            }
+                            ui.add_space(70.0);
                         } else {
                             let mut block_op: Option<(usize, BlockOp)> = None;
                             let block_count = capsule.blocks.len();
                             for index in 0..block_count {
                                 let mut block = capsule.blocks[index].clone();
                                 let kind = block_type(&block).to_string();
-                                let (changed, op) =
-                                    draw_block_row(ui, &mut block, index, block_count);
+                                let (changed, op) = draw_block_row(
+                                    ui,
+                                    &mut block,
+                                    index,
+                                    block_count,
+                                    &mut capsule.attachments,
+                                    locale,
+                                );
                                 if changed {
                                     capsule.blocks[index] = block;
                                     action.changed = true;
@@ -1264,12 +2193,20 @@ fn draw_document(ui: &mut Ui, capsule: &mut Capsule) -> EditorAction {
                             ui.add_space(8.0);
                             ui.horizontal(|ui| {
                                 ui.add_space(2.0);
-                                if let Some(kind) = add_block_menu(ui) {
-                                    capsule.blocks.push(kind.block());
+                                if let Some(kind) = add_block_menu(ui, locale) {
+                                    capsule.blocks.push(kind.block(locale));
                                     action.changed = true;
                                 }
+                                ui.add_space(4.0);
+                                let _ = hud(ui, t(locale, Key::SlashHint), theme::FAINT);
                             });
-                            ui.add_space(100.0);
+                            ui.add_space(18.0);
+                            links_panel(ui, link_context, locale, &mut action);
+                            ui.add_space(18.0);
+                            if attachments_editor(ui, capsule, locale) {
+                                action.changed = true;
+                            }
+                            ui.add_space(90.0);
                         }
                     },
                 );
@@ -1278,7 +2215,107 @@ fn draw_document(ui: &mut Ui, capsule: &mut Capsule) -> EditorAction {
     action
 }
 
-fn document_meta(ui: &mut Ui, capsule: &Capsule) {
+/// Outgoing `[[links]]` and the pages that link back, drawn under the blocks.
+///
+/// A link the user clicks either navigates or — when no page has that subject
+/// yet — offers to create it, so the wiki can grow from prose alone.
+fn links_panel(ui: &mut Ui, context: &LinkContext, locale: Locale, action: &mut EditorAction) {
+    ui.vertical(|ui| {
+        ui.set_max_width(ui.available_width());
+        views::section(ui, t(locale, Key::LinksTitle));
+        if context.outgoing.is_empty() {
+            let _ = hud(ui, t(locale, Key::NoLinks), theme::FAINT);
+        } else {
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
+                for (title, resolved) in &context.outgoing {
+                    let missing = resolved.is_none();
+                    let response = link_chip(ui, title, missing);
+                    let response = if missing {
+                        response.on_hover_text(t(locale, Key::CreateLinkedPage))
+                    } else {
+                        response.on_hover_text(t(locale, Key::OpenLinkedPage))
+                    };
+                    if response.clicked() {
+                        match resolved {
+                            Some(index) => action.select = Some(*index),
+                            None => action.create_page = Some(title.clone()),
+                        }
+                    }
+                }
+            });
+        }
+        if !context.backlinks.is_empty() {
+            ui.add_space(10.0);
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+                let label = caps(
+                    ui,
+                    t(locale, Key::Backlinks),
+                    theme::HUD_SIZE,
+                    theme::mono_bold(),
+                    theme::LABEL_SPACING,
+                    theme::FAINT,
+                );
+                let (rect, _) = ui.allocate_exact_size(
+                    vec2(label.size().x, label.size().y + 4.0),
+                    Sense::hover(),
+                );
+                ui.painter()
+                    .galley(rect.min + vec2(0.0, 2.0), label, theme::FAINT);
+            });
+            ui.add_space(4.0);
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
+                for (index, subject) in &context.backlinks {
+                    let name = if subject.is_empty() {
+                        t(locale, Key::Untitled).to_string()
+                    } else {
+                        subject.clone()
+                    };
+                    if link_chip(ui, &name, false)
+                        .on_hover_text(t(locale, Key::OpenLinkedPage))
+                        .clicked()
+                    {
+                        action.select = Some(*index);
+                    }
+                }
+            });
+        }
+    });
+}
+
+/// A clickable page chip. Missing targets are drawn muted with a leading `+`.
+fn link_chip(ui: &mut Ui, label: &str, missing: bool) -> Response {
+    let text = if missing {
+        format!("+ {label}")
+    } else {
+        label.to_string()
+    };
+    let galley = ui.painter().layout_no_wrap(
+        text,
+        FontId::new(11.5, theme::medium()),
+        if missing { theme::MUTED } else { theme::ACCENT_INK },
+    );
+    let size = galley.size() + vec2(18.0, 10.0);
+    let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+    let fill = if response.hovered() {
+        theme::WASH_HOVER
+    } else {
+        theme::WASH
+    };
+    ui.painter()
+        .rect(rect, theme::RADIUS, fill, theme::hairline(), egui::StrokeKind::Inside);
+    ui.painter().galley_with_override_text_color(
+        rect.min + vec2(9.0, 5.0),
+        galley,
+        if missing { theme::MUTED } else { theme::ACCENT_INK },
+    );
+    response.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+fn document_meta(ui: &mut Ui, capsule: &mut Capsule, locale: Locale) -> bool {
+    let mut changed = false;
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = vec2(7.0, 6.0);
         ui.label(
@@ -1293,11 +2330,7 @@ fn document_meta(ui: &mut Ui, capsule: &Capsule) {
                 RichText::new(format!(
                     "{} {}",
                     capsule.blocks.len(),
-                    if capsule.blocks.len() == 1 {
-                        "block"
-                    } else {
-                        "blocks"
-                    }
+                    t(locale, Key::Blocks)
                 ))
                 .family(theme::mono())
                 .size(9.5)
@@ -1305,27 +2338,134 @@ fn document_meta(ui: &mut Ui, capsule: &Capsule) {
             );
         } else {
             ui.label(
-                RichText::new("imported email")
+                RichText::new(t(locale, Key::ImportedEmail))
                     .family(theme::mono())
                     .size(9.5)
                     .color(theme::BADGE_BETA),
             );
         }
-        for tag in &capsule.tags {
+
+        // Page status: the same four values the web app writes into the
+        // `X-Capsule-Status` header.
+        if capsule.native {
             ui.add_space(2.0);
-            let _ = tag_chip(ui, tag, theme::MUTED);
+            let pill = status_pill(ui, &capsule.status);
+            egui::Popup::menu(&pill)
+                .frame(popover_frame())
+                .align(egui::RectAlign::BOTTOM_START)
+                .show(|ui| {
+                    ui.set_min_width(170.0);
+                    menu_header(ui, t(locale, Key::Status));
+                    for (value, key) in [
+                        ("draft", Key::StatusDraft),
+                        ("active", Key::StatusActive),
+                        ("synthesis", Key::StatusSynthesis),
+                        ("archived", Key::StatusArchived),
+                    ] {
+                        if menu_row(
+                            ui,
+                            None,
+                            t(locale, key),
+                            None,
+                            capsule.status == value,
+                            true,
+                            false,
+                        )
+                        .clicked()
+                        {
+                            capsule.status = value.to_string();
+                            changed = true;
+                        }
+                    }
+                });
         }
+
+        let tag_id = egui::Id::new(("tag-input", capsule.message_id.clone()));
+        let mut buffer: String = ui.data(|data| data.get_temp(tag_id)).unwrap_or_default();
+        let mut remove_tag: Option<usize> = None;
+        for (index, tag) in capsule.tags.iter().enumerate() {
+            ui.add_space(2.0);
+            let chip = tag_chip(ui, tag, theme::MUTED);
+            egui::Popup::menu(&chip)
+                .frame(popover_frame())
+                .align(egui::RectAlign::BOTTOM_START)
+                .show(|ui| {
+                    ui.set_min_width(150.0);
+                    if menu_row(
+                        ui,
+                        Some(Icon::Trash),
+                        t(locale, Key::Remove),
+                        Some(tag.as_str()),
+                        false,
+                        true,
+                        true,
+                    )
+                    .clicked()
+                    {
+                        remove_tag = Some(index);
+                    }
+                });
+        }
+        if let Some(index) = remove_tag {
+            capsule.tags.remove(index);
+            changed = true;
+        }
+
+        if capsule.native {
+            ui.add_space(2.0);
+            let add = text_button(ui, Some(Icon::Plus), t(locale, Key::AddTag), false);
+            egui::Popup::menu(&add)
+                .frame(popover_frame())
+                .align(egui::RectAlign::BOTTOM_START)
+                .show(|ui| {
+                    ui.set_min_width(190.0);
+                    menu_header(ui, t(locale, Key::Tags));
+                    let response = ui.add(
+                        TextEdit::singleline(&mut buffer)
+                            .font(FontId::new(12.0, FontFamily::Proportional))
+                            .desired_width(170.0)
+                            .hint_text(t(locale, Key::Keyword)),
+                    );
+                    if response.changed() {
+                        ui.data_mut(|data| data.insert_temp(tag_id, buffer.clone()));
+                    }
+                    let enter =
+                        response.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter));
+                    if enter
+                        || menu_row(
+                            ui,
+                            None,
+                            t(locale, Key::AddTag),
+                            None,
+                            false,
+                            true,
+                            false,
+                        )
+                        .clicked()
+                    {
+                        let tag = buffer.trim().to_string();
+                        if !tag.is_empty() && !capsule.tags.iter().any(|existing| existing == &tag)
+                        {
+                            capsule.tags.push(tag);
+                            changed = true;
+                        }
+                        buffer.clear();
+                        ui.data_mut(|data| data.insert_temp(tag_id, String::new()));
+                    }
+                });
+        }
+
         if !capsule.attachments.is_empty() {
             dot_sep(ui);
             let bytes: usize = capsule.attachments.iter().map(|a| a.size_bytes).sum();
             ui.label(
                 RichText::new(format!(
                     "{} · {}",
-                    if capsule.attachments.len() == 1 {
-                        "1 attachment".to_string()
-                    } else {
-                        format!("{} attachments", capsule.attachments.len())
-                    },
+                    format!(
+                        "{} {}",
+                        capsule.attachments.len(),
+                        t(locale, Key::Attachment)
+                    ),
                     human_bytes(bytes)
                 ))
                 .family(theme::mono())
@@ -1334,9 +2474,10 @@ fn document_meta(ui: &mut Ui, capsule: &Capsule) {
             );
         }
     });
+    changed
 }
 
-fn read_only_notice(ui: &mut Ui, capsule: &Capsule) {
+fn read_only_notice(ui: &mut Ui, capsule: &Capsule, locale: Locale) {
     let inner = Frame::new()
         .fill(theme::WASH)
         .corner_radius(theme::RADIUS)
@@ -1347,7 +2488,7 @@ fn read_only_notice(ui: &mut Ui, capsule: &Capsule) {
             bottom: 12,
         })
         .show(ui, |ui| {
-            let _ = hud(ui, "Imported email · read-only", theme::BADGE_BETA);
+            let _ = hud(ui, t(locale, Key::ExternalReadOnlyNotice), theme::BADGE_BETA);
             ui.add_space(7.0);
             ui.add(
                 Label::new(
@@ -1355,7 +2496,7 @@ fn read_only_notice(ui: &mut Ui, capsule: &Capsule) {
                         capsule
                             .parse_note
                             .as_deref()
-                            .unwrap_or("This .eml was not written by CapsuleOS."),
+                            .unwrap_or(t(locale, Key::ImportedEmail)),
                     )
                     .size(13.0)
                     .color(theme::INK),
@@ -1365,11 +2506,9 @@ fn read_only_notice(ui: &mut Ui, capsule: &Capsule) {
             ui.add_space(5.0);
             ui.add(
                 Label::new(
-                    RichText::new(
-                        "HTML email rendering is not implemented in the native prototype. Open this file in the web app for the full preview. It will not be overwritten here.",
-                    )
-                    .size(11.5)
-                    .color(theme::MUTED),
+                    RichText::new(t(locale, Key::HtmlRenderingNotice))
+                        .size(11.5)
+                        .color(theme::MUTED),
                 )
                 .wrap(),
             );
@@ -1384,7 +2523,7 @@ fn read_only_notice(ui: &mut Ui, capsule: &Capsule) {
     );
 }
 
-fn draw_empty_state(ui: &mut Ui, action: &mut EditorAction) {
+fn draw_empty_state(ui: &mut Ui, action: &mut EditorAction, locale: Locale) {
     ScrollArea::vertical()
         .id_salt("empty")
         .auto_shrink([false, false])
@@ -1392,34 +2531,34 @@ fn draw_empty_state(ui: &mut Ui, action: &mut EditorAction) {
             ui.add_space(110.0);
             ui.vertical_centered(|ui| {
                 ui.label(
-                    RichText::new("A folder, not a database.")
+                    RichText::new(t(locale, Key::EmptyVaultTitle))
                         .family(theme::display())
                         .size(32.0)
                         .color(theme::INK),
                 );
                 ui.add_space(8.0);
                 ui.label(
-                    RichText::new(
-                        "One .eml per page. Open a CapsuleOS vault or create the first page.",
-                    )
-                    .size(13.0)
-                    .color(theme::MUTED),
+                    RichText::new(t(locale, Key::EmptyVaultBody))
+                        .size(13.0)
+                        .color(theme::MUTED),
                 );
                 ui.add_space(22.0);
                 ui.horizontal(|ui| {
-                    let total = 260.0;
+                    let total = 280.0;
                     ui.add_space((ui.available_width() - total) / 2.0);
-                    if primary_button(ui, "New page", 34.0).clicked() {
+                    if primary_button(ui, t(locale, Key::CreateFirstPage), 34.0).clicked() {
                         action.new_page = true;
                     }
                     ui.add_space(8.0);
-                    if secondary_button(ui, Some(Icon::Folder), "Open folder", 34.0).clicked() {
+                    if secondary_button(ui, Some(Icon::Folder), t(locale, Key::ChangeFolder), 34.0)
+                        .clicked()
+                    {
                         action.open_vault = true;
                     }
                 });
                 ui.add_space(10.0);
                 ui.label(
-                    RichText::new("No network · no telemetry · no database")
+                    RichText::new(t(locale, Key::ZeroDb))
                         .family(theme::mono())
                         .size(9.0)
                         .color(theme::FAINT),
@@ -1446,10 +2585,15 @@ enum BlockKind {
     Heading,
     Tasks,
     Callout,
+    Code,
+    Grid,
+    Audio,
+    Canvas,
+    Opponent,
 }
 
 impl BlockKind {
-    fn block(self) -> Value {
+    fn block(self, locale: Locale) -> Value {
         match self {
             BlockKind::Text => json!({
                 "id": new_block_id("paragraph"),
@@ -1464,42 +2608,83 @@ impl BlockKind {
             BlockKind::Tasks => json!({
                 "id": new_block_id("todo_list"),
                 "type": "todo_list",
-                "data": { "title": "Tasks", "items": [] }
+                "data": { "title": t(locale, Key::BlockTodo), "items": [] }
             }),
             BlockKind::Callout => json!({
                 "id": new_block_id("callout"),
                 "type": "callout",
                 "data": {
-                    "title": "Note",
+                    "title": t(locale, Key::BlockCallout),
                     "content": "",
                     "icon": "info",
                     "tone": "blue"
                 }
             }),
+            BlockKind::Code => json!({
+                "id": new_block_id("code_repl"),
+                "type": "code_repl",
+                "data": { "language": "javascript", "code": "" }
+            }),
+            BlockKind::Grid => json!({
+                "id": new_block_id("data_grid_view"),
+                "type": "data_grid_view",
+                "data": { "source_cid": "", "view": "table" }
+            }),
+            BlockKind::Audio => json!({
+                "id": new_block_id("audio_note"),
+                "type": "audio_note",
+                "data": {
+                    "duration": "0:00",
+                    "transcript": "",
+                    "waveform": [4, 9, 14, 7, 17, 11, 5, 13, 8, 16, 6, 12],
+                    "author": t(locale, Key::NativeBadge).to_lowercase()
+                }
+            }),
+            BlockKind::Canvas => json!({
+                "id": new_block_id("interactive_canvas"),
+                "type": "interactive_canvas",
+                "data": { "scene_cid": "", "elements": [] }
+            }),
+            BlockKind::Opponent => json!({
+                "id": new_block_id("ai_opponent_block"),
+                "type": "ai_opponent_block",
+                "data": { "criticism": "", "sourceClaim": "", "confidence": 0.5 }
+            }),
         }
     }
 }
 
-fn add_block_menu(ui: &mut Ui) -> Option<BlockKind> {
-    let response = ghost(ui, Icon::Plus, Some("Add block"), "Add a block", true, 30.0);
+fn add_block_menu(ui: &mut Ui, locale: Locale) -> Option<BlockKind> {
+    let response = ghost(
+        ui,
+        Icon::Plus,
+        Some(t(locale, Key::AddBlock)),
+        t(locale, Key::AddBlockHint),
+        true,
+        30.0,
+    );
     let mut chosen = None;
     egui::Popup::menu(&response)
         .frame(popover_frame())
         .align(egui::RectAlign::BOTTOM_START)
         .show(|ui| {
-            ui.set_min_width(180.0);
-            menu_header(ui, "Add block");
-            if menu_row(ui, Some(Icon::Doc), "Text", None, false, true, false).clicked() {
-                chosen = Some(BlockKind::Text);
-            }
-            if menu_row(ui, Some(Icon::Doc), "Heading", Some("H2"), false, true, false).clicked() {
-                chosen = Some(BlockKind::Heading);
-            }
-            if menu_row(ui, Some(Icon::Check), "Tasks", None, false, true, false).clicked() {
-                chosen = Some(BlockKind::Tasks);
-            }
-            if menu_row(ui, Some(Icon::Info), "Callout", None, false, true, false).clicked() {
-                chosen = Some(BlockKind::Callout);
+            ui.set_min_width(200.0);
+            menu_header(ui, t(locale, Key::AddBlock));
+            let items = [
+                (Icon::Doc, Key::BlockParagraph, BlockKind::Text, None),
+                (Icon::Doc, Key::BlockHeading, BlockKind::Heading, Some("H2")),
+                (Icon::Check, Key::BlockTodo, BlockKind::Tasks, None),
+                (Icon::Info, Key::BlockCallout, BlockKind::Callout, None),
+                (Icon::Code, Key::BlockCode, BlockKind::Code, None),
+                (Icon::Table, Key::BlockGrid, BlockKind::Grid, None),
+                (Icon::Audio, Key::BlockAudio, BlockKind::Audio, None),
+                (Icon::Board, Key::BlockCanvas, BlockKind::Canvas, None),
+                (Icon::Command, Key::BlockAi, BlockKind::Opponent, None),
+            ];
+            for (icon, key, kind, hint) in items {
+                if menu_row(ui, Some(icon), t(locale, key), hint, false, true, false).clicked() {
+                    chosen = Some(kind);
+                }
             }
         });
     chosen
@@ -1510,6 +2695,8 @@ fn draw_block_row(
     block: &mut Value,
     index: usize,
     block_count: usize,
+    attachments: &mut [Attachment],
+    locale: Locale,
 ) -> (bool, Option<BlockOp>) {
     let kind = block_type(block).to_string();
     let mut changed = false;
@@ -1525,7 +2712,7 @@ fn draw_block_row(
                     ui.add_space(GUTTER);
                     ui.vertical(|ui| {
                         ui.set_max_width(ui.available_width());
-                        changed = draw_block_content(ui, block, &kind);
+                        changed = draw_block_content(ui, block, &kind, attachments, locale);
                     });
                 });
             },
@@ -1545,7 +2732,7 @@ fn draw_block_row(
             Sense::click(),
         )
         .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .on_hover_text("Block actions");
+        .on_hover_text(t(locale, Key::AddBlockHint));
     icons::paint(
         ui.painter(),
         Rect::from_center_size(handle_rect.center(), vec2(13.0, 13.0)),
@@ -1569,12 +2756,12 @@ fn draw_block_row(
                     .and_then(Value::as_u64)
                     .unwrap_or(1)
                     .clamp(1, 3);
-                menu_header(ui, "Heading level");
+                menu_header(ui, t(locale, Key::HeadingLevel));
                 for candidate in 1..=3 {
                     if menu_row(
                         ui,
                         None,
-                        &format!("Heading {candidate}"),
+                        &format!("H{candidate}"),
                         None,
                         level == candidate as u64,
                         true,
@@ -1592,7 +2779,7 @@ fn draw_block_row(
             if menu_row(
                 ui,
                 Some(Icon::ArrowUp),
-                "Move up",
+                t(locale, Key::MoveUp),
                 None,
                 false,
                 index > 0,
@@ -1605,7 +2792,7 @@ fn draw_block_row(
             if menu_row(
                 ui,
                 Some(Icon::ArrowDown),
-                "Move down",
+                t(locale, Key::MoveDown),
                 None,
                 false,
                 index + 1 < block_count,
@@ -1619,7 +2806,7 @@ fn draw_block_row(
             if menu_row(
                 ui,
                 Some(Icon::Trash),
-                "Delete block",
+                t(locale, Key::DeleteBlock),
                 None,
                 false,
                 true,
@@ -1634,7 +2821,13 @@ fn draw_block_row(
     (changed, op)
 }
 
-fn draw_block_content(ui: &mut Ui, block: &mut Value, kind: &str) -> bool {
+fn draw_block_content(
+    ui: &mut Ui,
+    block: &mut Value,
+    kind: &str,
+    attachments: &mut [Attachment],
+    locale: Locale,
+) -> bool {
     match kind {
         "heading" => {
             let level = block
@@ -1657,7 +2850,7 @@ fn draw_block_content(ui: &mut Ui, block: &mut Value, kind: &str) -> bool {
                     .margin(Margin::same(0))
                     .desired_width(f32::INFINITY)
                     .desired_rows(1)
-                    .hint_text("Heading"),
+                    .hint_text(t(locale, Key::PlaceholderHeading)),
             );
             if response.changed() {
                 set_block_text(block, text);
@@ -1669,6 +2862,9 @@ fn draw_block_content(ui: &mut Ui, block: &mut Value, kind: &str) -> bool {
         "paragraph" => {
             let mut text = block_data_text(block);
             let rows = text.lines().count().max(1);
+            let mut layouter = |ui: &Ui, buffer: &dyn egui::TextBuffer, wrap: f32| {
+                links::layout(ui, buffer.as_str(), 15.5, wrap)
+            };
             let response = ui.add(
                 TextEdit::multiline(&mut text)
                     .font(FontId::new(15.5, FontFamily::Proportional))
@@ -1677,7 +2873,8 @@ fn draw_block_content(ui: &mut Ui, block: &mut Value, kind: &str) -> bool {
                     .margin(Margin::same(0))
                     .desired_width(f32::INFINITY)
                     .desired_rows(rows)
-                    .hint_text("Write something…"),
+                    .layouter(&mut layouter)
+                    .hint_text(t(locale, Key::PlaceholderParagraph)),
             );
             if response.changed() {
                 set_block_text(block, text);
@@ -1686,8 +2883,13 @@ fn draw_block_content(ui: &mut Ui, block: &mut Value, kind: &str) -> bool {
                 false
             }
         }
-        "todo_list" => draw_todo_block(ui, block),
-        "callout" => draw_callout_block(ui, block),
+        "todo_list" => draw_todo_block(ui, block, locale),
+        "callout" => draw_callout_block(ui, block, locale),
+        "code_repl" => draw_code_block(ui, block, locale),
+        "data_grid_view" => draw_grid_block(ui, block, attachments, locale),
+        "audio_note" => draw_audio_block(ui, block, attachments, locale),
+        "interactive_canvas" => draw_canvas_block(ui, block, locale),
+        "ai_opponent_block" => draw_opponent_block(ui, block, locale),
         _ => {
             let inner = Frame::new()
                 .fill(theme::SUNKEN)
@@ -1702,28 +2904,19 @@ fn draw_block_content(ui: &mut Ui, block: &mut Value, kind: &str) -> bool {
                 .show(ui, |ui| {
                     let _ = hud(
                         ui,
-                        &format!("Preserved · {}", kind.replace('_', " ")),
+                        &format!(
+                            "{} · {}",
+                            t(locale, Key::BlockPreserved),
+                            kind.replace('_', " ")
+                        ),
                         theme::FAINT,
                     );
                     ui.add_space(6.0);
                     ui.add(
                         Label::new(
-                            RichText::new(
-                                "This block type is not editable in the native prototype.",
-                            )
-                            .size(12.0)
-                            .color(theme::MUTED),
-                        )
-                        .wrap(),
-                    );
-                    ui.add_space(3.0);
-                    ui.add(
-                        Label::new(
-                            RichText::new(
-                                "It stays in canvas_state.json and opens in the web app.",
-                            )
-                            .size(11.0)
-                            .color(theme::FAINT),
+                            RichText::new(t(locale, Key::BlockPreservedHint))
+                                .size(11.5)
+                                .color(theme::MUTED),
                         )
                         .wrap(),
                     );
@@ -1734,13 +2927,13 @@ fn draw_block_content(ui: &mut Ui, block: &mut Value, kind: &str) -> bool {
     }
 }
 
-fn draw_todo_block(ui: &mut Ui, block: &mut Value) -> bool {
+fn draw_todo_block(ui: &mut Ui, block: &mut Value, locale: Locale) -> bool {
     let mut changed = false;
     let mut title = block
         .get("data")
         .and_then(|data| data.get("title"))
         .and_then(Value::as_str)
-        .unwrap_or("Tasks")
+        .unwrap_or("")
         .to_string();
     let title_response = ui.add(
         TextEdit::singleline(&mut title)
@@ -1749,7 +2942,7 @@ fn draw_todo_block(ui: &mut Ui, block: &mut Value) -> bool {
             .frame(Frame::NONE)
             .margin(Margin::same(0))
             .desired_width(f32::INFINITY)
-            .hint_text("Tasks"),
+            .hint_text(t(locale, Key::BlockTodo)),
     );
     if title_response.changed() {
         block["data"]["title"] = json!(title);
@@ -1768,7 +2961,7 @@ fn draw_todo_block(ui: &mut Ui, block: &mut Value) -> bool {
 
     if items.is_empty() {
         ui.label(
-            RichText::new("No tasks yet.")
+            RichText::new(t(locale, Key::NoTasks))
                 .size(11.5)
                 .color(theme::FAINT),
         );
@@ -1839,13 +3032,20 @@ fn draw_todo_block(ui: &mut Ui, block: &mut Value) -> bool {
                 .frame(popover_frame())
                 .align(egui::RectAlign::BOTTOM_END)
                 .show(|ui| {
-                    ui.set_min_width(160.0);
-                    menu_header(ui, "Task status");
+                    ui.set_min_width(170.0);
+                    menu_header(ui, t(locale, Key::TaskStatus));
                     for candidate in ["todo", "doing", "done"] {
                         if menu_row(
                             ui,
                             None,
-                            status_label(candidate),
+                            t(
+                                locale,
+                                match candidate {
+                                    "todo" => Key::StatusTodo,
+                                    "doing" => Key::StatusDoing,
+                                    _ => Key::StatusDone,
+                                },
+                            ),
                             None,
                             current == candidate,
                             true,
@@ -1860,7 +3060,7 @@ fn draw_todo_block(ui: &mut Ui, block: &mut Value) -> bool {
                     if menu_row(
                         ui,
                         Some(Icon::Trash),
-                        "Delete task",
+                        t(locale, Key::DeleteTask),
                         None,
                         false,
                         true,
@@ -1891,7 +3091,7 @@ fn draw_todo_block(ui: &mut Ui, block: &mut Value) -> bool {
     }
 
     ui.add_space(6.0);
-    if text_button(ui, Some(Icon::Plus), "Add task", false).clicked() {
+    if text_button(ui, Some(Icon::Plus), t(locale, Key::AddTaskShort), false).clicked() {
         items.push(json!({
             "id": format!("item_{}", now_nanos()),
             "text": "",
@@ -1909,7 +3109,7 @@ fn draw_todo_block(ui: &mut Ui, block: &mut Value) -> bool {
     changed
 }
 
-fn draw_callout_block(ui: &mut Ui, block: &mut Value) -> bool {
+fn draw_callout_block(ui: &mut Ui, block: &mut Value, locale: Locale) -> bool {
     let mut changed = false;
     let tone = block
         .get("data")
@@ -1938,7 +3138,7 @@ fn draw_callout_block(ui: &mut Ui, block: &mut Value) -> bool {
                 .get("data")
                 .and_then(|data| data.get("title"))
                 .and_then(Value::as_str)
-                .unwrap_or("Note")
+                .unwrap_or("")
                 .to_string();
             let title_response = ui.add(
                 TextEdit::singleline(&mut title)
@@ -1947,7 +3147,7 @@ fn draw_callout_block(ui: &mut Ui, block: &mut Value) -> bool {
                     .frame(Frame::NONE)
                     .margin(Margin::same(0))
                     .desired_width(f32::INFINITY)
-                    .hint_text("Note"),
+                    .hint_text(t(locale, Key::BlockCallout)),
             );
             if title_response.changed() {
                 block["data"]["title"] = json!(title);
@@ -1996,10 +3196,866 @@ fn draw_callout_block(ui: &mut Ui, block: &mut Value) -> bool {
 }
 
 // ---------------------------------------------------------------------------
+// Blocks: code, data grid, audio, canvas, counter-argument, attachments
+// ---------------------------------------------------------------------------
+
+fn draw_code_block(ui: &mut Ui, block: &mut Value, locale: Locale) -> bool {
+    let mut changed = false;
+    Frame::new()
+        .fill(theme::SUNKEN)
+        .corner_radius(theme::RADIUS)
+        .stroke(theme::hairline())
+        .inner_margin(Margin {
+            left: 14,
+            right: 14,
+            top: 10,
+            bottom: 12,
+        })
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                let language = block
+                    .get("data")
+                    .and_then(|data| data.get("language"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("javascript")
+                    .to_string();
+                let response = ghost(
+                    ui,
+                    Icon::Code,
+                    Some(language.as_str()),
+                    t(locale, Key::Language),
+                    true,
+                    24.0,
+                );
+                egui::Popup::menu(&response)
+                    .frame(popover_frame())
+                    .align(egui::RectAlign::BOTTOM_START)
+                    .show(|ui| {
+                        ui.set_min_width(150.0);
+                        menu_header(ui, t(locale, Key::Language));
+                        for candidate in ["javascript", "typescript", "python", "rust", "sql", "json"]
+                        {
+                            if menu_row(
+                                ui,
+                                None,
+                                candidate,
+                                None,
+                                language == candidate,
+                                true,
+                                false,
+                            )
+                            .clicked()
+                            {
+                                block["data"]["language"] = json!(candidate);
+                                changed = true;
+                            }
+                        }
+                    });
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    let _ = hud(ui, t(locale, Key::NotExecuted), theme::FAINT);
+                });
+            });
+            ui.add_space(8.0);
+
+            let mut code = block
+                .get("data")
+                .and_then(|data| data.get("code"))
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            let rows = code.lines().count().max(4);
+            let response = ui.add(
+                TextEdit::multiline(&mut code)
+                    .font(FontId::new(12.5, theme::mono()))
+                    .text_color(theme::INK)
+                    .frame(Frame::NONE)
+                    .margin(Margin::same(0))
+                    .desired_width(f32::INFINITY)
+                    .desired_rows(rows)
+                    .code_editor()
+                    .hint_text(t(locale, Key::PlaceholderCode)),
+            );
+            if response.changed() {
+                block["data"]["code"] = json!(code);
+                changed = true;
+            }
+
+            if let Some(output) = block
+                .get("data")
+                .and_then(|data| data.get("output"))
+                .and_then(Value::as_str)
+                .filter(|output| !output.trim().is_empty())
+            {
+                ui.add_space(10.0);
+                let _ = hud(ui, t(locale, Key::CodeOutput), theme::FAINT);
+                ui.add_space(3.0);
+                ui.add(
+                    Label::new(
+                        RichText::new(output)
+                            .family(theme::mono())
+                            .size(11.5)
+                            .color(theme::MUTED),
+                    )
+                    .wrap(),
+                );
+            }
+            ui.add_space(6.0);
+            let _ = hud(ui, t(locale, Key::RunUnavailable), theme::fade(theme::FAINT, 0.85));
+        });
+    changed
+}
+
+fn draw_grid_block(
+    ui: &mut Ui,
+    block: &mut Value,
+    attachments: &mut [Attachment],
+    locale: Locale,
+) -> bool {
+    let source = block
+        .get("data")
+        .and_then(|data| data.get("source_cid"))
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    let clean = source
+        .trim_start_matches("cid:")
+        .trim_matches(|ch| ch == '<' || ch == '>')
+        .to_string();
+    let found = attachments.iter().position(|attachment| {
+        attachment.cid == clean
+            || format!("cid:{}", attachment.cid) == source
+            || attachment.name == clean
+    });
+
+    let mut changed = false;
+    Frame::new()
+        .fill(theme::SUNKEN)
+        .corner_radius(theme::RADIUS)
+        .stroke(theme::hairline())
+        .inner_margin(Margin {
+            left: 12,
+            right: 12,
+            top: 10,
+            bottom: 12,
+        })
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                let name = found
+                    .map(|index| attachments[index].name.clone())
+                    .unwrap_or_else(|| t(locale, Key::BlockGrid).to_string());
+                let _ = hud(ui, &name, theme::FAINT);
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if found.is_some() {
+                        if text_button(ui, None, t(locale, Key::AddRow), false).clicked() {
+                            block["data"]["__add_row"] = json!(true);
+                        }
+                        if text_button(ui, None, t(locale, Key::AddColumn), false).clicked() {
+                            block["data"]["__add_col"] = json!(true);
+                        }
+                    }
+                });
+            });
+            ui.add_space(8.0);
+
+            let Some(index) = found else {
+                let _ = hud(ui, t(locale, Key::DataGridMissing), theme::MUTED);
+                return;
+            };
+
+            let mut table = parse_csv(&attachments[index].content);
+            if table.is_empty() {
+                table.push(vec![t(locale, Key::RenameField).to_string()]);
+                table.push(vec![String::new()]);
+            }
+            let add_row = block["data"]
+                .get("__add_row")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let add_col = block["data"]
+                .get("__add_col")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            if let Some(data) = block.get_mut("data").and_then(Value::as_object_mut) {
+                data.remove("__add_row");
+                data.remove("__add_col");
+            }
+            if add_row {
+                let width = table[0].len();
+                table.push(vec![String::new(); width]);
+            }
+            if add_col {
+                for row in table.iter_mut() {
+                    row.push(String::new());
+                }
+            }
+
+            let columns = table.iter().map(Vec::len).max().unwrap_or(0).max(1);
+            let cell_width = ((ui.available_width() - 24.0) / columns as f32 - 8.0).max(70.0);
+            let mut table_changed = false;
+
+            ScrollArea::horizontal()
+                .id_salt((
+                    "grid-scroll",
+                    block.get("id").and_then(Value::as_str).unwrap_or(""),
+                ))
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    for (row_index, row) in table.iter_mut().enumerate() {
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 6.0;
+                            for column in 0..columns {
+                                if row.len() <= column {
+                                    row.push(String::new());
+                                }
+                                let mut cell = row[column].clone();
+                                let font = if row_index == 0 {
+                                    FontId::new(11.0, theme::mono_bold())
+                                } else {
+                                    FontId::new(11.5, theme::mono())
+                                };
+                                let response = ui.add_sized(
+                                    vec2(cell_width, 22.0),
+                                    TextEdit::singleline(&mut cell)
+                                        .font(font)
+                                        .text_color(if row_index == 0 {
+                                            theme::MUTED
+                                        } else {
+                                            theme::INK
+                                        })
+                                        .frame(Frame::NONE)
+                                        .margin(Margin::symmetric(4, 2))
+                                        .desired_width(cell_width),
+                                );
+                                if response.changed() {
+                                    row[column] = cell;
+                                    table_changed = true;
+                                }
+                            }
+                        });
+                        let line_y = ui.cursor().min.y;
+                        let line_x = ui.cursor().min.x;
+                        ui.painter().hline(
+                            egui::Rangef::new(line_x, line_x + cell_width * columns as f32),
+                            line_y,
+                            Stroke::new(1.0, theme::fade(theme::LINE, 0.55)),
+                        );
+                        ui.add_space(2.0);
+                    }
+                });
+
+            if table_changed {
+                attachments[index].content = to_csv(&table);
+                attachments[index].size_bytes = attachments[index].content.len();
+                changed = true;
+            }
+            if add_row || add_col {
+                attachments[index].content = to_csv(&table);
+                attachments[index].size_bytes = attachments[index].content.len();
+                changed = true;
+            }
+        });
+    changed
+}
+
+fn draw_audio_block(
+    ui: &mut Ui,
+    block: &mut Value,
+    attachments: &[Attachment],
+    locale: Locale,
+) -> bool {
+    let mut changed = false;
+    let audio_cid = block
+        .get("data")
+        .and_then(|data| data.get("audioCid"))
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim_start_matches("cid:")
+        .to_string();
+    let file = attachments
+        .iter()
+        .find(|attachment| attachment.cid == audio_cid);
+
+    Frame::new()
+        .fill(theme::SUNKEN)
+        .corner_radius(theme::RADIUS)
+        .stroke(theme::hairline())
+        .inner_margin(Margin {
+            left: 14,
+            right: 14,
+            top: 12,
+            bottom: 12,
+        })
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                icons::paint(
+                    ui.painter(),
+                    Rect::from_min_size(ui.cursor().min + vec2(0.0, 2.0), vec2(14.0, 14.0)),
+                    Icon::Audio,
+                    theme::ACCENT_INK,
+                );
+                ui.add_space(20.0);
+                let name = file
+                    .map(|attachment| attachment.name.clone())
+                    .unwrap_or_else(|| t(locale, Key::AudioNoFile).to_string());
+                ui.label(RichText::new(name).size(12.0).color(theme::INK));
+                ui.add_space(6.0);
+                let duration = block
+                    .get("data")
+                    .and_then(|data| data.get("duration"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("0:00");
+                let _ = hud(ui, duration, theme::FAINT);
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if text_button(ui, Some(Icon::Plus), t(locale, Key::AttachAudio), false).clicked()
+                    {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .set_title(t(locale, Key::AttachAudio))
+                            .add_filter("audio", &["mp3", "wav", "ogg", "m4a", "flac", "webm"])
+                            .pick_file()
+                        {
+                            if let Ok(bytes) = std::fs::read(&path) {
+                                let name = path
+                                    .file_name()
+                                    .and_then(|name| name.to_str())
+                                    .unwrap_or("audio")
+                                    .to_string();
+                                let cid = format!("audio-{}", sanitize_cid(&name));
+                                let mime = guess_mime(&name);
+                                let encoded =
+                                    base64::engine::general_purpose::STANDARD.encode(&bytes);
+                                let size = bytes.len();
+                                block["data"]["audioCid"] = json!(format!("cid:{cid}"));
+                                block["data"]["audioMime"] = json!(mime.clone());
+                                block["data"]["audioName"] = json!(name.clone());
+                                block["data"]["__attach"] = json!({
+                                    "name": name,
+                                    "cid": cid,
+                                    "mime": mime,
+                                    "b64": encoded,
+                                    "size": size,
+                                });
+                                changed = true;
+                            }
+                        }
+                    }
+                });
+            });
+            ui.add_space(10.0);
+
+            // Waveform: real amplitude values when the file carried them, bars otherwise.
+            let waveform: Vec<f32> = block
+                .get("data")
+                .and_then(|data| data.get("waveform"))
+                .and_then(Value::as_array)
+                .map(|values| {
+                    values
+                        .iter()
+                        .filter_map(Value::as_f64)
+                        .map(|value| value as f32)
+                        .collect()
+                })
+                .unwrap_or_default();
+            let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 34.0), Sense::hover());
+            let bars = waveform.len().max(24);
+            let peak = waveform.iter().cloned().fold(1.0_f32, f32::max);
+            for index in 0..bars {
+                let value = waveform
+                    .get(index)
+                    .copied()
+                    .unwrap_or_else(|| 3.0 + ((index * 7) % 11) as f32);
+                let height = (value / peak * 26.0).clamp(2.0, 26.0);
+                let x = rect.left() + index as f32 * (rect.width() / bars as f32);
+                ui.painter().vline(
+                    x,
+                    egui::Rangef::new(
+                        rect.center().y - height / 2.0,
+                        rect.center().y + height / 2.0,
+                    ),
+                    Stroke::new(1.0, theme::fade(theme::ACCENT_INK, 0.55)),
+                );
+            }
+
+            ui.add_space(8.0);
+            let mut transcript = block
+                .get("data")
+                .and_then(|data| data.get("transcript"))
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            let rows = transcript.lines().count().max(2);
+            let response = ui.add(
+                TextEdit::multiline(&mut transcript)
+                    .font(FontId::new(13.0, FontFamily::Proportional))
+                    .text_color(theme::MUTED)
+                    .frame(Frame::NONE)
+                    .margin(Margin::same(0))
+                    .desired_width(f32::INFINITY)
+                    .desired_rows(rows)
+                    .hint_text(t(locale, Key::Transcript)),
+            );
+            if response.changed() {
+                block["data"]["transcript"] = json!(transcript);
+                changed = true;
+            }
+            ui.add_space(6.0);
+            let _ = hud(ui, t(locale, Key::NoPlayback), theme::FAINT);
+        });
+    changed
+}
+
+fn draw_canvas_block(ui: &mut Ui, block: &mut Value, locale: Locale) -> bool {
+    let mut changed = false;
+    let block_id = block
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or("canvas")
+        .to_string();
+    let mut elements: Vec<Value> = block
+        .get("data")
+        .and_then(|data| data.get("elements"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+
+    Frame::new()
+        .fill(theme::SUNKEN)
+        .corner_radius(theme::RADIUS)
+        .stroke(theme::hairline())
+        .inner_margin(Margin::same(10))
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                let _ = hud(ui, t(locale, Key::BlockCanvas), theme::FAINT);
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if text_button(ui, None, t(locale, Key::CanvasReset), false).clicked() {
+                        elements.clear();
+                        changed = true;
+                    }
+                    if text_button(ui, None, t(locale, Key::CanvasAddText), false).clicked() {
+                        elements.push(canvas_element("text", elements.len(), locale));
+                        changed = true;
+                    }
+                    if text_button(ui, None, t(locale, Key::CanvasAddRect), false).clicked() {
+                        elements.push(canvas_element("rectangle", elements.len(), locale));
+                        changed = true;
+                    }
+                    if text_button(ui, None, t(locale, Key::CanvasAddSticky), false).clicked() {
+                        elements.push(canvas_element("sticky", elements.len(), locale));
+                        changed = true;
+                    }
+                });
+            });
+            ui.add_space(8.0);
+
+            let (canvas_rect, _) =
+                ui.allocate_exact_size(vec2(ui.available_width(), 300.0), Sense::hover());
+            let painter = ui.painter_at(canvas_rect);
+            painter.rect_filled(canvas_rect, theme::RADIUS, theme::BG);
+            painter.rect_stroke(
+                canvas_rect,
+                theme::RADIUS,
+                theme::hairline(),
+                egui::StrokeKind::Inside,
+            );
+
+            let selected_id: Option<String> = ui
+                .data(|data| data.get_temp(egui::Id::new(("canvas-selected", block_id.clone()))));
+            let mut next_selected = selected_id.clone();
+
+            for element in elements.iter_mut() {
+                let x = element.get("x").and_then(Value::as_f64).unwrap_or(0.0) as f32;
+                let y = element.get("y").and_then(Value::as_f64).unwrap_or(0.0) as f32;
+                let width = element
+                    .get("width")
+                    .and_then(Value::as_f64)
+                    .unwrap_or(140.0) as f32;
+                let height = element
+                    .get("height")
+                    .and_then(Value::as_f64)
+                    .unwrap_or(80.0) as f32;
+                let id = element
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+                let kind = element
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .unwrap_or("sticky")
+                    .to_string();
+                let rect = Rect::from_min_size(canvas_rect.min + vec2(x, y), vec2(width, height))
+                    .intersect(canvas_rect);
+                if rect.width() < 4.0 || rect.height() < 4.0 {
+                    continue;
+                }
+                let response = ui.interact(
+                    rect,
+                    egui::Id::new(("canvas-element", block_id.clone(), id.clone())),
+                    Sense::click_and_drag(),
+                );
+                if response.dragged() {
+                    let delta = response.drag_delta();
+                    element["x"] = json!(x + delta.x);
+                    element["y"] = json!(y + delta.y);
+                    changed = true;
+                }
+                if response.clicked() {
+                    next_selected = Some(id.clone());
+                }
+
+                let is_selected = selected_id.as_deref() == Some(id.as_str());
+                let (fill, stroke) = match kind.as_str() {
+                    "rectangle" => (theme::WASH, theme::LINE_STRONG),
+                    "text" => (Color32::TRANSPARENT, theme::fade(theme::LINE, 0.0)),
+                    _ => (Color32::from_rgb(45, 129, 255), theme::fade(theme::ACCENT_INK, 0.4)),
+                };
+                if kind != "text" {
+                    painter.rect(
+                        rect,
+                        if kind == "sticky" {
+                            egui::CornerRadius::same(4)
+                        } else {
+                            theme::RADIUS
+                        },
+                        fill,
+                        Stroke::new(
+                            if is_selected { 1.6 } else { 1.0 },
+                            if is_selected {
+                                theme::ACCENT_INK
+                            } else {
+                                stroke
+                            },
+                        ),
+                        egui::StrokeKind::Inside,
+                    );
+                } else if is_selected {
+                    painter.rect_stroke(
+                        rect,
+                        theme::RADIUS,
+                        Stroke::new(1.0, theme::ACCENT_INK),
+                        egui::StrokeKind::Inside,
+                    );
+                }
+                let text = element
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+                painter.text(
+                    rect.min + vec2(8.0, 7.0),
+                    egui::Align2::LEFT_TOP,
+                    text,
+                    FontId::new(11.5, FontFamily::Proportional),
+                    if kind == "sticky" {
+                        theme::ACCENT_INK
+                    } else {
+                        theme::INK
+                    },
+                );
+            }
+
+            if elements.is_empty() {
+                painter.text(
+                    canvas_rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    t(locale, Key::CanvasEmpty),
+                    FontId::new(11.5, FontFamily::Proportional),
+                    theme::FAINT,
+                );
+            }
+
+            if let Some(selected) = &next_selected {
+                let selected = selected.clone();
+                ui.horizontal(|ui| {
+                    ui.add_space(2.0);
+                    if text_button(ui, Some(Icon::Trash), t(locale, Key::CanvasDelete), true)
+                        .clicked()
+                    {
+                        elements.retain(|element| {
+                            element.get("id").and_then(Value::as_str) != Some(selected.as_str())
+                        });
+                        next_selected = None;
+                        changed = true;
+                    }
+                    let _ = hud(ui, t(locale, Key::CanvasHint), theme::FAINT);
+                });
+            } else {
+                ui.add_space(4.0);
+                let _ = hud(ui, t(locale, Key::CanvasHint), theme::FAINT);
+            }
+
+            ui.data_mut(|data| {
+                data.insert_temp(egui::Id::new(("canvas-selected", block_id)), next_selected)
+            });
+        });
+
+    if changed {
+        block["data"]["elements"] = Value::Array(elements);
+    }
+    changed
+}
+
+fn canvas_element(kind: &str, index: usize, locale: Locale) -> Value {
+    let offset = (index % 6) as f64 * 18.0;
+    json!({
+        "id": format!("el_{}", now_nanos()),
+        "type": kind,
+        "x": 24.0 + offset,
+        "y": 24.0 + offset,
+        "width": if kind == "text" { 180.0 } else { 150.0 },
+        "height": if kind == "text" { 28.0 } else { 90.0 },
+        "text": match kind {
+            "rectangle" => String::new(),
+            "text" => t(locale, Key::CanvasAddText).to_string(),
+            _ => t(locale, Key::CanvasAddSticky).to_string(),
+        },
+        "color": "",
+    })
+}
+
+fn draw_opponent_block(ui: &mut Ui, block: &mut Value, locale: Locale) -> bool {
+    let mut changed = false;
+    Frame::new()
+        .fill(theme::WASH)
+        .corner_radius(theme::RADIUS)
+        .stroke(theme::hairline())
+        .inner_margin(Margin {
+            left: 14,
+            right: 14,
+            top: 11,
+            bottom: 12,
+        })
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                let _ = hud(ui, t(locale, Key::CounterArg), theme::BADGE_BETA);
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    let confidence = block
+                        .get("data")
+                        .and_then(|data| data.get("confidence"))
+                        .and_then(Value::as_f64)
+                        .unwrap_or(0.5);
+                    let _ = hud(
+                        ui,
+                        &format!(
+                            "{} {}%",
+                            t(locale, Key::Confidence),
+                            (confidence * 100.0).round() as i64
+                        ),
+                        theme::FAINT,
+                    );
+                });
+            });
+            ui.add_space(6.0);
+
+            let mut criticism = block
+                .get("data")
+                .and_then(|data| data.get("criticism"))
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            let rows = criticism.lines().count().max(2);
+            let response = ui.add(
+                TextEdit::multiline(&mut criticism)
+                    .font(FontId::new(13.5, FontFamily::Proportional))
+                    .text_color(theme::INK)
+                    .frame(Frame::NONE)
+                    .margin(Margin::same(0))
+                    .desired_width(f32::INFINITY)
+                    .desired_rows(rows)
+                    .hint_text(t(locale, Key::Critique)),
+            );
+            if response.changed() {
+                block["data"]["criticism"] = json!(criticism);
+                changed = true;
+            }
+
+            ui.add_space(8.0);
+            let mut claim = block
+                .get("data")
+                .and_then(|data| data.get("sourceClaim"))
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            let response = ui.add(
+                TextEdit::singleline(&mut claim)
+                    .font(FontId::new(11.5, FontFamily::Proportional))
+                    .text_color(theme::MUTED)
+                    .frame(Frame::NONE)
+                    .margin(Margin::same(0))
+                    .desired_width(f32::INFINITY)
+                    .hint_text(t(locale, Key::SourceClaim)),
+            );
+            if response.changed() {
+                block["data"]["sourceClaim"] = json!(claim);
+                changed = true;
+            }
+
+            ui.add_space(4.0);
+            let mut confidence = block
+                .get("data")
+                .and_then(|data| data.get("confidence"))
+                .and_then(Value::as_f64)
+                .unwrap_or(0.5) as f32;
+            if ui
+                .add(
+                    egui::Slider::new(&mut confidence, 0.0..=1.0)
+                        .show_value(false)
+                        .trailing_fill(true),
+                )
+                .changed()
+            {
+                block["data"]["confidence"] = json!(confidence as f64);
+                changed = true;
+            }
+            ui.add_space(4.0);
+            let _ = hud(ui, t(locale, Key::HeuristicNotice), theme::FAINT);
+        });
+    changed
+}
+
+/// Attachment list for one page. Files are stored base64-encoded in the MIME
+/// part, exactly like the web app does, so the .eml stays self-contained.
+fn attachments_editor(ui: &mut Ui, capsule: &mut Capsule, locale: Locale) -> bool {
+    let mut changed = false;
+    ui.horizontal(|ui| {
+        let _ = hud(ui, t(locale, Key::AttachmentsTitle), theme::FAINT);
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            if text_button(ui, Some(Icon::Plus), t(locale, Key::AddAttachment), false).clicked() {
+                if let Some(paths) = rfd::FileDialog::new()
+                    .set_title(t(locale, Key::AddAttachment))
+                    .pick_files()
+                {
+                    for path in paths {
+                        let Ok(bytes) = std::fs::read(&path) else {
+                            continue;
+                        };
+                        let name = path
+                            .file_name()
+                            .and_then(|name| name.to_str())
+                            .unwrap_or("attachment")
+                            .to_string();
+                        capsule.attachments.push(Attachment {
+                            name: name.clone(),
+                            cid: format!("{}@capsuleos", sanitize_cid(&name)),
+                            mime_type: guess_mime(&name),
+                            content: String::from_utf8_lossy(&bytes).to_string(),
+                            size_bytes: bytes.len(),
+                            raw_b64: Some(
+                                base64::engine::general_purpose::STANDARD.encode(&bytes),
+                            ),
+                        });
+                        changed = true;
+                    }
+                }
+            }
+        });
+    });
+    ui.add_space(6.0);
+
+    if capsule.attachments.is_empty() {
+        let _ = hud(ui, t(locale, Key::EmptyAttachments), theme::FAINT);
+        return changed;
+    }
+
+    let mut remove: Option<usize> = None;
+    for (index, attachment) in capsule.attachments.iter().enumerate() {
+        ui.horizontal(|ui| {
+            icons::paint(
+                ui.painter(),
+                Rect::from_min_size(ui.cursor().min + vec2(0.0, 3.0), vec2(12.0, 12.0)),
+                Icon::Doc,
+                theme::FAINT,
+            );
+            ui.add_space(18.0);
+            ui.label(
+                RichText::new(truncate_chars(&attachment.name, 48))
+                    .size(12.0)
+                    .color(theme::MUTED),
+            );
+            ui.add_space(6.0);
+            let _ = hud(ui, &human_bytes(attachment.size_bytes), theme::FAINT);
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if icon_button(ui, Icon::Trash, t(locale, Key::RemoveAttachment), true, false)
+                    .clicked()
+                {
+                    remove = Some(index);
+                }
+            });
+        });
+    }
+    if let Some(index) = remove {
+        capsule.attachments.remove(index);
+        changed = true;
+    }
+    changed
+}
+
+/// Split CSV into rows. Deliberately simple: no quoted fields, no embedded
+/// commas — the same limitation the web grid has.
+fn parse_csv(raw: &str) -> Vec<Vec<String>> {
+    raw.lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| {
+            line.split(',')
+                .map(|cell| cell.trim().to_string())
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+fn to_csv(table: &[Vec<String>]) -> String {
+    table
+        .iter()
+        .map(|row| row.join(","))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn sanitize_cid(name: &str) -> String {
+    name.chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '.' || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '-'
+            }
+        })
+        .collect()
+}
+
+fn guess_mime(name: &str) -> String {
+    let extension = name
+        .rsplit('.')
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    match extension.as_str() {
+        "csv" => "text/csv",
+        "json" => "application/json",
+        "md" => "text/markdown",
+        "txt" => "text/plain",
+        "html" | "htm" => "text/html",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "svg" => "image/svg+xml",
+        "webp" => "image/webp",
+        "pdf" => "application/pdf",
+        "mp3" => "audio/mpeg",
+        "wav" => "audio/wav",
+        "ogg" => "audio/ogg",
+        "m4a" => "audio/mp4",
+        "flac" => "audio/flac",
+        "webm" => "audio/webm",
+        _ => "application/octet-stream",
+    }
+    .to_string()
+}
+
+// ---------------------------------------------------------------------------
 // Widgets
 // ---------------------------------------------------------------------------
 
-fn caps(
+pub(crate) fn caps(
     ui: &Ui,
     text: &str,
     size: f32,
@@ -2020,7 +4076,7 @@ fn caps(
         ))
 }
 
-fn hud(ui: &mut Ui, text: &str, color: Color32) -> Response {
+pub(crate) fn hud(ui: &mut Ui, text: &str, color: Color32) -> Response {
     let galley = caps(
         ui,
         text,
@@ -2034,7 +4090,7 @@ fn hud(ui: &mut Ui, text: &str, color: Color32) -> Response {
     response
 }
 
-fn chevron(ui: &mut Ui, color: Color32) -> Response {
+pub(crate) fn chevron(ui: &mut Ui, color: Color32) -> Response {
     let (rect, response) = ui.allocate_exact_size(vec2(10.0, 10.0), Sense::hover());
     icons::paint(
         ui.painter(),
@@ -2045,7 +4101,7 @@ fn chevron(ui: &mut Ui, color: Color32) -> Response {
     response
 }
 
-fn crumb_button(ui: &mut Ui, text: &str) -> Response {
+pub(crate) fn crumb_button(ui: &mut Ui, text: &str) -> Response {
     let galley = ui.painter().layout_no_wrap(
         text.to_string(),
         FontId::new(12.0, FontFamily::Proportional),
@@ -2065,13 +4121,13 @@ fn crumb_button(ui: &mut Ui, text: &str) -> Response {
     response.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
-fn dot_sep(ui: &mut Ui) {
+pub(crate) fn dot_sep(ui: &mut Ui) {
     let (rect, _) = ui.allocate_exact_size(vec2(4.0, 10.0), Sense::hover());
     ui.painter()
         .circle_filled(rect.center(), 1.2, theme::fade(theme::FAINT, 0.8));
 }
 
-fn tag_chip(ui: &mut Ui, text: &str, color: Color32) -> Response {
+pub(crate) fn tag_chip(ui: &mut Ui, text: &str, color: Color32) -> Response {
     let galley = ui.painter().layout_no_wrap(
         text.to_string(),
         FontId::new(9.5, theme::mono()),
@@ -2091,7 +4147,7 @@ fn tag_chip(ui: &mut Ui, text: &str, color: Color32) -> Response {
     response
 }
 
-fn icon_button(
+pub(crate) fn icon_button(
     ui: &mut Ui,
     icon: Icon,
     tip: &str,
@@ -2128,7 +4184,7 @@ fn icon_button(
     }
 }
 
-fn ghost(
+pub(crate) fn ghost(
     ui: &mut Ui,
     icon: Icon,
     label: Option<&str>,
@@ -2188,7 +4244,7 @@ fn ghost(
     }
 }
 
-fn text_button(ui: &mut Ui, icon: Option<Icon>, label: &str, active: bool) -> Response {
+pub(crate) fn text_button(ui: &mut Ui, icon: Option<Icon>, label: &str, active: bool) -> Response {
     let galley = ui.painter().layout_no_wrap(
         label.to_string(),
         FontId::new(11.5, theme::medium()),
@@ -2220,7 +4276,7 @@ fn text_button(ui: &mut Ui, icon: Option<Icon>, label: &str, active: bool) -> Re
     response.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
-fn primary_button(ui: &mut Ui, label: &str, height: f32) -> Response {
+pub(crate) fn primary_button(ui: &mut Ui, label: &str, height: f32) -> Response {
     let galley = caps(
         ui,
         label,
@@ -2249,7 +4305,7 @@ fn primary_button(ui: &mut Ui, label: &str, height: f32) -> Response {
     response.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
-fn secondary_button(
+pub(crate) fn secondary_button(
     ui: &mut Ui,
     icon: Option<Icon>,
     label: &str,
@@ -2295,7 +4351,7 @@ fn secondary_button(
     response.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
-fn checkbox(ui: &mut Ui, done: &mut bool) -> Response {
+pub(crate) fn checkbox(ui: &mut Ui, done: &mut bool) -> Response {
     let (rect, response) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::click());
     let hovered = response.hovered();
     let fill = if *done {
@@ -2326,7 +4382,7 @@ fn checkbox(ui: &mut Ui, done: &mut bool) -> Response {
     response.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
-fn status_pill(ui: &mut Ui, status: &str) -> Response {
+pub(crate) fn status_pill(ui: &mut Ui, status: &str) -> Response {
     let (label, color) = match status {
         "doing" => ("DOING", theme::ACCENT_INK),
         "done" => ("DONE", theme::FAINT),
@@ -2365,7 +4421,7 @@ fn status_pill(ui: &mut Ui, status: &str) -> Response {
         .on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
-fn popover_frame() -> Frame {
+pub(crate) fn popover_frame() -> Frame {
     Frame::new()
         .fill(theme::CONTROLS)
         .stroke(theme::hairline())
@@ -2374,7 +4430,7 @@ fn popover_frame() -> Frame {
         .inner_margin(Margin::same(4))
 }
 
-fn menu_header(ui: &mut Ui, text: &str) {
+pub(crate) fn menu_header(ui: &mut Ui, text: &str) {
     let galley = caps(
         ui,
         text,
@@ -2391,14 +4447,14 @@ fn menu_header(ui: &mut Ui, text: &str) {
     );
 }
 
-fn menu_separator(ui: &mut Ui) {
+pub(crate) fn menu_separator(ui: &mut Ui) {
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 9.0), Sense::hover());
     ui.painter()
         .hline(rect.x_range(), rect.center().y, theme::hairline());
 }
 
 #[allow(clippy::too_many_arguments)]
-fn menu_row(
+pub(crate) fn menu_row(
     ui: &mut Ui,
     icon: Option<Icon>,
     label: &str,
@@ -2463,7 +4519,7 @@ fn menu_row(
     }
 }
 
-fn info_popover(ui: &mut Ui, capsule: &Capsule) {
+pub(crate) fn info_popover(ui: &mut Ui, capsule: &Capsule) {
     ui.set_width(342.0);
     ui.add_space(2.0);
     menu_header(ui, "Page info");
@@ -2539,7 +4595,7 @@ fn folder_name(dir: &Path) -> String {
         .unwrap_or_else(|| "Vault".to_string())
 }
 
-fn truncate_chars(text: &str, max_chars: usize) -> String {
+pub(crate) fn truncate_chars(text: &str, max_chars: usize) -> String {
     let mut chars = text.chars();
     let mut out: String = chars.by_ref().take(max_chars).collect();
     if chars.next().is_some() {
@@ -2548,7 +4604,7 @@ fn truncate_chars(text: &str, max_chars: usize) -> String {
     out
 }
 
-fn format_date(capsule: &Capsule) -> String {
+pub(crate) fn format_date(capsule: &Capsule) -> String {
     chrono::DateTime::<chrono::Utc>::from_timestamp_millis(capsule.timestamp)
         .map(|date| {
             date.with_timezone(&chrono::Local)
@@ -2568,7 +4624,7 @@ fn format_date_long(capsule: &Capsule) -> String {
         .unwrap_or_else(|| capsule.date.clone())
 }
 
-fn human_bytes(bytes: usize) -> String {
+pub(crate) fn human_bytes(bytes: usize) -> String {
     if bytes < 1024 {
         format!("{bytes} B")
     } else if bytes < 1024 * 1024 {
@@ -2578,7 +4634,7 @@ fn human_bytes(bytes: usize) -> String {
     }
 }
 
-fn status_label(status: &str) -> &'static str {
+pub(crate) fn status_label(status: &str) -> &'static str {
     match status {
         "doing" => "Doing",
         "done" => "Done",
@@ -2586,7 +4642,7 @@ fn status_label(status: &str) -> &'static str {
     }
 }
 
-fn now_nanos() -> u128 {
+pub(crate) fn now_nanos() -> u128 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_nanos())

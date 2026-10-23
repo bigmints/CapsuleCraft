@@ -157,9 +157,9 @@ mod tests {
     #[test]
     fn typing_bursts_are_coalesced() {
         let mut store = HistoryStore::default();
-        store.maybe_push("p", "v1".into(), 0);
-        store.maybe_push("p", "v2".into(), 100);
-        store.maybe_push("p", "v3".into(), 900);
+        store.maybe_push("p", "v1".into(), 1_000);
+        store.maybe_push("p", "v2".into(), 1_100);
+        store.maybe_push("p", "v3".into(), 1_900);
         assert_eq!(store.for_page("p").depth(), 2);
     }
 }
