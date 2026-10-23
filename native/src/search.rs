@@ -435,6 +435,34 @@ pub fn snippet(text: &str, query: &str, radius: usize) -> Option<String> {
     Some(out.split_whitespace().collect::<Vec<_>>().join(" "))
 }
 
+/// Rank other documents by tf-idf cosine similarity to `current`.
+///
+/// `ids` are document ids in caller order, so the returned index points straight
+/// back at the caller's slice. Self-matches and weak similarities are dropped;
+/// this is "related by meaning" without a model, exactly like the web engine.
+pub fn related(
+    index: &Bm25Index,
+    current: &str,
+    ids: &[&str],
+    min_score: f32,
+    limit: usize,
+) -> Vec<(usize, f32)> {
+    let mut scored: Vec<(usize, f32)> = ids
+        .iter()
+        .enumerate()
+        .filter(|(_, id)| **id != current)
+        .map(|(position, id)| (position, index.similarity(current, id)))
+        .filter(|(_, score)| *score > 0.0 && *score >= min_score)
+        .collect();
+    scored.sort_by(|a, b| {
+        b.1.partial_cmp(&a.1)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.0.cmp(&b.0))
+    });
+    scored.truncate(limit);
+    scored
+}
+
 /// Simple subject/tag boost applied on top of BM25.
 pub fn subject_boost(query: &str, subject: &str, tags: &[String]) -> f32 {
     let q = query.trim().to_lowercase();
@@ -569,5 +597,33 @@ mod tests {
     fn snippet_is_none_without_a_match() {
         assert!(snippet("nothing here", "absent", 10).is_none());
         assert!(snippet("", "x", 10).is_none());
+    }
+
+    fn related_index() -> Bm25Index {
+        let mut index = Bm25Index::default();
+        index.add("a", tokenize("mmap arena allocator zero copy vault"));
+        index.add("b", tokenize("allocator latency budget and mmap experiments"));
+        index.add("c", tokenize("цветы и кофе"));
+        index
+    }
+
+    #[test]
+    fn related_ranks_neighbours_and_skips_self() {
+        let index = related_index();
+        let ids = ["a", "b", "c"];
+        let hits = related(&index, "a", &ids, 0.05, 5);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].0, 1);
+        assert!(hits[0].1 > 0.0);
+    }
+
+    #[test]
+    fn related_respects_threshold_and_limit() {
+        let index = related_index();
+        let ids = ["a", "b", "c"];
+        assert!(related(&index, "a", &ids, 0.99, 5).is_empty());
+        assert!(related(&index, "a", &ids, 0.0, 0).is_empty());
+        let isolated = related(&index, "c", &ids, 0.0, 5);
+        assert!(isolated.is_empty(), "no shared terms means no neighbours");
     }
 }
