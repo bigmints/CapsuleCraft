@@ -1,0 +1,382 @@
+//! Localization for the native prototype.
+//!
+//! The web app keeps Russian as the source dictionary and English as the
+//! mirror. This module does the same with a single table: every key carries
+//! both strings, so parity is structural — a key without a translation does
+//! not compile.
+//!
+//! The chosen locale is persisted outside the vault (`native-settings.json`),
+//! because the vault itself stays pure `.eml`: no app state is allowed to leak
+//! into the knowledge folder.
+
+use std::fs;
+use std::path::PathBuf;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Locale {
+    Ru,
+    En,
+}
+
+impl Locale {
+    pub fn code(self) -> &'static str {
+        match self {
+            Locale::Ru => "ru",
+            Locale::En => "en",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Locale::Ru => "RU",
+            Locale::En => "EN",
+        }
+    }
+
+    pub fn other(self) -> Self {
+        match self {
+            Locale::Ru => Locale::En,
+            Locale::En => Locale::Ru,
+        }
+    }
+
+    /// Saved preference, else the OS language, else Russian.
+    pub fn detect() -> Self {
+        if let Some(saved) = read_settings().and_then(|raw| match raw.trim() {
+            "ru" => Some(Locale::Ru),
+            "en" => Some(Locale::En),
+            _ => None,
+        }) {
+            return saved;
+        }
+        if let Ok(lang) = std::env::var("LANG") {
+            if lang.to_lowercase().starts_with("ru") {
+                return Locale::Ru;
+            }
+            return Locale::En;
+        }
+        Locale::Ru
+    }
+
+    pub fn persist(self) {
+        let Some(dir) = settings_dir() else {
+            return;
+        };
+        let _ = fs::create_dir_all(&dir);
+        let _ = fs::write(dir.join("native-settings.json"), format!("{}\n", self.code()));
+    }
+}
+
+fn settings_dir() -> Option<PathBuf> {
+    if let Ok(appdata) = std::env::var("APPDATA") {
+        return Some(PathBuf::from(appdata).join("com.capsuleos.app"));
+    }
+    if let Ok(home) = std::env::var("XDG_CONFIG_HOME") {
+        return Some(PathBuf::from(home).join("capsuleos"));
+    }
+    std::env::var("HOME")
+        .ok()
+        .map(|home| PathBuf::from(home).join(".config").join("capsuleos"))
+}
+
+fn read_settings() -> Option<String> {
+    let dir = settings_dir()?;
+    fs::read_to_string(dir.join("native-settings.json")).ok()
+}
+
+macro_rules! strings {
+    ($($key:ident => ($ru:literal, $en:literal)),* $(,)?) => {
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        pub enum Key {
+            $($key),*
+        }
+
+        impl Key {
+            pub fn ru(self) -> &'static str {
+                match self {
+                    $(Key::$key => $ru),*
+                }
+            }
+
+            pub fn en(self) -> &'static str {
+                match self {
+                    $(Key::$key => $en),*
+                }
+            }
+
+            pub fn get(self, locale: Locale) -> &'static str {
+                match locale {
+                    Locale::Ru => self.ru(),
+                    Locale::En => self.en(),
+                }
+            }
+        }
+    };
+}
+
+strings! {
+    // Shell
+    AppName => ("CapsuleOS", "CapsuleOS"),
+    NativeBadge => ("NATIVE", "NATIVE"),
+    Pages => ("Страницы", "Pages"),
+    NewPage => ("Новая страница", "New page"),
+    Vault => ("Хранилище", "Vault"),
+    NoPageSelected => ("Страница не выбрана", "No page selected"),
+    SearchPlaceholder => ("Поиск по хранилищу", "Search the vault"),
+    NoMatches => ("Ничего не найдено", "No pages match"),
+    ClearSearch => ("Сбросить поиск", "Clear search"),
+    ChangeFolder => ("Сменить папку…", "Change folder…"),
+    ZeroDb => ("Zero-DB хранилище", "Zero-DB vault"),
+    PageCount => ("стр. .eml", ".eml pages"),
+    ReadOnlyCount => ("только чтение", "read-only"),
+    Saved => ("Сохранено", "Saved"),
+    SavedAt => ("Сохранено", "Saved"),
+    Unsaved => ("Не сохранено", "Unsaved"),
+    SaveFailed => ("Ошибка сохранения", "Save failed"),
+    Reload => ("Перечитать с диска", "Reload from disk"),
+    SaveNow => ("Сохранить (Ctrl+S)", "Save now (Ctrl+S)"),
+    AllSaved => ("Всё сохранено", "All changes saved"),
+    NewSubpage => ("Подстраница", "Subpage"),
+    NewSubpageHint => ("Создать страницу внутри этой", "Create a page under this one"),
+    Info => ("Инфо", "Info"),
+    MimeAndPage => ("MIME и свойства страницы", "MIME and page details"),
+    Untitled => ("Без названия", "Untitled"),
+    Blocks => ("блоков", "blocks"),
+    ImportedEmail => ("импортированное письмо", "imported email"),
+    ReadOnly => ("ТОЛЬКО ЧТЕНИЕ", "READ-ONLY"),
+    Attachment => ("вложение", "attachment"),
+    Attachments => ("вложений", "attachments"),
+    VaultOpened => ("Хранилище открыто", "Vault opened"),
+    Reloaded => ("Перечитано", "Reloaded"),
+    NewPageDone => ("Новая страница", "New page"),
+    UntitledPage => ("Без названия", "Untitled"),
+
+    // Navigation
+    NavPage => ("Страница", "Page"),
+    NavPlanning => ("Задачи", "Planning"),
+    NavGraph => ("Граф", "Graph"),
+    NavThreads => ("Треды", "Threads"),
+    NavMime => ("MIME", "MIME"),
+    NavPreview => ("Письмо", "Email"),
+    PaletteHint => ("Команды и страницы", "Commands and pages"),
+    PalettePlaceholder => ("Найти страницу или команду…", "Find a page or a command…"),
+    PaletteActions => ("Действия", "Actions"),
+    PaletteNavigation => ("Навигация", "Navigation"),
+    PalettePages => ("Страницы", "Pages"),
+    PaletteEmpty => ("Ничего не найдено", "Nothing matches"),
+    CommandNewPage => ("Создать страницу", "Create page"),
+    CommandNewPageHint => ("Пустая страница в корне", "Empty page at the root"),
+    CommandUndo => ("Отменить", "Undo"),
+    CommandRedo => ("Повторить", "Redo"),
+    CommandExportPage => ("Экспорт .eml", "Export .eml"),
+    CommandExportVault => ("Экспорт хранилища", "Export vault"),
+    CommandImport => ("Импорт .eml", "Import .eml"),
+    CommandLocale => ("Переключить язык", "Switch language"),
+    UndoEmpty => ("История пуста", "Nothing to undo"),
+    RedoEmpty => ("Нечего повторять", "Nothing to redo"),
+    Undone => ("Отменено", "Undone"),
+    Redone => ("Повторено", "Redone"),
+
+    // Editor
+    AddBlock => ("Блок", "Block"),
+    AddBlockHint => ("Добавить блок", "Add a block"),
+    BlockHeading => ("Заголовок", "Heading"),
+    BlockParagraph => ("Абзац", "Paragraph"),
+    BlockTodo => ("Список задач", "Task list"),
+    BlockCallout => ("Врезка", "Callout"),
+    BlockCode => ("Код", "Code"),
+    BlockGrid => ("Таблица данных", "Data table"),
+    BlockAudio => ("Аудиозаметка", "Audio note"),
+    BlockCanvas => ("Доска", "Whiteboard"),
+    BlockAi => ("Контраргумент", "Counter-argument"),
+    MoveUp => ("Выше", "Move up"),
+    MoveDown => ("Ниже", "Move down"),
+    DeleteBlock => ("Удалить блок", "Delete block"),
+    HeadingLevel => ("Уровень", "Heading level"),
+    PlaceholderParagraph => ("Пишите. Markdown-lite: **жирный**, *курсив*, `код`, [[ссылка]].", "Write. Markdown-lite: **bold**, *italic*, `code`, [[link]]."),
+    PlaceholderHeading => ("Заголовок", "Heading"),
+    PlaceholderCode => ("Код без выполнения", "Code, never executed"),
+    PlaceholderItem => ("Новая задача", "New task"),
+    Due => ("Срок", "Due"),
+    Start => ("Начало", "Start"),
+    Priority => ("Приоритет", "Priority"),
+    PriorityLow => ("низкий", "low"),
+    PriorityNormal => ("обычный", "normal"),
+    PriorityHigh => ("высокий", "high"),
+    Status => ("Статус", "Status"),
+    StatusTodo => ("К выполнению", "To do"),
+    StatusDoing => ("В работе", "In progress"),
+    StatusDone => ("Готово", "Done"),
+    Blocked => ("Заблокировано", "Blocked"),
+    BlockedBy => ("Зависит от", "Blocked by"),
+    Remove => ("Удалить", "Remove"),
+    NoDependency => ("Нет зависимостей", "No dependencies"),
+    Language => ("Язык", "Language"),
+    Copy => ("Копировать", "Copy"),
+    Copied => ("Скопировано", "Copied"),
+    NotExecuted => ("Нативный прототип не исполняет код. Текст сохраняется в .eml.", "The native prototype never executes code. Source is stored in the .eml."),
+    RunUnavailable => ("Запуск недоступен", "Run unavailable"),
+    AudioNoFile => ("Аудиофайл не приложен", "No audio file attached"),
+    AudioAttach => ("Приложить аудио…", "Attach audio…"),
+    AudioPlayback => ("Воспроизведение в нативном прототипе не реализовано.", "Playback is not implemented in the native prototype."),
+    Transcript => ("Расшифровка", "Transcript"),
+    CanvasEmpty => ("На доске пока нет элементов", "The board has no elements yet"),
+    CanvasAddSticky => ("Стикер", "Sticky"),
+    CanvasAddRect => ("Прямоугольник", "Rectangle"),
+    CanvasAddText => ("Текст", "Text"),
+    CanvasReset => ("Сброс вида", "Reset view"),
+    CanvasHint => ("Перетаскивание и масштаб колесом", "Drag to pan, wheel to zoom"),
+    Confidence => ("уверенность", "confidence"),
+    SourceClaim => ("Исходное утверждение", "Source claim"),
+
+    // Planning
+    PlanningTitle => ("Планирование", "Planning"),
+    Agenda => ("Повестка", "Agenda"),
+    Kanban => ("Канбан", "Kanban"),
+    Gantt => ("Гантт", "Gantt"),
+    Calendar => ("Календарь", "Calendar"),
+    Overdue => ("Просрочено", "Overdue"),
+    Today => ("Сегодня", "Today"),
+    Tomorrow => ("Завтра", "Tomorrow"),
+    ThisWeek => ("На этой неделе", "This week"),
+    Later => ("Позже", "Later"),
+    NoDate => ("Без даты", "No date"),
+    Done => ("Выполнено", "Done"),
+    All => ("Все", "All"),
+    Open => ("Открытые", "Open"),
+    Filters => ("Фильтры", "Filters"),
+    ClearFilters => ("Сбросить", "Clear"),
+    FilterText => ("Поиск задач", "Search tasks"),
+    FilterCapsule => ("Капсула", "Capsule"),
+    FilterTag => ("Тег", "Tag"),
+    QuickAdd => ("Быстрое добавление", "Quick add"),
+    AddTask => ("Добавить", "Add"),
+    TasksTotal => ("всего", "total"),
+    TasksOpen => ("открыто", "open"),
+    TasksDone => ("готово", "done"),
+    TasksOverdue => ("просрочено", "overdue"),
+    ExportIcs => ("Экспорт .ics", "Export .ics"),
+    EmptyPlanning => ("В хранилище нет задач. Добавьте список задач на любой странице.", "No tasks in this vault yet. Add a task list to any page."),
+    EmptyFiltered => ("Под фильтры ничего не подходит.", "Nothing matches these filters."),
+    TaskAdded => ("Задача добавлена", "Task added"),
+    InboxSubject => ("Входящие задачи", "Inbox tasks"),
+    TodayIs => ("сегодня", "today"),
+    SpanDays => ("дн.", "d"),
+    BlockedShort => ("зависит", "blocked"),
+
+    // Graph / threads
+    GraphTitle => ("Граф связей", "Relationship graph"),
+    GraphHint => ("Колесо — масштаб, перетаскивание — панорама", "Wheel to zoom, drag to pan"),
+    Fit => ("Вписать", "Fit"),
+    TagFilter => ("Тег", "Tag"),
+    OpenInEditor => ("Открыть в редакторе", "Open in editor"),
+    Nodes => ("узлов", "nodes"),
+    Edges => ("связей", "edges"),
+    PageParent => ("страница", "page"),
+    Reply => ("ответ", "reply"),
+    Reference => ("ссылка", "reference"),
+    TagCluster => ("тег", "tag"),
+    ThreadsTitle => ("Треды мыслей", "Thought threads"),
+    ThreadsEmpty => ("Нет цепочек ответов", "No reply chains"),
+    CreateReply => ("Ответить", "Reply"),
+    ReplyCreated => ("Ответ создан", "Reply created"),
+    RootThread => ("Начало треда", "Thread root"),
+
+    // MIME / preview
+    MimeTitle => ("Сырой MIME", "Raw MIME"),
+    MimeHint => ("Ровно те байты, что лежат в .eml", "Exactly the bytes stored in the .eml"),
+    ExportEml => ("Скачать .eml", "Download .eml"),
+    CopyMime => ("Копировать MIME", "Copy MIME"),
+    Bytes => ("байт", "bytes"),
+    Headers => ("Заголовки", "Headers"),
+    Body => ("Тело", "Body"),
+    ExternalPreview => ("Импортированное письмо", "Imported email"),
+    ExternalReadOnlyNotice => ("Файл не создан CapsuleOS. Нативная версия показывает текст письма и никогда его не перезаписывает.", "This file was not written by CapsuleOS. The native app renders its text and never rewrites it."),
+    HtmlRenderingNotice => ("Упрощённый рендер: теги и ссылки разбираются, CSS не применяется.", "Simplified rendering: tags and links are parsed, CSS is not applied."),
+    NoBody => ("Тело письма пустое или не распознано", "The message body is empty or unrecognised"),
+    PlainPart => ("text/plain", "text/plain"),
+    HtmlPart => ("text/html", "text/html"),
+    OpenLink => ("Открыть ссылку", "Open link"),
+
+    // Attachments / pages
+    AttachmentsTitle => ("Вложения", "Attachments"),
+    SaveAs => ("Сохранить как…", "Save as…"),
+    AddAttachment => ("Добавить файл…", "Add file…"),
+    RemoveAttachment => ("Удалить вложение", "Remove attachment"),
+    AttachmentSaved => ("Вложение сохранено", "Attachment saved"),
+    AttachmentAdded => ("Вложение добавлено", "Attachment added"),
+    AttachmentRemoved => ("Вложение удалено", "Attachment removed"),
+    AttachFailed => ("Не удалось добавить вложение", "Could not add the attachment"),
+    ImportEml => ("Импорт .eml…", "Import .eml…"),
+    Imported => ("Импортировано", "Imported"),
+    ExportVault => ("Экспорт хранилища…", "Export vault…"),
+    VaultExported => ("Хранилище скопировано", "Vault exported"),
+    DeletePage => ("Удалить страницу", "Delete page"),
+    DeletePageConfirm => ("Удалить этот .eml с диска?", "Delete this .eml from disk?"),
+    Delete => ("Удалить", "Delete"),
+    Cancel => ("Отмена", "Cancel"),
+    PageDeleted => ("Страница удалена", "Page deleted"),
+    Tags => ("Теги", "Tags"),
+    AddTag => ("Добавить тег", "Add tag"),
+    Parent => ("Родитель", "Parent"),
+    NoParent => ("Корень", "Root"),
+    Reparent => ("Переместить", "Move"),
+    CycleRejected => ("Нельзя создать цикл в дереве", "That would create a page cycle"),
+    Reparented => ("Страница перемещена", "Page moved"),
+    StatusActive => ("Активна", "Active"),
+    StatusArchived => ("Архив", "Archived"),
+    StatusDraft => ("Черновик", "Draft"),
+    StatusSynthesis => ("Синтез", "Synthesis"),
+
+    // Co-Think (offline heuristics)
+    CoThink => ("Co-Think (офлайн)", "Co-Think (offline)"),
+    CoThinkHint => ("Локальная эвристика по содержимому страницы", "Local heuristics over the page content"),
+    Critique => ("Критика", "Critique"),
+    Synthesis => ("Синтез", "Synthesis"),
+    CounterArg => ("Контраргумент", "Counter-argument"),
+    DataInsight => ("Инсайт по данным", "Data insight"),
+    CoThinkWorked => ("Локальный анализ добавлен в страницу", "Local analysis added to the page"),
+    HeuristicNotice => ("Это детерминированная локальная эвристика, а не модель. Сеть не используется.", "These are deterministic local heuristics, not a model. No network is used."),
+
+    // Misc
+    Yes => ("Да", "Yes"),
+    No => ("Нет", "No"),
+    Close => ("Закрыть", "Close"),
+    Keyword => ("Слово", "Keyword"),
+    Page => ("Страница", "Page"),
+    EmptyVaultTitle => ("Хранилище пусто", "The vault is empty"),
+    EmptyVaultBody => ("Одна страница — один .eml в локальной папке. Ни базы данных, ни сервера.", "One page is one .eml in a local folder. No database, no server."),
+    CreateFirstPage => ("Создать первую страницу", "Create the first page"),
+}
+
+pub fn t(locale: Locale, key: Key) -> &'static str {
+    key.get(locale)
+}
+
+/// Short "1 page / 3 pages" style counter for the given locale.
+pub fn plural(locale: Locale, count: usize, one: Key, many: Key) -> String {
+    format!("{} {}", count, t(locale, if count == 1 { one } else { many }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_key_has_both_languages() {
+        // The macro cannot produce a missing side, but an empty string would
+        // still be a silent hole in the UI.
+        for key in [Key::Pages, Key::PlanningTitle, Key::ExternalPreview] {
+            assert!(!key.ru().is_empty());
+            assert!(!key.en().is_empty());
+            assert_ne!(key.ru(), "");
+        }
+    }
+
+    #[test]
+    fn locale_switches() {
+        assert_eq!(t(Locale::Ru, Key::Today), "Сегодня");
+        assert_eq!(t(Locale::En, Key::Today), "Today");
+        assert_eq!(Locale::Ru.other(), Locale::En);
+    }
+}
