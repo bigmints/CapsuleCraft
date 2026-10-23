@@ -10,6 +10,18 @@
 // Same response contract as before: { success, mode, reply, text, result }.
 
 import { tokenize } from './bm25';
+import {
+  inspectVagueWords,
+  inspectActionability,
+  inspectBalance,
+  inspectReadability,
+  inspectDataAnomalies,
+  matchPromptFocus,
+  detectTextLang,
+  SupportedLang,
+} from './cothinker';
+
+export * from './cothinker';
 
 export interface OfflineAiResult {
   author: string;
@@ -91,46 +103,64 @@ export interface RiskFinding {
 }
 
 /** Rule-based risk scan of the actual text. Honest: only reports what is really there. */
-export function detectRisks(text: string, dataPoints = 0): RiskFinding[] {
+export function detectRisks(text: string, dataPoints = 0, lang: SupportedLang = detectTextLang(text)): RiskFinding[] {
   const t = text.toLowerCase();
   const out: RiskFinding[] = [];
 
-  if (/(всегда|никогда|гаранти|стопроцентн|100%|обязательн[оы])/.test(t)) {
+  if (/(всегда|никогда|гаранти|стопроцентн|100%|обязательн[оы]|always|never|guarantee|definitely)/.test(t)) {
     out.push({
       rule: 'absolute-claim',
-      detail: 'В тексте есть абсолютные формулировки («всегда/никогда/гарантированно») — у любой модели есть граничные условия, где они ломаются.',
+      detail:
+        lang === 'en'
+          ? 'Text contains absolute phrasing ("always/never/guaranteed") — every model has boundary conditions where it breaks down.'
+          : 'В тексте есть абсолютные формулировки («всегда/никогда/гарантированно») — у любой модели есть граничные условия, где они ломаются.',
     });
   }
-  if (!/(риск|буфер|резерв|страхов|запас|отток|просадк|downside)/.test(t)) {
+  if (!/(риск|буфер|резерв|страхов|запас|отток|просадк|downside|risk|buffer|contingency|fallback|churn)/.test(t)) {
     out.push({
       rule: 'no-downside',
-      detail: 'Ни одного упоминания рисков, буфера или резерва — план не описывает, что делать при отклонении от базы.',
+      detail:
+        lang === 'en'
+          ? 'Zero mentions of risks, buffers, or contingency reserves — the plan does not outline downside mitigation.'
+          : 'Ни одного упоминания рисков, буфера или резерва — план не описывает, что делать при отклонении от базы.',
     });
   }
-  if (/(единственн|только один|монопол|single point)/.test(t)) {
+  if (/(единственн|только один|монопол|single point|only one|bottleneck)/.test(t)) {
     out.push({
       rule: 'single-point',
-      detail: 'Обнаружена ставка на единственный источник/канал — это точка отказа.',
+      detail:
+        lang === 'en'
+          ? 'Single point of failure detected: reliance on a single provider, channel, or resource.'
+          : 'Обнаружена ставка на единственный источник/канал — это точка отказа.',
     });
   }
-  if (/(вырастет|будет расти|прогноз|предполагаем|ожидаем|экстраполир)/.test(t) && dataPoints > 0 && dataPoints < 6) {
+  if (/(вырастет|будет расти|прогноз|предполагаем|ожидаем|экстраполир|grow|forecast|predict|expect|extrapolat)/.test(t) && dataPoints > 0 && dataPoints < 6) {
     out.push({
       rule: 'thin-extrapolation',
-      detail: `Тренд экстраполируется по ${dataPoints} точкам — для устойчивого вывода нужно минимум 6–8 наблюдений.`,
+      detail:
+        lang === 'en'
+          ? `Trend extrapolated from only ${dataPoints} data points — robust conclusions require at least 6–8 observations.`
+          : `Тренд экстраполируется по ${dataPoints} точкам — для устойчивого вывода нужно минимум 6–8 наблюдений.`,
     });
   }
-  if (/(дедлайн|срочно|к концу|не позже|как можно скорее|deadline)/.test(t)) {
+  if (/(дедлайн|срочно|к концу|не позже|как можно скорее|deadline|asap|urgently|due date)/.test(t)) {
     out.push({
       rule: 'deadline-pressure',
-      detail: 'Сроки упоминаются без явного запаса на итерации — любая переделка сдвинет весь план.',
+      detail:
+        lang === 'en'
+          ? 'Deadlines cited without iteration buffers — any rework will derail the entire schedule.'
+          : 'Сроки упоминаются без явного запаса на итерации — любая переделка сдвинет весь план.',
     });
   }
-  for (const m of text.matchAll(/(?:рост|выручк|прибыл|up)?[^.!?\n]{0,40}?(\d{2,})\s?%/g)) {
+  for (const m of text.matchAll(/(?:рост|выручк|прибыл|up|growth|revenue)?[^.!?\n]{0,40}?(\d{2,})\s?%/g)) {
     const v = parseInt(m[1], 10);
     if (v >= 50) {
       out.push({
         rule: 'big-number',
-        detail: `Заявленные ${v}% — крупное число: нужна независимая проверка методики расчёта, а не только здравый смысл.`,
+        detail:
+          lang === 'en'
+            ? `Claimed ${v}% is a significant figure: requires independent methodology verification, not just common sense.`
+            : `Заявленные ${v}% — крупное число: нужна независимая проверка методики расчёта, а не только здравый смысл.`,
       });
       break;
     }
@@ -281,7 +311,29 @@ const fmt = (v: number, unit = '') =>
   `${v >= 0 ? '' : '−'}${Math.abs(v).toLocaleString('ru-RU', { maximumFractionDigits: 2 })}${unit}`;
 
 /** Human, honest dataset summary — every number comes from the report. */
-export function describeCsvReport(r: CsvReport): string {
+export function describeCsvReport(r: CsvReport, lang: SupportedLang = 'ru'): string {
+  if (lang === 'en') {
+    const lines: string[] = [
+      `Dataset "${r.fileName}": ${r.rowCount} rows × ${r.headers.length} columns. All numbers below are computed from the attachment, never hallucinated.`,
+    ];
+    for (const c of r.columns) {
+      const arrow = c.trend === 'up' ? '↑ growth' : c.trend === 'down' ? '↓ decline' : '→ flat';
+      lines.push(
+        `• ${c.name}: mean ${fmt(c.mean)}, range ${fmt(c.min)}…${fmt(c.max)}, ${arrow} ${fmt(c.deltaPct, '%')} (${fmt(c.first)} → ${fmt(c.last)}, n=${c.n})`,
+      );
+    }
+    if (r.correlation !== undefined && r.correlationPair) {
+      const a = Math.abs(r.correlation);
+      const strength = a > 0.9 ? 'near-linear' : a > 0.7 ? 'notable' : a > 0.4 ? 'moderate' : 'weak';
+      const dir = r.correlation > 0 ? 'positive' : 'negative';
+      lines.push(`• Correlation ${r.correlationPair[0]} ↔ ${r.correlationPair[1]}: ${r.correlation.toFixed(2)} — ${strength} ${dir} correlation`);
+      if (r.correlationPair.length === 2 && a > 0.7) {
+        lines.push(`  ⚠ Correlation ≠ causation: strong statistical link, but causal mechanism requires separate testing.`);
+      }
+    }
+    return lines.join('\n');
+  }
+
   const lines: string[] = [
     `Датасет «${r.fileName}»: ${r.rowCount} строк × ${r.headers.length} колонок. Все числа ниже вычислены из вложения, не сгенерированы.`,
   ];
@@ -338,15 +390,16 @@ export function relatedFromVault(
 
 interface PersonaStyle {
   label: string;
+  labelEn: string;
   confidence: number;
 }
 
 const PERSONA_STYLES: Record<string, PersonaStyle> = {
-  'Co-Thinker': { label: 'честный разбор содержимого', confidence: 0.86 },
+  'Co-Thinker': { label: 'честный разбор содержимого', labelEn: 'honest content analysis', confidence: 0.86 },
 };
 
 function personaStyle(persona: string): PersonaStyle {
-  return PERSONA_STYLES[persona] || { label: 'честный разбор содержимого', confidence: 0.82 };
+  return PERSONA_STYLES[persona] || { label: 'честный разбор содержимого', labelEn: 'honest content analysis', confidence: 0.82 };
 }
 
 /** Stable string hash — keeps persona/variant choices deterministic. */
@@ -387,43 +440,133 @@ export function generateOfflineAiResponse(
     .filter(Boolean);
   const csv = csvReports[0] as CsvReport | undefined;
   const dataPoints = csv?.columns[0]?.n || 0;
-  const risks = detectRisks(text, dataPoints);
+  const lang = detectTextLang(subject + ' ' + text + ' ' + (prompt || ''));
+  const risks = detectRisks(text, dataPoints, lang);
   const related = relatedFromVault(capsule, ctx, 2);
+
+  const focus = matchPromptFocus(prompt, text, lang);
+  const blocksCount = capsule?.blocks?.length || 0;
+  const vagueFindings = inspectVagueWords(text, 2, lang);
+  const actionFindings = inspectActionability(text, blocksCount, lang);
+  const balanceFindings = inspectBalance(text, lang);
+  const readabilityFindings = inspectReadability(text, 1, lang);
+  const thoughtFindings = [...vagueFindings, ...balanceFindings, ...actionFindings, ...readabilityFindings];
 
   switch (action) {
     case 'critique': {
       const parts: string[] = [];
-      parts.push(`[${persona}] Разбор «${subject}» — ${style.label}.`);
-      parts.push(`Ключевые темы: ${keywords.length ? keywords.join(' · ') : 'текст слишком короткий'}.`);
+      if (lang === 'en') {
+        parts.push(`[${persona}] Analysis of "${subject}" — ${style.labelEn}.`);
+        parts.push(`Key themes: ${keywords.length ? keywords.join(' · ') : 'text is too brief'}.`);
 
-      if (claims.length > 0) {
-        parts.push('');
-        parts.push(`Утверждений с числами: ${claims.length}. По самому сильному:`);
-        parts.push(`«${claims[0]}»`);
-        parts.push(
-          pick(
-            [
-              '— откуда это число? Если методики нет в капсуле, проверяемость нулевая.',
-              '— какой базовый сценарий даёт такую оценку и что её ломает?',
-              '— это измерено или экстраполировано? Разница определяет доверие к выводу.',
-            ],
-            seed,
-          ),
-        );
+        if (focus.hasCustomPrompt) {
+          if (focus.missingTopicNotice) {
+            parts.push('');
+            parts.push(`[Regarding your query: "${prompt}"]`);
+            parts.push(`⚠ ${focus.missingTopicNotice}`);
+          } else if (focus.matchedQuotes.length > 0) {
+            parts.push('');
+            parts.push(`[Regarding your query: "${prompt}"]:`);
+            focus.matchedQuotes.slice(0, 2).forEach((q) => parts.push(`• "${q}"`));
+          }
+        }
+
+        if (claims.length > 0) {
+          parts.push('');
+          parts.push(`Numeric claims: ${claims.length}. Strongest claim:`);
+          parts.push(`"${claims[0]}"`);
+          parts.push(
+            pick(
+              [
+                '— what is the source of this number? Without a stated methodology, verifiability is zero.',
+                '— what base scenario yields this estimate, and what assumptions break it?',
+                '— is this measured or extrapolated? The difference defines confidence in the conclusion.',
+              ],
+              seed,
+            ),
+          );
+        } else {
+          parts.push('');
+          parts.push('The capsule contains zero numeric claims — conclusions rely on qualitative arguments. Consider adding measurable metrics or an attached CSV dataset.');
+        }
+
+        if (risks.length > 0) {
+          parts.push('');
+          parts.push('Risks (from content):');
+          risks.forEach((r, i) => parts.push(`${i + 1}. ${r.detail}`));
+        }
+
+        if (thoughtFindings.length > 0) {
+          parts.push('');
+          parts.push('Thought & Phrasing Linter:');
+          thoughtFindings.forEach((f, i) => {
+            parts.push(`${i + 1}. ${f.title}: ${f.detail}`);
+            if (f.suggestion) {
+              parts.push(`   → Suggestion: ${f.suggestion}`);
+            }
+          });
+        }
+
+        if (csv) {
+          parts.push('');
+          parts.push(`Attached dataset has ${dataPoints} rows of data — above hypotheses can be directly tested against it.`);
+        }
       } else {
-        parts.push('');
-        parts.push('В капсуле нет ни одного утверждения с числами — выводы держатся на качественных аргументах. Для проверки стоит добавить измеримую метрику или CSV-вложение.');
-      }
+        parts.push(`[${persona}] Разбор «${subject}» — ${style.label}.`);
+        parts.push(`Ключевые темы: ${keywords.length ? keywords.join(' · ') : 'текст слишком короткий'}.`);
 
-      if (risks.length > 0) {
-        parts.push('');
-        parts.push('Риски (по содержимому):');
-        risks.forEach((r, i) => parts.push(`${i + 1}. ${r.detail}`));
-      }
+        if (focus.hasCustomPrompt) {
+          if (focus.missingTopicNotice) {
+            parts.push('');
+            parts.push(`[По вашему вопросу: «${prompt}»]`);
+            parts.push(`⚠ ${focus.missingTopicNotice}`);
+          } else if (focus.matchedQuotes.length > 0) {
+            parts.push('');
+            parts.push(`[По вашему вопросу: «${prompt}»]:`);
+            focus.matchedQuotes.slice(0, 2).forEach((q) => parts.push(`• «${q}»`));
+          }
+        }
 
-      if (csv) {
-        parts.push('');
-        parts.push(`Во вложении ${dataPoints} строк данных — гипотезы выше можно проверить прямо на них.`);
+        if (claims.length > 0) {
+          parts.push('');
+          parts.push(`Утверждений с числами: ${claims.length}. По самому сильному:`);
+          parts.push(`«${claims[0]}»`);
+          parts.push(
+            pick(
+              [
+                '— откуда это число? Если методики нет в капсуле, проверяемость нулевая.',
+                '— какой базовый сценарий даёт такую оценку и что её ломает?',
+                '— это измерено или экстраполировано? Разница определяет доверие к выводу.',
+              ],
+              seed,
+            ),
+          );
+        } else {
+          parts.push('');
+          parts.push('В капсуле нет ни одного утверждения с числами — выводы держатся на качественных аргументах. Для проверки стоит добавить измеримую метрику или CSV-вложение.');
+        }
+
+        if (risks.length > 0) {
+          parts.push('');
+          parts.push('Риски (по содержимому):');
+          risks.forEach((r, i) => parts.push(`${i + 1}. ${r.detail}`));
+        }
+
+        if (thoughtFindings.length > 0) {
+          parts.push('');
+          parts.push('Линтер мысли и формулировок:');
+          thoughtFindings.forEach((f, i) => {
+            parts.push(`${i + 1}. ${f.title}: ${f.detail}`);
+            if (f.suggestion) {
+              parts.push(`   → Совет: ${f.suggestion}`);
+            }
+          });
+        }
+
+        if (csv) {
+          parts.push('');
+          parts.push(`Во вложении ${dataPoints} строк данных — гипотезы выше можно проверить прямо на них.`);
+        }
       }
 
       const criticism = parts.join('\n');
@@ -446,20 +589,50 @@ export function generateOfflineAiResponse(
 
     case 'continue': {
       const parts: string[] = [];
-      parts.push(`[${persona}] Куда развивать «${subject}» (${style.label}):`);
-      if (keywords.length >= 2) {
-        parts.push(`1. Формализовать «${keywords[0]}»: конкретная метрика, порог отказа и способ измерения.`);
-        parts.push(`2. Проверить связь «${keywords[0]}» ↔ «${keywords[1]}»: если второе действительно влияет на первое — это рычаг, если нет — лишний слой.`);
+      if (lang === 'en') {
+        parts.push(`[${persona}] Next steps for "${subject}" (${style.labelEn}):`);
+        if (keywords.length >= 2) {
+          parts.push(`1. Formalize "${keywords[0]}": define a concrete metric, failure threshold, and measurement method.`);
+          parts.push(`2. Verify link "${keywords[0]}" ↔ "${keywords[1]}": if the latter directly impacts the former, it is a leverage point; otherwise it is superfluous.`);
+        } else {
+          parts.push(`1. Capsule currently scopes questions wider than answers: break down "${keywords[0] || subject}" into a focused capsule with data.`);
+        }
+        if (actionFindings.length > 0 && actionFindings[0].suggestion) {
+          parts.push(`• Immediate step: ${actionFindings[0].suggestion}`);
+        }
+        if (focus.hasCustomPrompt && focus.matchedQuotes.length > 0) {
+          parts.push(`• Query focus ("${prompt}"): test assertion "${focus.matchedQuotes[0]}" in a separate experiment.`);
+        }
+        if (csv) {
+          const c = csv.columns[0];
+          const dir = c.trend === 'up' ? 'increasing' : c.trend === 'down' ? 'declining' : 'flat';
+          parts.push(`3. Data already shows: ${c.name} is ${dir} (${fmt(c.deltaPct, '%')} across ${c.n} points). Follow-up logic should account for this.`);
+        }
+        if (related.length > 0) {
+          parts.push(`4. Connect with "${related[0].subject}" — content overlap ~${Math.round(related[0].similarity * 100)}%. Common ground exists, [[wikilink]] will link them in the graph.`);
+        }
       } else {
-        parts.push(`1. Капсула пока ставит вопрос шире, чем отвечает: развернуть «${keywords[0] || subject}» в отдельную капсулу с данными.`);
-      }
-      if (csv) {
-        const c = csv.columns[0];
-        const dir = c.trend === 'up' ? 'растёт' : c.trend === 'down' ? 'падает' : 'стоит на месте';
-        parts.push(`3. Данные уже показывают: ${c.name} ${dir} (${fmt(c.deltaPct, '%')} за ${c.n} точек). Продолжение мысли должно это учитывать, а не игнорировать.`);
-      }
-      if (related.length > 0) {
-        parts.push(`4. Связать с «${related[0].subject}» — совпадение содержания ~${Math.round(related[0].similarity * 100)}%. Общая база уже есть, [[wikilink]] соберёт их в граф.`);
+        parts.push(`[${persona}] Куда развивать «${subject}» (${style.label}):`);
+        if (keywords.length >= 2) {
+          parts.push(`1. Формализовать «${keywords[0]}»: конкретная метрика, порог отказа и способ измерения.`);
+          parts.push(`2. Проверить связь «${keywords[0]}» ↔ «${keywords[1]}»: если второе действительно влияет на первое — это рычаг, если нет — лишний слой.`);
+        } else {
+          parts.push(`1. Капсула пока ставит вопрос шире, чем отвечает: развернуть «${keywords[0] || subject}» в отдельную капсулу с данными.`);
+        }
+        if (actionFindings.length > 0 && actionFindings[0].suggestion) {
+          parts.push(`• Ближайший шаг: ${actionFindings[0].suggestion}`);
+        }
+        if (focus.hasCustomPrompt && focus.matchedQuotes.length > 0) {
+          parts.push(`• Фокус запроса («${prompt}»): проверить утверждение «${focus.matchedQuotes[0]}» в отдельном эксперименте.`);
+        }
+        if (csv) {
+          const c = csv.columns[0];
+          const dir = c.trend === 'up' ? 'растёт' : c.trend === 'down' ? 'падает' : 'стоит на месте';
+          parts.push(`3. Данные уже показывают: ${c.name} ${dir} (${fmt(c.deltaPct, '%')} за ${c.n} точек). Продолжение мысли должно это учитывать, а не игнорировать.`);
+        }
+        if (related.length > 0) {
+          parts.push(`4. Связать с «${related[0].subject}» — совпадение содержания ~${Math.round(related[0].similarity * 100)}%. Общая база уже есть, [[wikilink]] соберёт их в граф.`);
+        }
       }
       const textOut = parts.join('\n');
       return {
@@ -481,42 +654,83 @@ export function generateOfflineAiResponse(
     }
 
     case 'reply_thread': {
-      const counterBlocks: any[] = [
-        {
-          id: `blk_reply_1_${Date.now()}`,
-          type: 'heading',
-          data: { level: 2, text: `Контраргументы к «${subject}»` },
-        },
-        {
-          id: `blk_reply_2_${Date.now()}`,
-          type: 'ai_opponent_block',
-          author: persona,
-          data: {
-            criticism: claims[0]
-              ? `[${persona}] Тезис «${claims[0]}» не следует из приведённого материала напрямую: не показана связь между наблюдением и выводом. Альтернативное объяснение — «${keywords[0] || 'внешний фактор'}» может объяснять те же данные без смены модели.`
-              : `[${persona}] Основной текст аргументирует качественно, без измеримых опор. Прежде чем принимать модель, нужны данные по «${keywords[0] || subject}».`,
-            confidence: style.confidence,
-            sourceClaim: claims[0] || subject,
+      const counterBlocks: any[] = [];
+      if (lang === 'en') {
+        counterBlocks.push(
+          {
+            id: `blk_reply_1_${Date.now()}`,
+            type: 'heading',
+            data: { level: 2, text: `Counterarguments to "${subject}"` },
           },
-        },
-        {
-          id: `blk_reply_3_${Date.now()}`,
-          type: 'paragraph',
-          data: {
-            text: `Критерий опровержения: если по «${keywords[0] || subject}» соберётся ${Math.max(6, dataPoints + 2)}+ наблюдений и тенденция сохранится при учёте «${keywords[1] || 'внешних факторов'}» — возражение снимается. Пока этого нет, обе модели равноправны.`,
+          {
+            id: `blk_reply_2_${Date.now()}`,
+            type: 'ai_opponent_block',
+            author: persona,
+            data: {
+              criticism: claims[0]
+                ? `[${persona}] Thesis "${claims[0]}" does not directly follow from the provided material: causality between observation and conclusion is unproven. Alternative explanation: "${keywords[0] || 'external factor'}" may account for the same data without altering the model.`
+                : `[${persona}] The core text argues qualitatively, lacking measurable anchors. Before adopting this model, empirical data on "${keywords[0] || subject}" is needed.`,
+              confidence: style.confidence,
+              sourceClaim: claims[0] || subject,
+            },
           },
-        },
-      ];
-      if (related.length > 0) {
-        counterBlocks.push({
-          id: `blk_reply_4_${Date.now()}`,
-          type: 'callout',
-          data: {
-            title: 'Связанные материалы',
-            content: `«${related[0].subject}» перекликается с этой капсулой (~${Math.round(related[0].similarity * 100)}% общих тем) — контекст может содержать недостающие данные.`,
-            tone: 'blue',
+          {
+            id: `blk_reply_3_${Date.now()}`,
+            type: 'paragraph',
+            data: {
+              text: `Falsification criterion: if ${Math.max(6, dataPoints + 2)}+ observations are gathered for "${keywords[0] || subject}" and the trend holds when controlling for "${keywords[1] || 'external factors'}", the objection is resolved. Until then, competing hypotheses remain equally valid.`,
+            },
           },
-        });
+        );
+        if (related.length > 0) {
+          counterBlocks.push({
+            id: `blk_reply_4_${Date.now()}`,
+            type: 'callout',
+            data: {
+              title: 'Related Materials',
+              content: `"${related[0].subject}" overlaps with this capsule (~${Math.round(related[0].similarity * 100)}% shared themes) — context may provide the missing data.`,
+              tone: 'blue',
+            },
+          });
+        }
+      } else {
+        counterBlocks.push(
+          {
+            id: `blk_reply_1_${Date.now()}`,
+            type: 'heading',
+            data: { level: 2, text: `Контраргументы к «${subject}»` },
+          },
+          {
+            id: `blk_reply_2_${Date.now()}`,
+            type: 'ai_opponent_block',
+            author: persona,
+            data: {
+              criticism: claims[0]
+                ? `[${persona}] Тезис «${claims[0]}» не следует из приведённого материала напрямую: не показана связь между наблюдением и выводом. Альтернативное объяснение — «${keywords[0] || 'внешний фактор'}» может объяснять те же данные без смены модели.`
+                : `[${persona}] Основной текст аргументирует качественно, без измеримых опор. Прежде чем принимать модель, нужны данные по «${keywords[0] || subject}».`,
+              confidence: style.confidence,
+              sourceClaim: claims[0] || subject,
+            },
+          },
+          {
+            id: `blk_reply_3_${Date.now()}`,
+            type: 'paragraph',
+            data: {
+              text: `Критерий опровержения: если по «${keywords[0] || subject}» соберётся ${Math.max(6, dataPoints + 2)}+ наблюдений и тенденция сохранится при учёте «${keywords[1] || 'внешних факторов'}» — возражение снимается. Пока этого нет, обе модели равноправны.`,
+            },
+          },
+        );
+        if (related.length > 0) {
+          counterBlocks.push({
+            id: `blk_reply_4_${Date.now()}`,
+            type: 'callout',
+            data: {
+              title: 'Связанные материалы',
+              content: `«${related[0].subject}» перекликается с этой капсулой (~${Math.round(related[0].similarity * 100)}% общих тем) — контекст может содержать недостающие данные.`,
+              tone: 'blue',
+            },
+          });
+        }
       }
       return {
         subject: `Re: ${subject}`,
@@ -529,22 +743,50 @@ export function generateOfflineAiResponse(
     case 'data_insight': {
       let textOut: string;
       if (csv) {
-        textOut = `[${persona} — Data Analytics]\n${describeCsvReport(csv)}`;
+        const rawContent = (capsule?.attachments || []).find((a: any) => a?.name === csv.fileName)?.content || '';
+        const parsed = parseCsv(rawContent);
+        const anomalyLines: string[] = [];
+        if (parsed) {
+          for (const c of csv.columns) {
+            const colIdx = parsed.headers.indexOf(c.name);
+            if (colIdx >= 0) {
+              const nums = parsed.rows.map((r) => Number(String(r[colIdx]).replace(/[$€₽\s,%]/g, '').replace(',', '.'))).filter((v) => Number.isFinite(v));
+              const anomalies = inspectDataAnomalies(c.name, nums, lang);
+              for (const a of anomalies) {
+                anomalyLines.push(`• ⚠ ${a.message}`);
+              }
+            }
+          }
+        }
+        textOut = `[${persona} — Data Analytics]\n${describeCsvReport(csv, lang)}`;
+        if (anomalyLines.length > 0) {
+          const header = lang === 'en' ? 'Sample anomalies & observations:' : 'Аномалии и особенности выборки:';
+          textOut += `\n\n${header}\n` + anomalyLines.join('\n');
+        }
       } else {
         const nums = text.match(/\d+(?:[.,]\d+)?/g) || [];
-        textOut = `[${persona} — Data Analytics]\n` +
-          (nums.length > 0
-            ? `Табличных вложений в капсуле нет — числа я не выдумываю. В тексте найдены ${nums.length} числовых значений, ключевые: ${nums.slice(0, 5).join(', ')}. Приложите CSV (text/csv) — тогда посчитаю средние, тренды и корреляции по реальным данным.`
-            : `Табличных вложений и чисел в капсуле нет — анализировать нечего, и я не буду это имитировать. Приложите CSV-вложение к капсуле, и я посчитаю статистику честно: средние, тренды, корреляции.`);
+        if (lang === 'en') {
+          textOut = `[${persona} — Data Analytics]\n` +
+            (nums.length > 0
+              ? `No tabular attachments in capsule — numbers are never hallucinated. Found ${nums.length} numeric values in text, key ones: ${nums.slice(0, 5).join(', ')}. Attach a CSV file (text/csv) to compute honest means, trends, and correlations.`
+              : `No tabular attachments or numbers in capsule — nothing to analyze, and I will not simulate data. Attach a CSV dataset to get honest statistics: means, trends, and correlations.`);
+        } else {
+          textOut = `[${persona} — Data Analytics]\n` +
+            (nums.length > 0
+              ? `Табличных вложений в капсуле нет — числа я не выдумываю. В тексте найдены ${nums.length} числовых значений, ключевые: ${nums.slice(0, 5).join(', ')}. Приложите CSV (text/csv) — тогда посчитаю средние, тренды и корреляции по реальным данным.`
+              : `Табличных вложений и чисел в капсуле нет — анализировать нечего, и я не буду это имитировать. Приложите CSV-вложение к капсуле, и я посчитаю статистику честно: средние, тренды, корреляции.`);
+        }
       }
       return { author: `${persona} (Data Analytics)`, text: textOut };
     }
 
     default: {
       const blocksN = capsule?.blocks?.length || 0;
-      const textOut =
-        `[${persona}] Капсула «${subject}»: ${blocksN} блоков, тем — ${keywords.length ? keywords.slice(0, 3).join(', ') : 'нет'}, ` +
-        `утверждений с числами — ${claims.length}${csv ? `, вложение «${csv.fileName}» (${dataPoints} строк) готово к анализу` : ''}. Инварианты RFC 5322 соблюдены.`;
+      const textOut = lang === 'en'
+        ? `[${persona}] Capsule "${subject}": ${blocksN} blocks, themes — ${keywords.length ? keywords.slice(0, 3).join(', ') : 'none'}, ` +
+          `claims with numbers — ${claims.length}${csv ? `, attachment "${csv.fileName}" (${dataPoints} rows) ready for analysis` : ''}. RFC 5322 invariants preserved.`
+        : `[${persona}] Капсула «${subject}»: ${blocksN} блоков, тем — ${keywords.length ? keywords.slice(0, 3).join(', ') : 'нет'}, ` +
+          `утверждений с числами — ${claims.length}${csv ? `, вложение «${csv.fileName}» (${dataPoints} строк) готово к анализу` : ''}. Инварианты RFC 5322 соблюдены.`;
       return { author: persona, text: textOut };
     }
   }

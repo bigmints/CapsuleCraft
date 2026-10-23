@@ -16,6 +16,7 @@ import { AutonomousHtmlPreview } from './components/AutonomousHtmlPreview';
 import { BenchmarkModal } from './components/BenchmarkModal';
 import { AiCoThinkModal } from './components/AiCoThinkModal';
 import { EmptyVaultState, FaqModal } from './components/FaqOnboarding';
+import { McpModal } from './components/McpModal';
 import { CommandPalette, PaletteAction } from './components/CommandPalette';
 import { PlanningView } from './components/PlanningView';
 import { useI18n } from './i18n';
@@ -43,6 +44,7 @@ export default function App() {  const { t } = useI18n();
   const [activeView, setActiveView] = useState<ActiveView>('canvas');
   const [isBenchmarkOpen, setIsBenchmarkOpen] = useState(false);
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
+  const [isMcpOpen, setIsMcpOpen] = useState(false);
   const [isFaqOpen, setIsFaqOpen] = useState(false);
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
   const [isAiLoading, setIsAiLoading] = useState(false);
@@ -605,6 +607,14 @@ export default function App() {  const { t } = useI18n();
         run: () => setIsAiModalOpen(true),
       },
       {
+        id: 'connect-mcp',
+        title: t('mcp.title'),
+        hint: 'Model Context Protocol (Claude, Antigravity, Cursor)',
+        group: t('palette.group.tools'),
+        keywords: ['mcp', 'ai', 'agent', 'claude', 'antigravity', 'cursor', 'llm', 'ии'],
+        run: () => setIsMcpOpen(true),
+      },
+      {
         id: 'faq',
         title: t('palette.action.faq.title'),
         hint: t('palette.action.faq.hint'),
@@ -631,6 +641,7 @@ export default function App() {  const { t } = useI18n();
         onOpenBenchmark={() => setIsBenchmarkOpen(true)}
         onOpenAiCoThink={() => setIsAiModalOpen(true)}
         onOpenFaq={() => setIsFaqOpen(true)}
+        onOpenMcp={() => setIsMcpOpen(true)}
         totalCapsules={graphState.graphNodes.length}
         scanDurationMs={graphState.scanStats.scanDurationMs}
       />
@@ -752,6 +763,9 @@ export default function App() {  const { t } = useI18n();
 
       {/* FAQ / Help Modal */}
       <FaqModal isOpen={isFaqOpen} onClose={() => setIsFaqOpen(false)} />
+
+      {/* Connect AI Agent (MCP) Modal */}
+      <McpModal isOpen={isMcpOpen} onClose={() => setIsMcpOpen(false)} />
 
       {/* ⌘K command palette — search, navigation and actions */}
       <CommandPalette

@@ -15,7 +15,14 @@ export const CalloutBlock: React.FC<Props> = ({ block, onChange, onDelete, onOpe
   const [showPreview, setShowPreview] = useState(false);
   const tone = block.data.tone || 'emerald';
 
-  const toneConfig = {
+  const DEFAULT_TONE = {
+    border: 'border-cyan-500/40',
+    bg: 'bg-cyan-950/20',
+    text: 'text-cyan-300',
+    icon: Lightbulb,
+  };
+
+  const toneConfig = ({
     emerald: {
       border: 'border-cyan-500/40',
       bg: 'bg-cyan-950/20',
@@ -46,7 +53,13 @@ export const CalloutBlock: React.FC<Props> = ({ block, onChange, onDelete, onOpe
       text: 'text-rose-300',
       icon: Heart,
     },
-  }[tone];
+    indigo: {
+      border: 'border-indigo-500/40',
+      bg: 'bg-indigo-950/20',
+      text: 'text-indigo-300',
+      icon: Info,
+    },
+  } as Record<string, typeof DEFAULT_TONE>)[tone] || DEFAULT_TONE;
 
   const IconComponent = toneConfig.icon;
 

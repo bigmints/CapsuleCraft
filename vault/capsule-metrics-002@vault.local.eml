@@ -1,0 +1,69 @@
+From: Author <author@local>
+To: Co-Thinker <agent@local>
+Subject: Анализ юнит-экономики и когорт CAC/LTV
+Date: Fri, 23 Oct 2026 10:49:28 GMT
+Message-ID: <capsule-metrics-002@vault.local>
+X-Capsule-Tags: #analytics, #finance, #data
+X-Capsule-Status: Active
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="BOUNDARY_ROOT_1792756168067_rxjl64"
+
+--BOUNDARY_ROOT_1792756168067_rxjl64
+Content-Type: multipart/alternative; boundary="BOUNDARY_PAYLOAD_1792756168067_ld2ck6"
+
+--BOUNDARY_PAYLOAD_1792756168067_ld2ck6
+Content-Type: application/json; charset=utf-8
+Content-Disposition: inline; filename="canvas.json"
+
+{
+  "version": "1.0",
+  "generator": "CapsuleOS v2.0 (Zero-DB Pure-MIME Engine)",
+  "messageId": "<capsule-metrics-002@vault.local>",
+  "subject": "Анализ юнит-экономики и когорт CAC/LTV",
+  "tags": [
+    "#analytics",
+    "#finance",
+    "#data"
+  ],
+  "blocks": [
+    {
+      "id": "m1",
+      "type": "heading",
+      "data": {
+        "level": 1,
+        "text": "Анализ юнит-экономики и когорт CAC/LTV"
+      }
+    },
+    {
+      "id": "m2",
+      "type": "paragraph",
+      "data": {
+        "text": "Сводные данные за последние шесть месяцев работы. Стоимость привлечения в среднем снижается, однако в апреле зафиксирован аномальный расход на контекстную рекламу."
+      }
+    },
+    {
+      "id": "m3",
+      "type": "callout",
+      "data": {
+        "title": "Вывод по метрикам",
+        "content": "LTV/CAC держится около 4.2x. Нужно провести аудит апрельского всплеска и проверить каналы дистрибуции.",
+        "icon": "TrendingUp",
+        "tone": "blue"
+      }
+    }
+  ]
+}
+
+--BOUNDARY_PAYLOAD_1792756168067_ld2ck6--
+--BOUNDARY_ROOT_1792756168067_rxjl64
+Content-Type: text/csv; name="sales_metrics.csv"
+Content-Disposition: attachment; filename="sales_metrics.csv"
+
+Month,CAC,LTV,Revenue_K
+Jan,100,410,50
+Feb,105,430,55
+Mar,102,450,58
+Apr,850,460,60
+May,98,480,60.1
+Jun,95,510,60.2
+--BOUNDARY_ROOT_1792756168067_rxjl64--

@@ -2,7 +2,7 @@
   "name": "capsulecraft",
   "private": true,
   "version": "1.5.0",
-  "description": "CapsuleCraft вЂ” Zero-DB, Pure-MIME multimodal workspace & personal knowledge engine (Tauri + React 19)",
+  "description": "CapsuleCraft — Zero-DB, Pure-MIME multimodal workspace & personal knowledge engine (Tauri + React 19)",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -31,12 +31,14 @@
     "@tauri-apps/api": "^2.11.1",
     "@types/d3": "^7.4.3",
     "@vitejs/plugin-react": "^5.0.4",
+    "compromise": "^14.19.0",
     "d3": "^7.9.0",
     "jszip": "^3.10.1",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
+    "simple-statistics": "^7.12.1",
     "vite": "^6.2.3"
   },
   "devDependencies": {

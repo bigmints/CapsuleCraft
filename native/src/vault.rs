@@ -138,16 +138,12 @@ impl Vault {
     }
 }
 
-pub fn default_vault_dir() -> PathBuf {
+pub fn app_data_dir() -> PathBuf {
     if let Ok(appdata) = std::env::var("APPDATA") {
-        return PathBuf::from(appdata)
-            .join("com.capsuleos.app")
-            .join("vault");
+        return PathBuf::from(appdata).join("com.capsuleos.app");
     }
     if let Ok(data_home) = std::env::var("XDG_DATA_HOME") {
-        return PathBuf::from(data_home)
-            .join("com.capsuleos.app")
-            .join("vault");
+        return PathBuf::from(data_home).join("com.capsuleos.app");
     }
     if let Ok(home) = std::env::var("HOME") {
         #[cfg(target_os = "macos")]
@@ -155,19 +151,45 @@ pub fn default_vault_dir() -> PathBuf {
             return PathBuf::from(home)
                 .join("Library")
                 .join("Application Support")
-                .join("com.capsuleos.app")
-                .join("vault");
+                .join("com.capsuleos.app");
         }
         #[cfg(not(target_os = "macos"))]
         {
             return PathBuf::from(home)
                 .join(".local")
                 .join("share")
-                .join("com.capsuleos.app")
-                .join("vault");
+                .join("com.capsuleos.app");
         }
     }
-    PathBuf::from("capsuleos-vault")
+    PathBuf::from("com.capsuleos.app")
+}
+
+pub fn active_vault_file() -> PathBuf {
+    app_data_dir().join("active-vault.txt")
+}
+
+pub fn get_active_vault_dir() -> PathBuf {
+    let file = active_vault_file();
+    if let Ok(content) = fs::read_to_string(&file) {
+        let trimmed = content.trim();
+        if !trimmed.is_empty() {
+            let path = PathBuf::from(trimmed);
+            if path.exists() {
+                return path;
+            }
+        }
+    }
+    default_vault_dir()
+}
+
+pub fn set_active_vault_dir(dir: &std::path::Path) {
+    let app_dir = app_data_dir();
+    let _ = fs::create_dir_all(&app_dir);
+    let _ = fs::write(active_vault_file(), format!("{}\n", dir.display()));
+}
+
+pub fn default_vault_dir() -> PathBuf {
+    app_data_dir().join("vault")
 }
 
 /// Effective page tree. Dangling parents and cycle participants become roots;
