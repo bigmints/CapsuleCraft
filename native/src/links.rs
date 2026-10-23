@@ -205,6 +205,70 @@ fn plain(font: &egui::FontId) -> egui::TextFormat {
     }
 }
 
+/// Rewrite every `[[old title]]` in these blocks to `[[new title]]`.
+///
+/// Renaming a page must not silently break the links that point at it. The
+/// match is the same case/whitespace-insensitive comparison used for
+/// resolution; the replacement keeps the author's brackets and nothing else.
+/// Returns the number of links rewritten.
+pub fn rewrite_targets(blocks: &mut [Value], old: &str, new: &str) -> usize {
+    let old_norm = normalise(old);
+    if old_norm.is_empty() || normalise(new).is_empty() || normalise(new) == old_norm {
+        return 0;
+    }
+    let mut count = 0;
+    for block in blocks.iter_mut() {
+        if let Some(data) = block.get_mut("data") {
+            count += rewrite_value(data, &old_norm, new);
+        }
+    }
+    count
+}
+
+fn rewrite_value(value: &mut Value, old_norm: &str, new: &str) -> usize {
+    match value {
+        Value::String(text) => {
+            let (rewritten, count) = rewrite_text(text, old_norm, new);
+            if count > 0 {
+                *text = rewritten;
+            }
+            count
+        }
+        Value::Array(items) => items
+            .iter_mut()
+            .map(|item| rewrite_value(item, old_norm, new))
+            .sum(),
+        Value::Object(map) => map
+            .iter_mut()
+            .filter(|(key, _)| key.as_str() != "id" && key.as_str() != "type")
+            .map(|(_, value)| rewrite_value(value, old_norm, new))
+            .sum(),
+        _ => 0,
+    }
+}
+
+fn rewrite_text(text: &str, old_norm: &str, new: &str) -> (String, usize) {
+    let mut out = String::with_capacity(text.len());
+    let mut cursor = 0usize;
+    let mut count = 0usize;
+    for span in spans(text) {
+        if normalise(&span.target) != old_norm {
+            continue;
+        }
+        out.push_str(&text[cursor..span.start]);
+        out.push_str("[[");
+        out.push_str(new);
+        out.push_str("]]");
+        cursor = span.end;
+        count += 1;
+    }
+    if count == 0 {
+        return (text.to_string(), 0);
+    }
+    out.push_str(&text[cursor..]);
+    (out, count)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -287,5 +351,69 @@ mod tests {
             }
         })];
         assert_eq!(page_targets(&capsule), vec!["Alpha".to_string()]);
+    }
+
+    fn paragraph(text: &str) -> Value {
+        serde_json::json!({
+            "id": "paragraph-1",
+            "type": "paragraph",
+            "data": { "text": text }
+        })
+    }
+
+    #[test]
+    fn rewrite_updates_matching_links_only() {
+        let mut blocks = vec![
+            paragraph("see [[Old Title]] and [[Other]] and [[old title]]"),
+            serde_json::json!({
+                "id": "todo-1",
+                "type": "todo_list",
+                "data": { "items": [{ "id": "i", "text": "finish [[OLD TITLE]]" }] }
+            }),
+        ];
+        let count = rewrite_targets(&mut blocks, "old title", "New Title");
+        assert_eq!(count, 3);
+        assert_eq!(
+            blocks[0]["data"]["text"].as_str().unwrap(),
+            "see [[New Title]] and [[Other]] and [[New Title]]"
+        );
+        assert_eq!(
+            blocks[1]["data"]["items"][0]["text"].as_str().unwrap(),
+            "finish [[New Title]]"
+        );
+    }
+
+    #[test]
+    fn rewrite_ignores_same_or_empty_titles() {
+        let mut blocks = vec![paragraph("[[Alpha]]")];
+        assert_eq!(rewrite_targets(&mut blocks, "Alpha", " alpha "), 0);
+        assert_eq!(rewrite_targets(&mut blocks, "Alpha", "   "), 0);
+        assert_eq!(blocks[0]["data"]["text"].as_str().unwrap(), "[[Alpha]]");
+    }
+
+    #[test]
+    fn rewrite_keeps_surrounding_prose() {
+        let mut blocks = vec![paragraph("before [[A]] after [[B]] tail")];
+        assert_eq!(rewrite_targets(&mut blocks, "A", "C"), 1);
+        assert_eq!(
+            blocks[0]["data"]["text"].as_str().unwrap(),
+            "before [[C]] after [[B]] tail"
+        );
+    }
+
+    #[test]
+    fn renaming_keeps_backlinks_alive() {
+        let mut capsules = vec![
+            capsule("<a@v>", "Old", ""),
+            capsule("<b@v>", "Other", "points at [[Old]]"),
+        ];
+        assert_eq!(backlinks(&capsules, 0), vec![1]);
+        // Rename the page, then rewrite the links that pointed at the old title.
+        capsules[0].subject = "Fresh".to_string();
+        assert_eq!(rewrite_targets(&mut capsules[1].blocks, "Old", "Fresh"), 1);
+        assert_eq!(page_targets(&capsules[1]), vec!["Fresh".to_string()]);
+        assert_eq!(backlinks(&capsules, 0), vec![1]);
+        assert_eq!(resolve("fresh", &capsules), Some(0));
+        assert_eq!(resolve("old", &capsules), None);
     }
 }

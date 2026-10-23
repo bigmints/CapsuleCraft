@@ -254,6 +254,50 @@ impl NativeApp {
     }
 
     /// Resolve a link target against the cached index.
+    /// After a rename, rewrite every page that linked to the old title.
+    ///
+    /// Only pages CapsuleOS owns are touched: an imported email is never
+    /// rewritten, even if its text happens to look like a link.
+    fn propagate_rename(&mut self, old: &str) {
+        let Some(index) = self.selected else {
+            return;
+        };
+        let Some(new_title) = self.vault.capsules.get(index).map(|c| c.subject.clone()) else {
+            return;
+        };
+        if new_title.trim().is_empty() || links::normalise(old) == links::normalise(&new_title) {
+            return;
+        }
+        let mut pages = 0usize;
+        let mut total = 0usize;
+        for other in 0..self.vault.capsules.len() {
+            if !self.vault.capsules[other].native {
+                continue;
+            }
+            let count =
+                links::rewrite_targets(&mut self.vault.capsules[other].blocks, old, &new_title);
+            if count == 0 {
+                continue;
+            }
+            total += count;
+            pages += 1;
+            if other != index {
+                let _ = self.vault.save(other);
+            }
+        }
+        if total > 0 {
+            self.mark_dirty();
+            self.save_selected();
+            self.refresh_links();
+            self.toast(format!(
+                "{} · {} · {}",
+                t(self.locale, Key::LinksUpdated),
+                total,
+                pages
+            ));
+        }
+    }
+
     /// Snapshot of this page's outgoing links and backlinks for the document.
     fn current_link_context(&self) -> LinkContext {
         let mut context = LinkContext {
@@ -829,6 +873,8 @@ struct EditorAction {
     view: Option<View>,
     /// Title of a page that a `[[link]]` points at but which does not exist.
     create_page: Option<String>,
+    /// Previous subject of the page being renamed, so links can follow it.
+    rename_from: Option<String>,
 }
 
 impl EditorAction {
@@ -840,6 +886,7 @@ impl EditorAction {
         self.open_vault |= other.open_vault;
         self.view = other.view.or(self.view);
         self.create_page = other.create_page.or_else(|| self.create_page.take());
+        self.rename_from = other.rename_from.or_else(|| self.rename_from.take());
     }
 }
 
@@ -1067,6 +1114,9 @@ impl eframe::App for NativeApp {
 
         if editor.changed {
             self.record_change();
+        }
+        if let Some(old_title) = editor.rename_from.clone() {
+            self.propagate_rename(&old_title);
         }
         if view_action.changed {
             self.record_change();
@@ -1657,7 +1707,7 @@ fn draw_sidebar(
                     rows.push((
                         position,
                         hit.score + boost,
-                        search::snippet(text, search, 44),
+                        search::snippet(text, search, 16),
                     ));
                 }
                 rows.sort_by(|a, b| {
@@ -1693,6 +1743,7 @@ fn draw_sidebar(
                             selected,
                             *score,
                             snippet.as_deref(),
+                            search,
                         ) {
                             action.select = Some(*index);
                         }
@@ -2023,6 +2074,7 @@ fn draw_search_row(
     selected: Option<usize>,
     score: f32,
     snippet: Option<&str>,
+    query: &str,
 ) -> bool {
     let capsule = &capsules[index];
     let (rect, response) = ui.allocate_exact_size(
@@ -2076,13 +2128,38 @@ fn draw_search_row(
             .map(|parent| format!("in {}", truncate_chars(&parent.subject, 26)))
             .unwrap_or_else(|| "Root page".to_string()),
     };
-    ui.painter().text(
-        pos2(rect.left() + 30.0, rect.top() + 30.0),
-        Align2::LEFT_CENTER,
-        second,
-        FontId::new(9.5, theme::mono()),
-        theme::FAINT,
+    // Paint the excerpt in segments so the matched words stand out from the
+    // surrounding text instead of being one flat muted string. The row clips
+    // rather than dropping the whole line when the excerpt is wider than the
+    // sidebar.
+    let clip = Rect::from_min_max(
+        pos2(rect.left() + 30.0, rect.top() + 22.0),
+        pos2(rect.right() - 4.0, rect.bottom()),
     );
+    let painter = ui.painter().with_clip_rect(clip);
+    let mut x = rect.left() + 30.0;
+    let baseline = rect.top() + 30.0;
+    for (segment, is_match) in search::highlight_matches(&second, query) {
+        if segment.is_empty() {
+            continue;
+        }
+        let color = if is_match {
+            if is_selected || response.hovered() {
+                Color32::WHITE
+            } else {
+                theme::INK
+            }
+        } else {
+            theme::FAINT
+        };
+        let galley = painter.layout_no_wrap(segment, FontId::new(9.5, theme::mono()), color);
+        let width = galley.size().x;
+        if x > clip.right() {
+            break;
+        }
+        painter.galley(pos2(x, baseline - galley.size().y / 2.0), galley, color);
+        x += width;
+    }
     ui.painter().text(
         pos2(rect.right() - 10.0, rect.top() + 15.0),
         Align2::RIGHT_CENTER,
@@ -2244,6 +2321,29 @@ fn draw_document(
                             );
                             if response.changed() {
                                 action.changed = true;
+                            }
+                            // A rename is committed when the title loses focus,
+                            // not on every keystroke: rewriting every `[[link]]`
+                            // in the vault mid-word would be destructive.
+                            let title_id =
+                                egui::Id::new(("subject-before-edit", capsule.message_id.clone()));
+                            if response.gained_focus() {
+                                ui.ctx().data_mut(|data| {
+                                    data.insert_temp(title_id, capsule.subject.clone())
+                                });
+                            }
+                            if response.lost_focus() {
+                                let before = ui
+                                    .ctx()
+                                    .data_mut(|data| data.remove_temp::<String>(title_id));
+                                if let Some(before) = before {
+                                    if !before.trim().is_empty()
+                                        && links::normalise(&before)
+                                            != links::normalise(&capsule.subject)
+                                    {
+                                        action.rename_from = Some(before);
+                                    }
+                                }
                             }
                         } else {
                             ui.add(

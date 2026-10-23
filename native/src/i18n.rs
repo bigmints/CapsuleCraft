@@ -249,6 +249,7 @@ strings! {
     OpenLinkedPage => ("Открыть страницу", "Open the page"),
     CreateLinkedPage => ("Создать эту страницу", "Create this page"),
     PageCreated => ("Страница создана", "Page created"),
+    LinksUpdated => ("Ссылки обновлены", "Links updated"),
 
     // Planning
     PlanningTitle => ("Планирование", "Planning"),
