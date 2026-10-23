@@ -4,7 +4,7 @@
 //! the browser's text selection; here the body is a selectable monospace label
 //! inside a two-axis scroll area, and copying uses egui's clipboard.
 
-use egui::{vec2, Align, FontId, Frame, Layout, RichText, ScrollArea, Sense, Ui};
+use egui::{vec2, Align, FontId, Frame, Layout, RichText, ScrollArea, Ui};
 
 use crate::i18n::{t, Key, Locale};
 use crate::icons::Icon;

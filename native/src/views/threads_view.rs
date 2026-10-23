@@ -45,11 +45,9 @@ pub fn draw(
         ui,
         t(locale, Key::ThreadsTitle),
         &format!(
-            "{} {} · {} {}",
-            thread_count,
-            t(locale, Key::RootThread),
-            replies,
-            t(locale, Key::Reply)
+            "{} · {}",
+            crate::i18n::plural(locale, thread_count, Key::ThreadOne, Key::ThreadFew, Key::ThreadMany),
+            crate::i18n::plural(locale, replies, Key::ReplyOne, Key::ReplyFew, Key::ReplyMany)
         ),
     );
 
@@ -62,15 +60,14 @@ pub fn draw(
     let _ = hud(
         &mut bar,
         &format!(
-            "{} {} · {} {}",
-            shown.len(),
+            "{} · {} · {}",
+            crate::i18n::plural(locale, shown.len(), Key::PageOne, Key::PageFew, Key::PageMany),
+            crate::i18n::plural(locale, replies, Key::ReplyOne, Key::ReplyFew, Key::ReplyMany),
             if state.show_all {
                 t(locale, Key::AllPages)
             } else {
                 t(locale, Key::ThreadsOnly)
             },
-            replies,
-            t(locale, Key::Reply)
         ),
         theme::FAINT,
     );
@@ -170,11 +167,16 @@ pub fn draw(
                                 let _ = hud(
                                     ui,
                                     &format!(
-                                        "{} · {} · {} {}",
+                                        "{} · {} · {}",
                                         truncate_chars(&root.from, 24),
                                         truncate_chars(&root.date, 22),
-                                        chain.replies.len(),
-                                        t(locale, Key::Reply)
+                                        crate::i18n::plural(
+                                            locale,
+                                            chain.replies.len(),
+                                            Key::ReplyOne,
+                                            Key::ReplyFew,
+                                            Key::ReplyMany
+                                        )
                                     ),
                                     theme::FAINT,
                                 );

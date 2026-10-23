@@ -196,6 +196,37 @@ pub fn draw(
         painter.circle_stroke(pos, node_radius, Stroke::new(1.0, theme::fade(theme::BG, 0.8)));
     }
 
+    // Labels: a graph of anonymous dots is not a relationship graph. They stay
+    // on above 0.55 zoom and thin out below that instead of turning into noise.
+    if state.zoom >= 0.55 {
+        let size = (10.5 * state.zoom.clamp(0.85, 1.1)).clamp(9.0, 12.0);
+        for node in &graph.nodes {
+            if hovered == Some(node.capsule) {
+                continue; // the tooltip already names it
+            }
+            let pos = positions[&node.capsule];
+            let node_radius =
+                (4.5 + (node.degree as f32).sqrt() * 1.8).clamp(4.5, 12.0) * state.zoom;
+            let capsule = &capsules[node.capsule];
+            let label = if capsule.subject.is_empty() {
+                t(locale, Key::Untitled).to_string()
+            } else {
+                truncate_chars(&capsule.subject, 18)
+            };
+            painter.text(
+                pos2(pos.x, pos.y + node_radius + 6.0),
+                egui::Align2::CENTER_TOP,
+                label,
+                FontId::new(size, egui::FontFamily::Proportional),
+                if selected == Some(node.capsule) {
+                    theme::INK
+                } else {
+                    theme::fade(theme::MUTED, 0.9)
+                },
+            );
+        }
+    }
+
     if let Some(index) = hovered {
         let capsule = &capsules[index];
         let anchor = positions[&index];
@@ -258,7 +289,7 @@ pub fn draw(
             if graph.nodes.iter().any(|node| node.capsule == index) {
                 let summary_rect = Rect::from_min_size(
                     pos2(rect.right() - 262.0, rect.top() + 14.0),
-                    vec2(248.0, 96.0),
+                    vec2(248.0, 118.0),
                 );
                 painter.rect(
                     summary_rect,
@@ -299,7 +330,7 @@ pub fn draw(
                 if !capsule.tags.is_empty() {
                     card.add_space(5.0);
                     card.horizontal_wrapped(|ui| {
-                        for tag in capsule.tags.iter().take(4) {
+                        for tag in capsule.tags.iter().take(3) {
                             let _ = tag_chip(ui, tag, theme::MUTED);
                         }
                     });

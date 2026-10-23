@@ -2469,10 +2469,12 @@ fn document_meta(ui: &mut Ui, capsule: &mut Capsule, locale: Locale) -> bool {
         dot_sep(ui);
         if capsule.native {
             ui.label(
-                RichText::new(format!(
-                    "{} {}",
+                RichText::new(i18n::plural(
+                    locale,
                     capsule.blocks.len(),
-                    t(locale, Key::Blocks)
+                    Key::BlockOne,
+                    Key::BlockFew,
+                    Key::BlockMany,
                 ))
                 .family(theme::mono())
                 .size(9.5)

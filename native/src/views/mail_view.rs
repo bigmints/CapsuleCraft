@@ -5,7 +5,7 @@
 //! edits the file — the editor is the only write path, and imported emails are
 //! read-only there too.
 
-use egui::{vec2, Align, Color32, FontId, Frame, Layout, Margin, RichText, ScrollArea, Sense, Stroke, Ui};
+use egui::{vec2, Align, Color32, Frame, Layout, Margin, RichText, ScrollArea, Sense, Stroke, Ui};
 
 use crate::i18n::{t, Key, Locale};
 use crate::icons::Icon;

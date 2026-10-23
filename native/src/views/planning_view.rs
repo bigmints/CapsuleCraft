@@ -23,7 +23,7 @@ use crate::planning::{
 };
 use crate::theme;
 use crate::vault::Vault;
-use crate::{caps, ghost, hud, icon_button, menu_header, menu_row, menu_separator, popover_frame, status_pill, tag_chip, text_button, truncate_chars, checkbox};
+use crate::{ghost, hud, icon_button, menu_header, menu_row, menu_separator, popover_frame, status_pill, tag_chip, text_button, truncate_chars, checkbox};
 
 use super::{centred, empty_state, header, section, stat, segments, ViewAction};
 

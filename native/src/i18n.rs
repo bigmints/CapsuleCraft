@@ -129,6 +129,9 @@ strings! {
     ChangeFolder => ("Сменить папку…", "Change folder…"),
     ZeroDb => ("Zero-DB хранилище", "Zero-DB vault"),
     PageCount => ("стр. .eml", ".eml pages"),
+    PageOne => ("страница", "page"),
+    PageFew => ("страницы", "pages"),
+    PageMany => ("страниц", "pages"),
     ReadOnlyCount => ("только чтение", "read-only"),
     Saved => ("Сохранено", "Saved"),
     SavedAt => ("Сохранено", "Saved"),
@@ -143,6 +146,15 @@ strings! {
     MimeAndPage => ("MIME и свойства страницы", "MIME and page details"),
     Untitled => ("Без названия", "Untitled"),
     Blocks => ("блоков", "blocks"),
+    BlockOne => ("блок", "block"),
+    BlockFew => ("блока", "block"),
+    BlockMany => ("блоков", "blocks"),
+    ThreadOne => ("тред", "thread"),
+    ThreadFew => ("треда", "thread"),
+    ThreadMany => ("тредов", "threads"),
+    ReplyOne => ("ответ", "reply"),
+    ReplyFew => ("ответа", "reply"),
+    ReplyMany => ("ответов", "replies"),
     ImportedEmail => ("импортированное письмо", "imported email"),
     ReadOnly => ("ТОЛЬКО ЧТЕНИЕ", "READ-ONLY"),
     Attachment => ("вложение", "attachment"),
@@ -382,9 +394,33 @@ pub fn t(locale: Locale, key: Key) -> &'static str {
     key.get(locale)
 }
 
-/// Short "1 page / 3 pages" style counter for the given locale.
-pub fn plural(locale: Locale, count: usize, one: Key, many: Key) -> String {
-    format!("{} {}", count, t(locale, if count == 1 { one } else { many }))
+/// "1 page / 3 pages" with the right plural form for the locale.
+///
+/// English has two forms; Russian needs three (`1 блок`, `2 блока`,
+/// `5 блоков`), so callers always pass all three and English simply reuses
+/// `one` for the singular and `many` for everything else.
+pub fn plural(locale: Locale, count: usize, one: Key, few: Key, many: Key) -> String {
+    let key = match locale {
+        Locale::En => {
+            if count == 1 {
+                one
+            } else {
+                many
+            }
+        }
+        Locale::Ru => {
+            let last_two = count % 100;
+            let last = count % 10;
+            if last == 1 && last_two != 11 {
+                one
+            } else if (2..=4).contains(&last) && !(12..=14).contains(&last_two) {
+                few
+            } else {
+                many
+            }
+        }
+    };
+    format!("{} {}", count, t(locale, key))
 }
 
 #[cfg(test)]
@@ -407,5 +443,38 @@ mod tests {
         assert_eq!(t(Locale::Ru, Key::Today), "Сегодня");
         assert_eq!(t(Locale::En, Key::Today), "Today");
         assert_eq!(Locale::Ru.other(), Locale::En);
+    }
+
+    #[test]
+    fn russian_plurals_follow_the_three_forms() {
+        let plural_blocks = |count| {
+            plural(
+                Locale::Ru,
+                count,
+                Key::BlockOne,
+                Key::BlockFew,
+                Key::BlockMany,
+            )
+        };
+        assert_eq!(plural_blocks(1), "1 блок");
+        assert_eq!(plural_blocks(2), "2 блока");
+        assert_eq!(plural_blocks(4), "4 блока");
+        assert_eq!(plural_blocks(5), "5 блоков");
+        assert_eq!(plural_blocks(11), "11 блоков");
+        assert_eq!(plural_blocks(21), "21 блок");
+        assert_eq!(plural_blocks(22), "22 блока");
+        assert_eq!(plural_blocks(112), "112 блоков");
+    }
+
+    #[test]
+    fn english_plurals_have_two_forms() {
+        assert_eq!(
+            plural(Locale::En, 1, Key::ReplyOne, Key::ReplyFew, Key::ReplyMany),
+            "1 reply"
+        );
+        assert_eq!(
+            plural(Locale::En, 2, Key::ReplyOne, Key::ReplyFew, Key::ReplyMany),
+            "2 replies"
+        );
     }
 }
