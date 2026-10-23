@@ -48,12 +48,13 @@ no SQL, no document store, no cloud, no lock-in. Files you can open in any mail 
 <img src="screenshots/capsulecraft-native-backlinks.png" alt="Native shell — backlinks, preserved code blocks and breadcrumbs" width="100%">
 
 <details>
-<summary><b>More native screenshots</b> — planning, graph, threads, search</summary>
+<summary><b>More native screenshots</b> — planning, graph, threads, search, MIME, email</summary>
 
 | | |
 |---|---|
 | <img src="screenshots/capsulecraft-native-planning.png" alt="Planning: agenda, kanban, gantt, calendar"> | <img src="screenshots/capsulecraft-native-graph.png" alt="Relationship graph with labelled nodes"> |
 | <img src="screenshots/capsulecraft-native-threads.png" alt="Reply chains from In-Reply-To headers"> | <img src="screenshots/capsulecraft-native-search.png" alt="BM25 search with highlighted excerpts"> |
+| <img src="screenshots/capsulecraft-native-mime.png" alt="Raw MIME inspector"> | <img src="screenshots/capsulecraft-native-mail.png" alt="A page rendered as an email"> |
 
 </details>
 

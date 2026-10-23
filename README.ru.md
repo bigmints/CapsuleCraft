@@ -48,12 +48,13 @@
 <img src="screenshots/capsulecraft-native-backlinks.png" alt="Native-оболочка — обратные ссылки, сохранённый код и хлебные крошки" width="100%">
 
 <details>
-<summary><b>Ещё скриншоты</b> — планирование, граф, треды, поиск</summary>
+<summary><b>Ещё скриншоты</b> — планирование, граф, треды, поиск, MIME, письмо</summary>
 
 | | |
 |---|---|
 | <img src="screenshots/capsulecraft-native-planning.png" alt="Планирование: повестка, канбан, гантт, календарь"> | <img src="screenshots/capsulecraft-native-graph.png" alt="Граф связей с подписями узлов"> |
 | <img src="screenshots/capsulecraft-native-threads.png" alt="Цепочки ответов из заголовков In-Reply-To"> | <img src="screenshots/capsulecraft-native-search.png" alt="Поиск BM25 с подсветкой выдержек"> |
+| <img src="screenshots/capsulecraft-native-mime.png" alt="Инспектор сырого MIME"> | <img src="screenshots/capsulecraft-native-mail.png" alt="Страница в виде письма"> |
 
 </details>
 
