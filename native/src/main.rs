@@ -13,13 +13,14 @@
 mod brand;
 mod chrome;
 mod cli;
-mod export;
+mod cothinker;
 mod graph;
 mod history;
 mod i18n;
 mod icons;
 mod links;
 mod mail;
+mod mcp;
 mod mime;
 mod planning;
 mod search;
@@ -65,6 +66,14 @@ fn main() -> eframe::Result<()> {
     let launch = cli::parse(&args);
     if launch.print_config {
         println!("{launch:#?}");
+        return Ok(());
+    }
+    if launch.print_mcp_config {
+        mcp::print_config(&launch);
+        return Ok(());
+    }
+    if launch.mcp {
+        mcp::run_server(launch.vault);
         return Ok(());
     }
     let window = if launch.snapshot.is_some() {
@@ -149,6 +158,11 @@ struct NativeApp {
     snapshot: Option<(String, PageSnapshot)>,
     toast: Option<(String, Instant)>,
     confirm_delete: bool,
+    show_mcp_modal: bool,
+    mcp_tab: usize,
+    show_cothink_modal: bool,
+    cothink_mode: cothinker::CoThinkMode,
+    cothink_focus: String,
     /// `--snapshot`: render a few frames, write a PNG, then close.
     snapshot_job: Option<SnapshotJob>,
     /// Cached `[[link]]` resolution targets: (normalised subject, normalised
@@ -181,7 +195,8 @@ struct SnapshotJob {
 
 impl NativeApp {
     fn new(launch: cli::Launch) -> Self {
-        let dir = launch.vault.clone().unwrap_or_else(default_vault_dir);
+        let dir = launch.vault.clone().unwrap_or_else(vault::get_active_vault_dir);
+        vault::set_active_vault_dir(&dir);
         let vault = Vault::load(dir);
         let locale = launch.locale.unwrap_or_else(Locale::detect);
         let selected = launch
@@ -213,6 +228,11 @@ impl NativeApp {
             snapshot: None,
             toast: None,
             confirm_delete: false,
+            show_mcp_modal: false,
+            mcp_tab: 0,
+            show_cothink_modal: false,
+            cothink_mode: cothinker::CoThinkMode::Critique,
+            cothink_focus: String::new(),
             snapshot_job,
             link_index: Vec::new(),
             backlinks: Vec::new(),
@@ -581,6 +601,7 @@ impl NativeApp {
             .set_directory(&self.vault.dir)
             .pick_folder()
         {
+            vault::set_active_vault_dir(&dir);
             self.vault = Vault::load(dir);
             self.selected = self.vault.selected_root();
             self.collapsed.clear();
@@ -939,6 +960,7 @@ struct ShellAction {
     view: Option<View>,
     toggle_locale: bool,
     palette: bool,
+    connect_mcp: bool,
     import: bool,
     export_vault: bool,
     export_page: bool,
@@ -955,6 +977,7 @@ impl ShellAction {
         self.view = other.view.or(self.view);
         self.toggle_locale |= other.toggle_locale;
         self.palette |= other.palette;
+        self.connect_mcp |= other.connect_mcp;
         self.import |= other.import;
         self.export_vault |= other.export_vault;
         self.export_page |= other.export_page;
@@ -969,6 +992,7 @@ struct EditorAction {
     new_subpage: bool,
     new_page: bool,
     open_vault: bool,
+    cothink: bool,
     view: Option<View>,
     /// Title of a page that a `[[link]]` points at but which does not exist.
     create_page: Option<String>,
@@ -983,6 +1007,7 @@ impl EditorAction {
         self.new_subpage |= other.new_subpage;
         self.new_page |= other.new_page;
         self.open_vault |= other.open_vault;
+        self.cothink |= other.cothink;
         self.view = other.view.or(self.view);
         self.create_page = other.create_page.or_else(|| self.create_page.take());
         self.rename_from = other.rename_from.or_else(|| self.rename_from.take());
@@ -1021,6 +1046,9 @@ impl eframe::App for NativeApp {
         self.draw_drop_hint(&ctx);
 
         let (cmd, shift) = ctx.input(|i| (i.modifiers.command, i.modifiers.shift));
+        if cmd && shift && ctx.input(|i| i.key_pressed(egui::Key::A)) {
+            self.show_cothink_modal = true;
+        }
         if cmd && ctx.input(|i| i.key_pressed(egui::Key::S)) {
             self.save_selected();
         }
@@ -1259,6 +1287,9 @@ impl eframe::App for NativeApp {
                 .map(|capsule| capsule.message_id.clone());
             self.new_page(parent);
         }
+        if editor.cothink {
+            self.show_cothink_modal = true;
+        }
         if shell.save || view_action.request_save {
             self.save_selected();
         }
@@ -1281,6 +1312,9 @@ impl eframe::App for NativeApp {
         if shell.delete_page {
             self.confirm_delete = true;
         }
+        if shell.connect_mcp {
+            self.show_mcp_modal = true;
+        }
 
         // Command palette: a pure overlay; the shell performs whatever it picks.
         if let Some(command) =
@@ -1290,6 +1324,8 @@ impl eframe::App for NativeApp {
         }
 
         self.draw_confirm_delete(&ctx);
+        self.draw_mcp_modal(&ctx);
+        self.draw_cothink_modal(&ctx);
         self.draw_toast(&ctx);
 
         if self.dirty && self.last_edit.elapsed() > Duration::from_millis(750) {
@@ -1324,6 +1360,12 @@ impl NativeApp {
                 self.view = View::Page;
             }
             PaletteCommand::DeletePage => self.confirm_delete = true,
+            PaletteCommand::ConnectMcp => self.show_mcp_modal = true,
+            PaletteCommand::CoThink => self.show_cothink_modal = true,
+            PaletteCommand::CoThinkMode(mode) => {
+                self.cothink_mode = mode;
+                self.show_cothink_modal = true;
+            }
         }
     }
 
@@ -1398,6 +1440,381 @@ impl NativeApp {
         }
     }
 
+    fn draw_mcp_modal(&mut self, ctx: &egui::Context) {
+        if !self.show_mcp_modal {
+            return;
+        }
+
+        let exe = std::env::current_exe()
+            .unwrap_or_else(|_| PathBuf::from("capsuleos-native.exe"));
+        let vault = self.vault.dir.clone();
+        let cfg = mcp::mcp_config_json(&exe, &vault);
+        let cfg_str = serde_json::to_string_pretty(&cfg).unwrap_or_default();
+        let claude_cmd = format!(
+            "claude mcp add capsulecraft \"{}\" --mcp \"{}\"",
+            exe.display(),
+            vault.display()
+        );
+
+        let mut close = false;
+        let mut copy_target: Option<String> = None;
+
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            close = true;
+        }
+
+        egui::Area::new(egui::Id::new("mcp-connect-modal"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(ctx.content_rect().min)
+            .show(ctx, |ui| {
+                let (rect, resp) = ui.allocate_exact_size(ctx.content_rect().size(), Sense::click());
+                if resp.clicked() {
+                    close = true;
+                }
+                ui.painter()
+                    .rect_filled(rect, 0.0, egui::Color32::from_black_alpha(150));
+
+                let panel = Rect::from_center_size(rect.center(), vec2(580.0, 420.0));
+                ui.painter().rect(
+                    panel,
+                    theme::RADIUS,
+                    theme::PANEL,
+                    Stroke::new(1.0, theme::LINE_STRONG),
+                    egui::StrokeKind::Inside,
+                );
+
+                let mut body = ui.new_child(
+                    UiBuilder::new()
+                        .max_rect(panel.shrink(20.0))
+                        .layout(Layout::top_down(Align::Min)),
+                );
+
+                body.label(
+                    RichText::new(t(self.locale, Key::McpTitle))
+                        .family(theme::medium())
+                        .size(15.0)
+                        .color(theme::INK),
+                );
+                body.add_space(4.0);
+                body.add(
+                    Label::new(
+                        RichText::new(t(self.locale, Key::McpSubtitle))
+                            .size(12.0)
+                            .color(theme::MUTED),
+                    )
+                    .wrap(),
+                );
+                body.add_space(12.0);
+
+                // Tabs for clients
+                body.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 6.0;
+                    let tabs = [
+                        (0, t(self.locale, Key::McpTabAntigravity)),
+                        (1, t(self.locale, Key::McpTabClaudeDesktop)),
+                        (2, t(self.locale, Key::McpTabClaudeCode)),
+                        (3, t(self.locale, Key::McpTabCursor)),
+                    ];
+                    for (idx, label) in tabs {
+                        let active = self.mcp_tab == idx;
+                        let bg = if active { theme::CONTROLS } else { Color32::TRANSPARENT };
+                        let frame = Frame::new()
+                            .fill(bg)
+                            .corner_radius(theme::RADIUS)
+                            .inner_margin(Margin::symmetric(10, 5));
+                        let resp = frame.show(ui, |ui| {
+                            let text_color = if active { theme::INK } else { theme::MUTED };
+                            ui.label(RichText::new(label).family(theme::medium()).size(12.0).color(text_color))
+                        }).response;
+                        if resp.interact(Sense::click()).clicked() {
+                            self.mcp_tab = idx;
+                        }
+                    }
+                });
+
+                body.add_space(10.0);
+
+                let (desc, content_to_copy) = match self.mcp_tab {
+                    0 => (
+                        "Config location: ~/.gemini/antigravity/mcp/ or AGY workspace mcp.json",
+                        cfg_str.clone(),
+                    ),
+                    1 => (
+                        "Config location: %APPDATA%\\Claude\\claude_desktop_config.json",
+                        cfg_str.clone(),
+                    ),
+                    2 => (
+                        "Terminal command to register the MCP server with Claude CLI:",
+                        claude_cmd.clone(),
+                    ),
+                    _ => (
+                        "Config location: .cursor/mcp.json",
+                        cfg_str.clone(),
+                    ),
+                };
+
+                body.label(RichText::new(desc).size(11.0).color(theme::FAINT));
+                body.add_space(6.0);
+
+                let text_frame = Frame::new()
+                    .fill(theme::SUNKEN)
+                    .corner_radius(theme::RADIUS)
+                    .stroke(Stroke::new(1.0, theme::LINE))
+                    .inner_margin(Margin::same(10));
+
+                text_frame.show(&mut body, |ui| {
+                    ScrollArea::vertical()
+                        .max_height(160.0)
+                        .show(ui, |ui| {
+                            ui.add(
+                                Label::new(
+                                    RichText::new(&content_to_copy)
+                                        .family(FontFamily::Monospace)
+                                        .size(11.0)
+                                        .color(theme::INK),
+                                )
+                                .wrap(),
+                            );
+                        });
+                });
+
+                body.add_space(14.0);
+
+                body.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if secondary_button(ui, Some(Icon::Close), t(self.locale, Key::Close), 28.0).clicked() {
+                        close = true;
+                    }
+                    ui.add_space(8.0);
+                    if secondary_button(ui, Some(Icon::Copy), t(self.locale, Key::CopyConfig), 28.0).clicked() {
+                        copy_target = Some(content_to_copy.clone());
+                    }
+                });
+            });
+
+        if let Some(to_copy) = copy_target {
+            ctx.copy_text(to_copy);
+            self.toast(t(self.locale, Key::ConfigCopied));
+        }
+
+        if close {
+            self.show_mcp_modal = false;
+        }
+    }
+
+    fn draw_cothink_modal(&mut self, ctx: &egui::Context) {
+        if !self.show_cothink_modal {
+            return;
+        }
+
+        let mut close = false;
+        let mut run = false;
+
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            close = true;
+        }
+
+        egui::Area::new(egui::Id::new("cothink-modal"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(ctx.content_rect().min)
+            .show(ctx, |ui| {
+                let (rect, resp) = ui.allocate_exact_size(ctx.content_rect().size(), Sense::click());
+                if resp.clicked() {
+                    close = true;
+                }
+                ui.painter()
+                    .rect_filled(rect, 0.0, egui::Color32::from_black_alpha(150));
+
+                let panel = Rect::from_center_size(rect.center(), vec2(540.0, 390.0));
+                ui.painter().rect(
+                    panel,
+                    theme::RADIUS,
+                    theme::PANEL,
+                    Stroke::new(1.0, theme::LINE_STRONG),
+                    egui::StrokeKind::Inside,
+                );
+
+                let mut body = ui.new_child(
+                    UiBuilder::new()
+                        .max_rect(panel.shrink(22.0))
+                        .layout(Layout::top_down(Align::Min)),
+                );
+
+                body.horizontal(|ui| {
+                    ui.label(
+                        RichText::new(t(self.locale, Key::CoThinkTitle))
+                            .family(theme::medium())
+                            .size(15.0)
+                            .color(theme::INK),
+                    );
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        if ghost(ui, Icon::Close, None, t(self.locale, Key::Close), true, 26.0).clicked() {
+                            close = true;
+                        }
+                    });
+                });
+                body.add_space(4.0);
+                body.add(
+                    Label::new(
+                        RichText::new(t(self.locale, Key::CoThinkSubtitle))
+                            .size(12.0)
+                            .color(theme::MUTED),
+                    )
+                    .wrap(),
+                );
+                body.add_space(14.0);
+
+                let modes = [
+                    (cothinker::CoThinkMode::Critique, Key::Critique, Key::CritiqueDesc),
+                    (cothinker::CoThinkMode::Synthesis, Key::Synthesis, Key::SynthesisDesc),
+                    (cothinker::CoThinkMode::CounterArg, Key::CounterArg, Key::CounterArgDesc),
+                    (cothinker::CoThinkMode::DataInsight, Key::DataInsight, Key::DataInsightDesc),
+                ];
+
+                for (mode, title_key, desc_key) in modes {
+                    let active = self.cothink_mode == mode;
+                    let (fill, stroke_color, text_color) = if active {
+                        (theme::WASH_SELECTED, theme::ACCENT, theme::ACCENT_INK)
+                    } else {
+                        (theme::SUNKEN, theme::hairline().color, theme::INK)
+                    };
+
+                    let frame = Frame::new()
+                        .fill(fill)
+                        .corner_radius(theme::RADIUS)
+                        .stroke(Stroke::new(1.0, stroke_color))
+                        .inner_margin(Margin { left: 10, right: 10, top: 6, bottom: 6 });
+
+                    let resp = frame.show(&mut body, |ui| {
+                        ui.set_width(ui.available_width());
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                RichText::new(t(self.locale, title_key))
+                                    .family(theme::medium())
+                                    .size(13.0)
+                                    .color(text_color),
+                            );
+                            ui.label(
+                                RichText::new(format!("— {}", t(self.locale, desc_key)))
+                                    .size(11.5)
+                                    .color(theme::MUTED),
+                            );
+                        });
+                    }).response;
+
+                    if resp.interact(Sense::click()).clicked() {
+                        self.cothink_mode = mode;
+                    }
+                    body.add_space(6.0);
+                }
+
+                body.add_space(8.0);
+                body.label(
+                    RichText::new(t(self.locale, Key::CoThinkFocus))
+                        .size(12.0)
+                        .color(theme::MUTED),
+                );
+                body.add_space(4.0);
+                let text_edit = egui::TextEdit::singleline(&mut self.cothink_focus)
+                    .hint_text(t(self.locale, Key::CoThinkFocusPlaceholder))
+                    .desired_width(body.available_width());
+                body.add(text_edit);
+
+                body.add_space(14.0);
+                body.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if secondary_button(ui, Some(Icon::Close), t(self.locale, Key::Cancel), 28.0).clicked() {
+                        close = true;
+                    }
+                    ui.add_space(8.0);
+                    if primary_button(ui, t(self.locale, Key::CoThinkRun), 28.0).clicked() {
+                        run = true;
+                    }
+                });
+            });
+
+        if run {
+            self.execute_cothink();
+            close = true;
+        }
+
+        if close {
+            self.show_cothink_modal = false;
+        }
+    }
+
+    fn execute_cothink(&mut self) {
+        let Some(index) = self.selected else {
+            return;
+        };
+        let Some(capsule) = self.vault.capsules.get(index) else {
+            return;
+        };
+
+        let mut csv_data = Vec::new();
+        for att in &capsule.attachments {
+            if att.name.ends_with(".csv") || att.mime_type.contains("csv") {
+                csv_data.push((att.name.as_str(), att.content.as_str()));
+            }
+        }
+
+        let outcome = cothinker::generate_cothink(
+            self.cothink_mode,
+            &capsule.subject,
+            &capsule.blocks,
+            &csv_data,
+            &self.cothink_focus,
+        );
+
+        match outcome {
+            cothinker::CoThinkOutcome::OpponentBlock(b) => {
+                let capsule = &mut self.vault.capsules[index];
+                if let Some(pos) = capsule.blocks.iter().position(|blk| blk["type"] == "ai_opponent_block") {
+                    capsule.blocks[pos] = b;
+                } else {
+                    capsule.blocks.insert(0, b);
+                }
+                self.dirty = true;
+                self.last_edit = Instant::now();
+                self.toast(t(self.locale, Key::CoThinkWorked));
+            }
+            cothinker::CoThinkOutcome::CalloutBlock(b) => {
+                let capsule = &mut self.vault.capsules[index];
+                capsule.blocks.insert(0, b);
+                self.dirty = true;
+                self.last_edit = Instant::now();
+                self.toast(t(self.locale, Key::CoThinkWorked));
+            }
+            cothinker::CoThinkOutcome::ReplyCapsule { subject, blocks, .. } => {
+                let parent_id = Some(capsule.message_id.clone());
+                self.create_reply_capsule(parent_id, &subject, blocks);
+            }
+        }
+    }
+
+    fn create_reply_capsule(&mut self, parent_id: Option<String>, subject: &str, blocks: Vec<Value>) {
+        if !self.save_selected() {
+            return;
+        }
+        match self.vault.create_page(parent_id) {
+            Ok(index) => {
+                if let Some(capsule) = self.vault.capsules.get_mut(index) {
+                    capsule.subject = subject.trim().to_string();
+                    capsule.blocks = blocks;
+                }
+                self.selected = Some(index);
+                self.dirty = true;
+                self.status = t(self.locale, Key::ReplyCapsuleCreated).to_string();
+                self.status_error = false;
+                self.save_selected();
+                self.refresh_links();
+                self.toast(t(self.locale, Key::ReplyCapsuleCreated));
+            }
+            Err(err) => {
+                self.status = err;
+                self.status_error = true;
+            }
+        }
+    }
+
     fn draw_toast(&mut self, ctx: &egui::Context) {
         let Some((text, at)) = self.toast.clone() else {
             return;
@@ -1461,10 +1878,123 @@ fn draw_titlebar(
     let mut action = ShellAction::default();
     chrome::title_bar_drag(ui);
 
-    let rect = ui.max_rect();
+    let total_rect = ui.max_rect();
+
+    // 1. Right utility controls: rendered first with right-to-left layout so they
+    // are guaranteed visible, anchored, and have strict layout boundaries.
+    let right_width = if chrome::custom_caption_buttons() { 360.0 } else { 240.0 };
+    let right_rect = Rect::from_min_max(
+        pos2((total_rect.right() - right_width).max(total_rect.left()), total_rect.top()),
+        total_rect.right_bottom(),
+    );
+    let mut right_bar = ui.new_child(
+        UiBuilder::new()
+            .max_rect(right_rect)
+            .layout(Layout::right_to_left(Align::Center)),
+    );
+    let right_ui = &mut right_bar;
+    right_ui.spacing_mut().item_spacing.x = 2.0;
+    if chrome::custom_caption_buttons() {
+        chrome::caption_buttons(right_ui, chrome::TITLEBAR_HEIGHT);
+    }
+    right_ui.add_space(8.0);
+
+    if ghost(
+        right_ui,
+        Icon::Command,
+        Some("K"),
+        t(locale, Key::PaletteHint),
+        true,
+        26.0,
+    )
+    .clicked()
+    {
+        action.palette = true;
+    }
+    if ghost(
+        right_ui,
+        Icon::Code,
+        Some("MCP"),
+        t(locale, Key::ConnectMcp),
+        true,
+        26.0,
+    )
+    .clicked()
+    {
+        action.connect_mcp = true;
+    }
+    if ghost(
+        right_ui,
+        Icon::Globe,
+        Some(locale.label()),
+        t(locale, Key::CommandLocale),
+        true,
+        26.0,
+    )
+    .clicked()
+    {
+        action.toggle_locale = true;
+    }
+    right_ui.add_space(4.0);
+
+    if icon_button(right_ui, Icon::Reload, t(locale, Key::Reload), true, false).clicked() {
+        action.reload = true;
+    }
+    if icon_button(
+        right_ui,
+        Icon::Save,
+        if dirty {
+            t(locale, Key::SaveNow)
+        } else {
+            t(locale, Key::AllSaved)
+        },
+        dirty,
+        false,
+    )
+    .clicked()
+    {
+        action.save = true;
+    }
+
+    right_ui.add_space(6.0);
+    let (dot_color, text) = if status_error {
+        (theme::BAD, t(locale, Key::SaveFailed))
+    } else if dirty {
+        (theme::BADGE_BETA, t(locale, Key::Unsaved))
+    } else {
+        (theme::ACCENT, status)
+    };
+    right_ui.horizontal(|ui| {
+        let (dot, _) = ui.allocate_exact_size(vec2(6.0, 6.0), Sense::hover());
+        ui.painter().circle_filled(dot.center(), 2.5, dot_color);
+        let label = ui.label(
+            RichText::new(text)
+                .family(theme::mono())
+                .size(9.5)
+                .color(if status_error {
+                    theme::BAD
+                } else if dirty {
+                    theme::BADGE_BETA
+                } else {
+                    theme::FAINT
+                }),
+        );
+        if status_error {
+            label.on_hover_text(status);
+        }
+    });
+
+    let right_used_left = right_ui.min_rect().left().min(total_rect.right() - 20.0);
+
+    // 2. Left side: Brand, vault switcher, and navigation tabs.
+    // Constrained so it never extends past `right_used_left`.
+    let left_rect = Rect::from_min_max(
+        total_rect.left_top(),
+        pos2(right_used_left.max(total_rect.left()), total_rect.bottom()),
+    );
     let mut bar = ui.new_child(
         UiBuilder::new()
-            .max_rect(rect)
+            .max_rect(left_rect)
             .layout(Layout::left_to_right(Align::Center)),
     );
     let ui = &mut bar;
@@ -1547,87 +2077,6 @@ fn draw_titlebar(
     if let Some(chosen) = views::nav(ui, view, locale) {
         action.view = Some(chosen);
     }
-
-    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-        ui.spacing_mut().item_spacing.x = 2.0;
-        if chrome::custom_caption_buttons() {
-            chrome::caption_buttons(ui, chrome::TITLEBAR_HEIGHT);
-        }
-        ui.add_space(8.0);
-
-        if ghost(
-            ui,
-            Icon::Command,
-            Some("K"),
-            t(locale, Key::PaletteHint),
-            true,
-            26.0,
-        )
-        .clicked()
-        {
-            action.palette = true;
-        }
-        if ghost(
-            ui,
-            Icon::Globe,
-            Some(locale.label()),
-            t(locale, Key::CommandLocale),
-            true,
-            26.0,
-        )
-        .clicked()
-        {
-            action.toggle_locale = true;
-        }
-        ui.add_space(4.0);
-
-        if icon_button(ui, Icon::Reload, t(locale, Key::Reload), true, false).clicked() {
-            action.reload = true;
-        }
-        if icon_button(
-            ui,
-            Icon::Save,
-            if dirty {
-                t(locale, Key::SaveNow)
-            } else {
-                t(locale, Key::AllSaved)
-            },
-            dirty,
-            false,
-        )
-        .clicked()
-        {
-            action.save = true;
-        }
-
-        ui.add_space(6.0);
-        let (dot_color, text) = if status_error {
-            (theme::BAD, t(locale, Key::SaveFailed))
-        } else if dirty {
-            (theme::BADGE_BETA, t(locale, Key::Unsaved))
-        } else {
-            (theme::ACCENT, status)
-        };
-        ui.horizontal(|ui| {
-            let (dot, _) = ui.allocate_exact_size(vec2(6.0, 6.0), Sense::hover());
-            ui.painter().circle_filled(dot.center(), 2.5, dot_color);
-            let label = ui.label(
-                RichText::new(text)
-                    .family(theme::mono())
-                    .size(9.5)
-                    .color(if status_error {
-                        theme::BAD
-                    } else if dirty {
-                        theme::BADGE_BETA
-                    } else {
-                        theme::FAINT
-                    }),
-            );
-            if status_error {
-                label.on_hover_text(status);
-            }
-        });
-    });
 
     action
 }
@@ -1875,17 +2324,21 @@ fn draw_sidebar(
     footer
         .painter()
         .hline(footer_rect.x_range(), footer_rect.top(), theme::hairline());
-    footer.add_space(10.0);
-    let _ = hud(
-        &mut footer,
-        &if watching {
-            format!("{} · {}", t(locale, Key::ZeroDb), t(locale, Key::Watching))
-        } else {
-            t(locale, Key::ZeroDb).to_string()
-        },
-        theme::FAINT,
+    footer.add_space(8.0);
+
+    let hud_text = if watching {
+        format!("{} · {}", t(locale, Key::ZeroDb), t(locale, Key::Watching))
+    } else {
+        t(locale, Key::ZeroDb).to_string()
+    };
+    footer.label(
+        RichText::new(hud_text)
+            .family(theme::mono_bold())
+            .size(8.5)
+            .color(theme::FAINT),
     );
-    footer.add_space(4.0);
+
+    footer.add_space(2.0);
     let counts = if vault.load_errors.is_empty() {
         format!(
             "{} .eml · {}",
@@ -1924,7 +2377,7 @@ fn draw_sidebar(
             action.delete_page = true;
         }
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if text_button(ui, Some(Icon::Folder), t(locale, Key::ChangeFolder), false).clicked() {
+            if icon_button(ui, Icon::Folder, t(locale, Key::ChangeFolder), true, false).clicked() {
                 action.open_vault = true;
             }
         });
@@ -2325,17 +2778,32 @@ fn draw_content_header(
     ui.painter()
         .hline(rect.x_range(), rect.bottom() - 0.5, theme::hairline());
 
-    let mut bar = ui.new_child(
-        UiBuilder::new()
-            .max_rect(rect.shrink2(vec2(22.0, 0.0)))
-            .layout(Layout::left_to_right(Align::Center)),
+    let header_rect = rect.shrink2(vec2(22.0, 0.0));
+
+    // 1. First render right action buttons to calculate exact width reserved
+    let right_reserve_w = 320.0;
+    let right_rect = Rect::from_min_max(
+        pos2((header_rect.right() - right_reserve_w).max(header_rect.left()), header_rect.top()),
+        header_rect.right_bottom(),
     );
-    let ui = &mut bar;
-    ui.spacing_mut().item_spacing.x = 7.0;
-    let _ = hud(ui, t(locale, Key::Vault), theme::MUTED);
+    let mut right_bar = ui.new_child(
+        UiBuilder::new()
+            .max_rect(right_rect)
+            .layout(Layout::right_to_left(Align::Center)),
+    );
+    let right_ui = &mut right_bar;
+    right_ui.spacing_mut().item_spacing.x = 4.0;
 
     let Some(index) = selected.filter(|index| *index < capsules.len()) else {
-        ui.label(
+        let mut left_bar = ui.new_child(
+            UiBuilder::new()
+                .max_rect(header_rect)
+                .layout(Layout::left_to_right(Align::Center)),
+        );
+        let left_ui = &mut left_bar;
+        left_ui.spacing_mut().item_spacing.x = 7.0;
+        let _ = hud(left_ui, t(locale, Key::Vault), theme::MUTED);
+        left_ui.label(
             RichText::new(t(locale, Key::NoPageSelected))
                 .size(12.0)
                 .color(theme::FAINT),
@@ -2343,6 +2811,61 @@ fn draw_content_header(
         return action;
     };
     let capsule = &capsules[index];
+
+    let info = ghost(
+        right_ui,
+        Icon::Info,
+        Some(t(locale, Key::Info)),
+        t(locale, Key::MimeAndPage),
+        true,
+        30.0,
+    );
+    egui::Popup::menu(&info)
+        .frame(popover_frame())
+        .align(egui::RectAlign::BOTTOM_END)
+        .show(|ui| info_popover(ui, capsule));
+
+    if ghost(
+        right_ui,
+        Icon::Command,
+        Some(t(locale, Key::CoThink)),
+        t(locale, Key::CoThinkHint),
+        true,
+        30.0,
+    )
+    .clicked()
+    {
+        action.cothink = true;
+    }
+
+    if ghost(
+        right_ui,
+        Icon::Plus,
+        Some(t(locale, Key::NewSubpage)),
+        t(locale, Key::NewSubpageHint),
+        true,
+        30.0,
+    )
+    .clicked()
+    {
+        action.new_subpage = true;
+    }
+
+    let right_used_left = right_ui.min_rect().left().min(header_rect.right() - 20.0);
+
+    // 2. Render left breadcrumbs and subject constrained by right_used_left
+    let left_rect = Rect::from_min_max(
+        header_rect.left_top(),
+        pos2((right_used_left - 12.0).max(header_rect.left()), header_rect.bottom()),
+    );
+    let mut bar = ui.new_child(
+        UiBuilder::new()
+            .max_rect(left_rect)
+            .layout(Layout::left_to_right(Align::Center)),
+    );
+    let ui = &mut bar;
+    ui.spacing_mut().item_spacing.x = 7.0;
+    let _ = hud(ui, t(locale, Key::Vault), theme::MUTED);
 
     let ancestors = tree.ancestors(index);
     let skip = ancestors.len().saturating_sub(2);
@@ -2352,55 +2875,32 @@ fn draw_content_header(
     }
     for ancestor in &ancestors[skip..] {
         if let Some(parent) = capsules.get(*ancestor) {
-            if crumb_button(ui, &truncate_chars(&parent.subject, 22)).clicked() {
+            if crumb_button(ui, &truncate_chars(&parent.subject, 18)).clicked() {
                 action.select = Some(*ancestor);
             }
             let _ = chevron(ui, theme::FAINT);
         }
     }
 
+    let subject_str = if capsule.subject.is_empty() {
+        t(locale, Key::Untitled).to_string()
+    } else {
+        capsule.subject.clone()
+    };
+    let remaining_w = ui.available_width().max(40.0) - if !capsule.native { 70.0 } else { 0.0 };
+    let font_subject = FontId::new(12.5, theme::medium());
+    let truncated_subject = truncate_to_width(ui, &subject_str, font_subject, remaining_w);
+
     ui.label(
-        RichText::new(if capsule.subject.is_empty() {
-            t(locale, Key::Untitled)
-        } else {
-            &capsule.subject
-        })
-        .family(theme::medium())
-        .size(12.5)
-        .color(theme::INK),
+        RichText::new(truncated_subject)
+            .family(theme::medium())
+            .size(12.5)
+            .color(theme::INK),
     );
     if !capsule.native {
         ui.add_space(3.0);
         let _ = tag_chip(ui, t(locale, Key::ReadOnly), theme::BADGE_BETA);
     }
-
-    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-        let info = ghost(
-            ui,
-            Icon::Info,
-            Some(t(locale, Key::Info)),
-            t(locale, Key::MimeAndPage),
-            true,
-            30.0,
-        );
-        egui::Popup::menu(&info)
-            .frame(popover_frame())
-            .align(egui::RectAlign::BOTTOM_END)
-            .show(|ui| info_popover(ui, capsule));
-
-        if ghost(
-            ui,
-            Icon::Plus,
-            Some(t(locale, Key::NewSubpage)),
-            t(locale, Key::NewSubpageHint),
-            true,
-            30.0,
-        )
-        .clicked()
-        {
-            action.new_subpage = true;
-        }
-    });
 
     action
 }
@@ -2433,16 +2933,25 @@ fn draw_document(
                         ui.add_space(40.0);
 
                         if capsule.native {
+                            // Strip newlines if pasted or typed, ensuring subject remains single-concept
+                            if capsule.subject.contains('\n') || capsule.subject.contains('\r') {
+                                capsule.subject = capsule.subject.replace(['\r', '\n'], " ");
+                                action.changed = true;
+                            }
                             let response = ui.add(
-                                TextEdit::singleline(&mut capsule.subject)
+                                TextEdit::multiline(&mut capsule.subject)
                                     .font(FontId::new(34.0, theme::display()))
                                     .text_color(theme::INK)
                                     .frame(Frame::NONE)
                                     .margin(Margin::same(0))
-                                    .desired_width(f32::INFINITY)
+                                    .desired_width(content_w)
+                                    .desired_rows(1)
                                     .hint_text(t(locale, Key::UntitledPage)),
                             );
                             if response.changed() {
+                                if capsule.subject.contains('\n') || capsule.subject.contains('\r') {
+                                    capsule.subject = capsule.subject.replace(['\r', '\n'], " ");
+                                }
                                 action.changed = true;
                             }
                             // A rename is committed when the title loses focus,
@@ -5002,6 +5511,29 @@ pub(crate) fn truncate_chars(text: &str, max_chars: usize) -> String {
         out.push('…');
     }
     out
+}
+
+pub(crate) fn truncate_to_width(ui: &Ui, text: &str, font: FontId, max_width: f32) -> String {
+    let galley = ui.painter().layout_no_wrap(text.to_string(), font.clone(), theme::INK);
+    if galley.size().x <= max_width {
+        return text.to_string();
+    }
+    let ellipsis = "…";
+    let ellipsis_w = ui.painter().layout_no_wrap(ellipsis.to_string(), font.clone(), theme::INK).size().x;
+    let target_w = (max_width - ellipsis_w).max(0.0);
+
+    let mut result = String::new();
+    for ch in text.chars() {
+        let mut test = result.clone();
+        test.push(ch);
+        let test_g = ui.painter().layout_no_wrap(test, font.clone(), theme::INK);
+        if test_g.size().x > target_w {
+            break;
+        }
+        result.push(ch);
+    }
+    result.push('…');
+    result
 }
 
 pub(crate) fn format_date(capsule: &Capsule) -> String {

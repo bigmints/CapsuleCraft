@@ -41,6 +41,9 @@ pub enum Command {
     SetView(View),
     OpenPage(usize),
     DeletePage,
+    ConnectMcp,
+    CoThink,
+    CoThinkMode(crate::cothinker::CoThinkMode),
 }
 
 pub fn commands(locale: Locale) -> Vec<(Command, PaletteCommand)> {
@@ -169,6 +172,87 @@ pub fn commands(locale: Locale) -> Vec<(Command, PaletteCommand)> {
             },
         ),
         (
+            Command::ConnectMcp,
+            PaletteCommand {
+                id: "connect_mcp",
+                title: t(locale, Key::ConnectMcp).into(),
+                hint: "Model Context Protocol (Claude, Antigravity, Cursor)".into(),
+                group: t(locale, Key::PaletteActions).into(),
+                keywords: vec![
+                    "mcp".into(),
+                    "ai".into(),
+                    "agent".into(),
+                    "claude".into(),
+                    "antigravity".into(),
+                    "cursor".into(),
+                    "llm".into(),
+                ],
+                shortcut: None,
+            },
+        ),
+        (
+            Command::CoThink,
+            PaletteCommand {
+                id: "cothink",
+                title: t(locale, Key::CoThinkTitle).into(),
+                hint: t(locale, Key::CoThinkSubtitle).into(),
+                group: t(locale, Key::PaletteActions).into(),
+                keywords: vec![
+                    "cothink".into(),
+                    "ai".into(),
+                    "analysis".into(),
+                    "offline".into(),
+                    "мыслитель".into(),
+                    "анализ".into(),
+                ],
+                shortcut: Some("Ctrl Shift A".into()),
+            },
+        ),
+        (
+            Command::CoThinkMode(crate::cothinker::CoThinkMode::Critique),
+            PaletteCommand {
+                id: "cothink_critique",
+                title: format!("{}: {}", t(locale, Key::CoThinkTitle), t(locale, Key::Critique)),
+                hint: t(locale, Key::CritiqueDesc).into(),
+                group: t(locale, Key::PaletteActions).into(),
+                keywords: vec!["critique".into(), "criticism".into(), "критика".into(), "риски".into()],
+                shortcut: None,
+            },
+        ),
+        (
+            Command::CoThinkMode(crate::cothinker::CoThinkMode::Synthesis),
+            PaletteCommand {
+                id: "cothink_synthesis",
+                title: format!("{}: {}", t(locale, Key::CoThinkTitle), t(locale, Key::Synthesis)),
+                hint: t(locale, Key::SynthesisDesc).into(),
+                group: t(locale, Key::PaletteActions).into(),
+                keywords: vec!["synthesis".into(), "синтез".into(), "шаги".into(), "выводы".into()],
+                shortcut: None,
+            },
+        ),
+        (
+            Command::CoThinkMode(crate::cothinker::CoThinkMode::CounterArg),
+            PaletteCommand {
+                id: "cothink_counterarg",
+                title: format!("{}: {}", t(locale, Key::CoThinkTitle), t(locale, Key::CounterArg)),
+                hint: t(locale, Key::CounterArgDesc).into(),
+                group: t(locale, Key::PaletteActions).into(),
+                keywords: vec!["counter".into(), "контраргумент".into(), "ответ".into(), "тред".into()],
+                shortcut: None,
+            },
+        ),
+        (
+            Command::CoThinkMode(crate::cothinker::CoThinkMode::DataInsight),
+            PaletteCommand {
+                id: "cothink_data",
+                title: format!("{}: {}", t(locale, Key::CoThinkTitle), t(locale, Key::DataInsight)),
+                hint: t(locale, Key::DataInsightDesc).into(),
+                group: t(locale, Key::PaletteActions).into(),
+                keywords: vec!["data".into(), "csv".into(), "данные".into(), "ols".into(), "тренд".into()],
+                shortcut: None,
+            },
+        ),
+        (
             Command::SetView(View::Page),
             PaletteCommand {
                 id: "view_page",
@@ -261,14 +345,15 @@ pub fn draw(
     let mut chosen: Option<Command> = None;
     let mut close = false;
 
-    // Scrim: clicks outside dismiss the palette.
+    // Scrim: subtle darkening behind palette so document text remains readable
+    // without completely blacking out the app.
     egui::Area::new(Id::new("palette-scrim"))
         .order(Order::Foreground)
         .fixed_pos(screen.min)
         .show(ctx, |ui| {
             let (rect, response) = ui.allocate_exact_size(screen.size(), Sense::click());
             ui.painter()
-                .rect_filled(rect, 0.0, Color32::from_black_alpha(140));
+                .rect_filled(rect, 0.0, Color32::from_black_alpha(45));
             if response.clicked() {
                 close = true;
             }

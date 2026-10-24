@@ -1,0 +1,197 @@
+From: Alexey <alexey@vault.local>
+To: Co-Thinker <agent@local>
+Subject: Анализ юнит-экономики и когорт CAC/LTV
+Date: Fri, 23 Oct 2026 10:56:09 GMT
+Message-ID: <capsule-metrics-002@vault.local>
+X-Capsule-Tags: #analytics, #finance, #data
+X-Capsule-Status: Active
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="BOUNDARY_ROOT_AG26TSB08Q"
+
+--BOUNDARY_ROOT_AG26TSB08Q
+Content-Type: multipart/alternative; boundary="BOUNDARY_PAYLOAD_UTKGR0B1UP"
+
+--BOUNDARY_PAYLOAD_UTKGR0B1UP
+Content-Type: application/json; name="canvas_state.json"
+Content-Disposition: inline; filename="canvas_state.json"
+
+{
+  "version": "1.0",
+  "generator": "CapsuleOS v2.0 (Zero-DB Pure-MIME Engine)",
+  "messageId": "<capsule-metrics-002@vault.local>",
+  "subject": "Анализ юнит-экономики и когорт CAC/LTV",
+  "tags": [
+    "#analytics",
+    "#finance",
+    "#data"
+  ],
+  "blocks": [
+    {
+      "id": "m1",
+      "type": "heading",
+      "data": {
+        "level": 1,
+        "text": "Анализ юнит-экономики и когорт CAC/LTV"
+      }
+    },
+    {
+      "id": "m2",
+      "type": "paragraph",
+      "data": {
+        "text": "Сводные данные за последние шесть месяцев работы. Стоимость привлечения в среднем снижается, однако в апреле зафиксирован аномальный расход на контекстную рекламу."
+      }
+    },
+    {
+      "id": "m3",
+      "type": "callout",
+      "data": {
+        "title": "Вывод по метрикам",
+        "content": "LTV/CAC держится около 4.2x при целевом 3.0x. Бюджет на маркетинг составил $45000 за полугодие. Нужно провести аудит апрельского всплеска и проверить каналы дистрибуции.",
+        "icon": "TrendingUp",
+        "tone": "blue"
+      }
+    },
+    {
+      "id": "m4",
+      "type": "todo_list",
+      "data": {
+        "items": [
+          {
+            "text": "Проверить разбивку расходов по рекламным кабинетам за апрель",
+            "done": false
+          },
+          {
+            "text": "Сравнить стоимость клика в поиске и сетях",
+            "done": true
+          }
+        ]
+      }
+    }
+  ]
+}
+
+--BOUNDARY_PAYLOAD_UTKGR0B1UP
+Content-Type: text/html; charset="utf-8"
+Content-Disposition: inline
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Анализ юнит-экономики и когорт CAC/LTV</title>
+  <style>
+    body {
+      background-color: #0f172a;
+      color: #f8fafc;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      margin: 0;
+      padding: 32px 20px;
+    }
+    .capsule-wrapper {
+      max-width: 780px;
+      margin: 0 auto;
+      background: #090d16;
+      border: 1px solid #1e293b;
+      border-radius: 12px;
+      padding: 36px 40px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+    }
+    .meta-bar {
+      border-bottom: 1px solid #1e293b;
+      padding-bottom: 20px;
+      margin-bottom: 24px;
+      font-size: 13px;
+      color: #94a3b8;
+    }
+    .meta-row {
+      display: flex;
+      margin-bottom: 6px;
+    }
+    .meta-label {
+      width: 110px;
+      font-weight: 600;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .meta-val {
+      color: #cbd5e1;
+      font-family: monospace;
+    }
+    .tag {
+      display: inline-block;
+      background: #1e293b;
+      color: #38bdf8;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      margin-right: 6px;
+    }
+    .footer-note {
+      margin-top: 40px;
+      padding-top: 16px;
+      border-top: 1px solid #1e293b;
+      font-size: 12px;
+      color: #64748b;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="capsule-wrapper">
+    <div class="meta-bar">
+      <div class="meta-row"><span class="meta-label">From:</span><span class="meta-val">Alexey &lt;alexey@vault.local&gt;</span></div>
+      <div class="meta-row"><span class="meta-label">To:</span><span class="meta-val">Co-Thinker &lt;agent@local&gt;</span></div>
+      <div class="meta-row"><span class="meta-label">Date:</span><span class="meta-val">Fri, 23 Oct 2026 10:56:09 GMT</span></div>
+      <div class="meta-row"><span class="meta-label">Message-ID:</span><span class="meta-val">&lt;capsule-metrics-002@vault.local&gt;</span></div>
+      
+      <div class="meta-row" style="margin-top: 10px;">
+        <span class="meta-label">Tags:</span>
+        <div>
+          <span class="tag">#analytics</span><span class="tag">#finance</span><span class="tag">#data</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="content-body">
+      <h1 style="color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin-top: 1.5em; margin-bottom: 0.5em;">Анализ юнит-экономики и когорт CAC/LTV</h1>
+<p style="color: #cbd5e1; font-size: 16px; line-height: 1.65; margin-bottom: 1em;">Сводные данные за последние шесть месяцев работы. Стоимость привлечения в среднем снижается, однако в апреле зафиксирован аномальный расход на контекстную рекламу.</p>
+
+            <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid #10b981; border-radius: 8px; padding: 14px 18px; margin: 20px 0;">
+              <div style="color: #10b981; font-weight: 600; font-size: 14px; margin-bottom: 4px;">💡 Вывод по метрикам</div>
+              <div style="color: #cbd5e1; font-size: 14px; line-height: 1.5;">LTV/CAC держится около 4.2x при целевом 3.0x. Бюджет на маркетинг составил $45000 за полугодие. Нужно провести аудит апрельского всплеска и проверить каналы дистрибуции.</div>
+            </div>
+          
+
+            <div style="background: #1e293b; border-radius: 8px; padding: 14px; margin: 20px 0;">
+              <div style="font-weight: 600; color: #f8fafc; font-size: 14px; margin-bottom: 8px;">Checklist</div>
+              <ul style="list-style: none; padding: 0; margin: 0;">
+                <li style="color: #e2e8f0; text-decoration: none; padding: 4px 0;">☐ Проверить разбивку расходов по рекламным кабинетам за апрель</li><li style="color: #94a3b8; text-decoration: line-through; padding: 4px 0;">☑ Сравнить стоимость клика в поиске и сетях</li>
+              </ul>
+            </div>
+          
+    </div>
+
+    <div class="footer-note">
+      🛸 Generated by <b>CapsuleOS</b> • Pure-MIME Zero-DB Multimodal Knowledge Engine
+    </div>
+  </div>
+</body>
+</html>
+
+--BOUNDARY_PAYLOAD_UTKGR0B1UP--
+--BOUNDARY_ROOT_AG26TSB08Q
+Content-Type: text/csv; name="sales_metrics.csv"
+Content-ID: <sales_metrics_csv>
+Content-Disposition: attachment; filename="sales_metrics.csv"
+Content-Transfer-Encoding: 8bit
+
+Month,CAC,LTV,Revenue_K
+Jan,100,410,50
+Feb,105,430,55
+Mar,102,450,58
+Apr,850,460,60
+May,98,480,60.1
+Jun,95,510,60.2
+--BOUNDARY_ROOT_AG26TSB08Q--

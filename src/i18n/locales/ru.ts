@@ -13,8 +13,14 @@ export const ru = {
   'nav.faq': 'FAQ — частые вопросы',
   'nav.bench': 'Реальный бенчмарк парсинга 50k .eml в этом табе',
   'nav.language': 'Язык интерфейса / UI language',
+  'nav.mcp': 'Подключение ИИ-агента (MCP)',
   'nav.ramActive': 'RAM-ИНДЕКС: АКТИВЕН',
   'nav.nodesMeta': '{count} капсул · {ms} мс',
+  'mcp.title': 'Интеграция с ИИ-агентами (Model Context Protocol)',
+  'mcp.subtitle': 'CapsuleCraft работает как внешняя память (Second Brain) для Claude Desktop, Antigravity, Claude Code и Cursor.',
+  'mcp.copyConfig': 'Скопировать конфигурацию',
+  'mcp.copied': 'Конфигурация скопирована в буфер обмена!',
+  'mcp.setupScript': 'Скрипт автоматического подключения: scripts/setup_mcp.ps1',
 
   // ── Sidebar ────────────────────────────────────────────────────────────────
   'sidebar.new': 'Новая .eml',

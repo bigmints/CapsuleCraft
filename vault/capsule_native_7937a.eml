@@ -1,0 +1,87 @@
+From: Antigravity AI <agent@capsuleos.local>
+To: CapsuleCraft Vault <vault@capsuleos.local>
+Subject: Тестовая капсула от Antigravity
+Date: Fri, 23 Oct 2026 15:01:00 +0000
+Message-ID: <capsule-native-7937a-1792767660922@vault.local>
+X-Capsule-Tags: test, ai, mcp
+X-Capsule-Status: Active
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="BOUNDARY_ROOT_EIABQBAUKG"
+
+--BOUNDARY_ROOT_EIABQBAUKG
+Content-Type: multipart/alternative; boundary="BOUNDARY_PAYLOAD_6YQGWDAWBS"
+
+--BOUNDARY_PAYLOAD_6YQGWDAWBS
+Content-Type: application/json; name="canvas_state.json"
+Content-Disposition: inline; filename="canvas_state.json"
+
+{
+  "version": "1.0",
+  "generator": "CapsuleCraft Native egui prototype (Zero-DB Pure-MIME)",
+  "messageId": "<capsule-native-7937a-1792767660922@vault.local>",
+  "subject": "Тестовая капсула от Antigravity",
+  "tags": [
+    "test",
+    "ai",
+    "mcp"
+  ],
+  "blocks": [
+    {
+      "data": {
+        "text": "Эта капсула создана агентом напрямую через протокол Model Context Protocol (MCP)."
+      },
+      "id": "blk_native_paragraph_1792767660922752400",
+      "type": "paragraph"
+    },
+    {
+      "data": {
+        "text": "Все инварианты RFC 5322 сохранены: капсула записана в чистый .eml файл в папку vault без использования каких-либо баз данных."
+      },
+      "id": "blk_native_paragraph_1792767660922759000",
+      "type": "paragraph"
+    },
+    {
+      "data": {
+        "content": "MCP-сервер работает нативно на Rust через stdio без задержек и без внешних серверов.",
+        "icon": "info",
+        "title": "Agent Note",
+        "tone": "emerald"
+      },
+      "id": "blk_native_callout_1792767660922764400",
+      "type": "callout"
+    },
+    {
+      "data": {
+        "items": [
+          {
+            "done": false,
+            "id": "todo_0",
+            "text": "Проверить отображение капсулы в UI"
+          },
+          {
+            "done": false,
+            "id": "todo_1",
+            "text": "Проверить связи [[Distributed Vault Architecture & High-Load Planning]]"
+          },
+          {
+            "done": false,
+            "id": "todo_2",
+            "text": "Убедиться в корректности .eml заголовков"
+          }
+        ],
+        "title": "Action Items"
+      },
+      "id": "blk_native_todo_list_1792767660922776200",
+      "type": "todo_list"
+    }
+  ]
+}
+
+--BOUNDARY_PAYLOAD_6YQGWDAWBS
+Content-Type: text/html; charset="utf-8"
+Content-Disposition: inline
+
+<!doctype html><html><head><meta charset="utf-8"><meta name="generator" content="CapsuleCraft Native"></head><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:720px;margin:32px auto;line-height:1.55;color:#23201c;background:#faf8f4;"><h1>Тестовая капсула от Antigravity</h1><p>Эта капсула создана агентом напрямую через протокол Model Context Protocol (MCP).</p><p>Все инварианты RFC 5322 сохранены: капсула записана в чистый .eml файл в папку vault без использования каких-либо баз данных.</p><p><em>[callout block — open in CapsuleCraft web for its canvas]</em></p><h3>Action Items</h3><ul><li>☐ Проверить отображение капсулы в UI</li><li>☐ Проверить связи [[Distributed Vault Architecture &amp; High-Load Planning]]</li><li>☐ Убедиться в корректности .eml заголовков</li></ul><hr><p style="color:#8a8175;font-size:12px">Exported from CapsuleCraft Native · &lt;capsule-native-7937a-1792767660922@vault.local&gt;</p></body></html>
+
+--BOUNDARY_PAYLOAD_6YQGWDAWBS--
+--BOUNDARY_ROOT_EIABQBAUKG--

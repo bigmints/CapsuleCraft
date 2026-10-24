@@ -367,6 +367,27 @@ strings! {
     DataInsight => ("Инсайт по данным", "Data insight"),
     CoThinkWorked => ("Локальный анализ добавлен в страницу", "Local analysis added to the page"),
     HeuristicNotice => ("Это детерминированная локальная эвристика, а не модель. Сеть не используется.", "These are deterministic local heuristics, not a model. No network is used."),
+    CoThinkTitle => ("Офлайн-помощник Co-Thinker", "Offline Assistant Co-Thinker"),
+    CoThinkSubtitle => ("Детерминированный когнитивный анализ содержимого без обращения в сеть", "Deterministic cognitive analysis of content with zero network calls"),
+    CoThinkRun => ("Запустить Co-Think", "Run Co-Think"),
+    CoThinkFocus => ("Фокус анализа (опционально):", "Analysis focus (optional):"),
+    CoThinkFocusPlaceholder => ("Например: риски масштабирования, сроки, бюджет...", "E.g. scaling risks, deadlines, budget..."),
+    CritiqueDesc => ("Поиск рисков, проверка гипотез и когнитивный линтер", "Risk detection, claim testing and thought linter"),
+    SynthesisDesc => ("Конструктивный синтез и следующие практические шаги", "Constructive synthesis and concrete next steps"),
+    CounterArgDesc => ("Создать капсулу-ответ с контраргументами в тред", "Create a counter-argument reply capsule in thread"),
+    DataInsightDesc => ("Честный OLS-тренд и корреляция по CSV-вложениям", "Honest OLS trend and correlation over CSV attachments"),
+    ReplyCapsuleCreated => ("Создана капсула с контраргументами в треде", "Counter-argument reply capsule created in thread"),
+
+    // MCP Integration
+    ConnectMcp => ("Подключить ИИ-агента (MCP)", "Connect AI Agent (MCP)"),
+    McpTitle => ("Интеграция с ИИ-агентами (Model Context Protocol)", "AI Agent Integration (Model Context Protocol)"),
+    McpSubtitle => ("CapsuleCraft работает как внешняя память (Second Brain) для Claude Desktop, Antigravity, Claude Code и Cursor.", "CapsuleCraft acts as an external Second Brain for Claude Desktop, Antigravity, Claude Code, and Cursor."),
+    CopyConfig => ("Скопировать конфиг", "Copy configuration"),
+    ConfigCopied => ("Конфигурация скопирована в буфер обмена!", "Configuration copied to clipboard!"),
+    McpTabAntigravity => ("Antigravity", "Antigravity"),
+    McpTabClaudeDesktop => ("Claude Desktop", "Claude Desktop"),
+    McpTabClaudeCode => ("Claude Code", "Claude Code"),
+    McpTabCursor => ("Cursor", "Cursor"),
 
     // Misc
     Yes => ("Да", "Yes"),

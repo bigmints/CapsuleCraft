@@ -92,18 +92,31 @@ impl ViewAction {
 /// Segmented view switcher shown in the title bar.
 pub fn nav(ui: &mut Ui, current: View, locale: Locale) -> Option<View> {
     let mut chosen = None;
+    let available_w = ui.available_width();
+    // Compact mode when space is limited: only the active tab displays text,
+    // inactive tabs render icon-only to avoid colliding with right titlebar controls.
+    let compact = available_w < 430.0;
+
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 2.0;
         for view in View::all() {
             let label = view.title(locale);
-            let galley = ui.painter().layout_no_wrap(
-                label.to_string(),
-                FontId::new(11.5, theme::medium()),
-                theme::MUTED,
-            );
-            let width = 9.0 + 13.0 + 6.0 + galley.size().x + 9.0;
-            let (rect, response) = ui.allocate_exact_size(vec2(width, 26.0), Sense::click());
             let active = view == current;
+            let show_text = !compact || active;
+
+            let (width, galley) = if show_text {
+                let galley = ui.painter().layout_no_wrap(
+                    label.to_string(),
+                    FontId::new(11.5, theme::medium()),
+                    theme::MUTED,
+                );
+                let w = 9.0 + 13.0 + 6.0 + galley.size().x + 9.0;
+                (w, Some(galley))
+            } else {
+                (28.0, None)
+            };
+
+            let (rect, response) = ui.allocate_exact_size(vec2(width, 26.0), Sense::click());
             if active {
                 ui.painter().rect(
                     rect,
@@ -122,23 +135,33 @@ pub fn nav(ui: &mut Ui, current: View, locale: Locale) -> Option<View> {
             } else {
                 theme::MUTED
             };
+
+            let icon_center = if show_text {
+                pos2(rect.left() + 9.0 + 6.5, rect.center().y)
+            } else {
+                rect.center()
+            };
             icons::paint(
                 ui.painter(),
                 egui::Rect::from_center_size(
-                    pos2(rect.left() + 9.0 + 6.5, rect.center().y),
+                    icon_center,
                     vec2(13.0, 13.0),
                 ),
                 view.icon(),
                 ink,
             );
-            ui.painter().galley_with_override_text_color(
-                pos2(
-                    rect.left() + 9.0 + 13.0 + 6.0,
-                    rect.center().y - galley.size().y / 2.0,
-                ),
-                galley,
-                ink,
-            );
+
+            if let Some(galley) = galley {
+                ui.painter().galley_with_override_text_color(
+                    pos2(
+                        rect.left() + 9.0 + 13.0 + 6.0,
+                        rect.center().y - galley.size().y / 2.0,
+                    ),
+                    galley,
+                    ink,
+                );
+            }
+
             if response.clicked() {
                 chosen = Some(view);
             }

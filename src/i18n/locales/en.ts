@@ -12,8 +12,14 @@ export const en: Dictionary = {
   'nav.faq': 'FAQ — frequently asked questions',
   'nav.bench': 'Real 50k .eml parse benchmark in this tab',
   'nav.language': 'UI language / Язык интерфейса',
+  'nav.mcp': 'Connect AI Agent (MCP)',
   'nav.ramActive': 'RAM INDEX: ACTIVE',
   'nav.nodesMeta': '{count} capsules · {ms} ms',
+  'mcp.title': 'AI Agent Integration (Model Context Protocol)',
+  'mcp.subtitle': 'CapsuleCraft acts as an external Second Brain for Claude Desktop, Antigravity, Claude Code, and Cursor.',
+  'mcp.copyConfig': 'Copy Configuration',
+  'mcp.copied': 'Configuration copied to clipboard!',
+  'mcp.setupScript': 'Zero-friction setup script: scripts/setup_mcp.ps1',
 
   // ── Sidebar ────────────────────────────────────────────────────────────────
   'sidebar.new': 'New .eml',
