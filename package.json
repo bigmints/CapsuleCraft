@@ -6,11 +6,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kostyk348/capsuleos.git"
+    "url": "git+https://github.com/kostyk348/CapsuleCraft.git"
   },
-  "homepage": "https://github.com/kostyk348/capsuleos#readme",
+  "homepage": "https://github.com/kostyk348/CapsuleCraft#readme",
   "bugs": {
-    "url": "https://github.com/kostyk348/capsuleos/issues"
+    "url": "https://github.com/kostyk348/CapsuleCraft/issues"
   },
   "type": "module",
   "scripts": {

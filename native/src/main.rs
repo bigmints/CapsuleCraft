@@ -171,6 +171,8 @@ struct NativeApp {
     link_index: Vec<(String, String, usize)>,
     /// Pages that link to the selected page.
     backlinks: Vec<(usize, String)>,
+    /// Pages closest to this one by tf-idf cosine similarity.
+    related: Vec<(usize, f32)>,
     /// Full-text index over the vault, rebuilt with the link index.
     search_index: search::Bm25Index,
     /// Lowercased-free page text per capsule, used for search snippets.
@@ -234,6 +236,7 @@ impl NativeApp {
             snapshot_job,
             link_index: Vec::new(),
             backlinks: Vec::new(),
+            related: Vec::new(),
             search_index: search::Bm25Index::default(),
             page_texts: Vec::new(),
             document_scroll: launch.scroll,
@@ -309,9 +312,23 @@ impl NativeApp {
                 (other, subject)
             })
             .collect();
+        // "Related by meaning": tf-idf cosine over the same index that powers
+        // search, so a page can point at neighbours it never linked to.
+        let ids: Vec<&str> = self
+            .vault
+            .capsules
+            .iter()
+            .map(|capsule| capsule.message_id.as_str())
+            .collect();
+        self.related = self
+            .selected
+            .and_then(|index| self.vault.capsules.get(index))
+            .map(|capsule| {
+                search::related(&self.search_index, &capsule.message_id, &ids, 0.08, 5)
+            })
+            .unwrap_or_default();
     }
 
-    /// Resolve a link target against the cached index.
     /// After a rename, rewrite every page that linked to the old title.
     ///
     /// Only pages CapsuleCraft owns are touched: an imported email is never
@@ -373,9 +390,20 @@ impl NativeApp {
                     .collect();
             }
         }
+        context.related = self
+            .related
+            .iter()
+            .filter_map(|(index, score)| {
+                self.vault
+                    .capsules
+                    .get(*index)
+                    .map(|capsule| (*index, capsule.subject.clone(), *score))
+            })
+            .collect();
         context
     }
 
+    /// Resolve a link target against the cached index.
     fn resolve_link(&self, target: &str) -> Option<usize> {
         let wanted = links::normalise(target);
         if wanted.is_empty() {
@@ -713,6 +741,34 @@ impl NativeApp {
         }
     }
 
+    /// Export the selected page as Markdown — for pasting into a README, a
+    /// ticket or a chat without dragging the block model along.
+    fn export_markdown(&mut self) {
+        let Some(index) = self.selected else {
+            return;
+        };
+        let Some(capsule) = self.vault.capsules.get(index) else {
+            return;
+        };
+        let stem = capsule.file_name.trim_end_matches(".eml").trim_end_matches(".EML");
+        let default_name = format!("{stem}.md");
+        let Some(path) = rfd::FileDialog::new()
+            .set_title(t(self.locale, Key::ExportMarkdown))
+            .set_file_name(&default_name)
+            .add_filter("markdown", &["md"])
+            .save_file()
+        else {
+            return;
+        };
+        match std::fs::write(path, export::page_markdown(capsule)) {
+            Ok(()) => self.toast(t(self.locale, Key::ExportMarkdown)),
+            Err(err) => {
+                self.status = err.to_string();
+                self.status_error = true;
+            }
+        }
+    }
+
     fn export_vault(&mut self) {
         if !self.save_selected() {
             return;
@@ -965,6 +1021,8 @@ struct LinkContext {
     outgoing: Vec<(String, Option<usize>)>,
     /// Pages that link here: `(index, subject)`.
     backlinks: Vec<(usize, String)>,
+    /// Closest pages by meaning: `(index, subject, similarity 0..1)`.
+    related: Vec<(usize, String, f32)>,
 }
 
 impl eframe::App for NativeApp {
@@ -1289,6 +1347,7 @@ impl NativeApp {
             PaletteCommand::Undo => self.undo(),
             PaletteCommand::Redo => self.redo(),
             PaletteCommand::ExportPage => self.export_page(),
+            PaletteCommand::ExportMarkdown => self.export_markdown(),
             PaletteCommand::ExportVault => self.export_vault(),
             PaletteCommand::ImportEml => self.import_eml(),
             PaletteCommand::ToggleLocale => {
@@ -3089,6 +3148,39 @@ fn links_panel(ui: &mut Ui, context: &LinkContext, locale: Locale, action: &mut 
                         subject.clone()
                     };
                     if link_chip(ui, &name, false)
+                        .on_hover_text(t(locale, Key::OpenLinkedPage))
+                        .clicked()
+                    {
+                        action.select = Some(*index);
+                    }
+                }
+            });
+        }
+        if !context.related.is_empty() {
+            ui.add_space(10.0);
+            let label = caps(
+                ui,
+                t(locale, Key::Related),
+                theme::HUD_SIZE,
+                theme::mono_bold(),
+                theme::LABEL_SPACING,
+                theme::FAINT,
+            );
+            let (rect, _) =
+                ui.allocate_exact_size(vec2(label.size().x, label.size().y + 4.0), Sense::hover());
+            ui.painter()
+                .galley(rect.min + vec2(0.0, 2.0), label, theme::FAINT);
+            ui.add_space(4.0);
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
+                for (index, subject, score) in &context.related {
+                    let name = if subject.is_empty() {
+                        t(locale, Key::Untitled).to_string()
+                    } else {
+                        subject.clone()
+                    };
+                    let label = format!("{} · {:.0}%", name, score * 100.0);
+                    if link_chip(ui, &label, false)
                         .on_hover_text(t(locale, Key::OpenLinkedPage))
                         .clicked()
                     {

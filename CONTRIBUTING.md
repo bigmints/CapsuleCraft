@@ -18,7 +18,7 @@ Thanks for taking the time to help. CapsuleCraft is small on purpose — please 
 ### Getting started
 
 ```bash
-git clone https://github.com/kostyk348/capsuleos.git
+git clone https://github.com/kostyk348/CapsuleCraft.git
 cd capsuleos
 npm ci
 npm run tauri:dev
@@ -74,7 +74,7 @@ Security issues: please do **not** open a public issue, mail the maintainer inst
 ### Начало работы
 
 ```bash
-git clone https://github.com/kostyk348/capsuleos.git
+git clone https://github.com/kostyk348/CapsuleCraft.git
 cd capsuleos
 npm ci
 npm run tauri:dev
