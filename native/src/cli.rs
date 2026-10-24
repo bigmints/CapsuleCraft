@@ -28,6 +28,10 @@ pub struct Launch {
     pub search: Option<String>,
     /// Pixels to scroll the document before capturing (screenshots only).
     pub scroll: Option<f32>,
+    /// Run as a Model Context Protocol (MCP) server over stdin/stdout.
+    pub mcp: bool,
+    /// Print MCP client configuration snippet and exit.
+    pub print_mcp_config: bool,
     /// Print the parsed launch configuration and exit.
     pub print_config: bool,
 }
@@ -74,6 +78,8 @@ pub fn parse(args: &[String]) -> Launch {
             }
             "--search" => launch.search = take_value(&mut index),
             "--scroll" => launch.scroll = take_value(&mut index).and_then(|v| v.parse().ok()),
+            "--mcp" => launch.mcp = true,
+            "--print-mcp-config" | "--mcp-config" => launch.print_mcp_config = true,
             "--print-config" => launch.print_config = true,
             other if !other.starts_with('-') => {
                 if launch.vault.is_none() {
@@ -161,5 +167,15 @@ mod tests {
         let launch = parse(&args(&["--view"]));
         assert_eq!(launch.view, None);
         assert_eq!(launch.vault, None);
+    }
+
+    #[test]
+    fn parses_mcp_flags() {
+        let mcp = parse(&args(&["--mcp", "D:/vault"]));
+        assert!(mcp.mcp);
+        assert_eq!(mcp.vault, Some(PathBuf::from("D:/vault")));
+
+        let config = parse(&args(&["--print-mcp-config"]));
+        assert!(config.print_mcp_config);
     }
 }

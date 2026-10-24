@@ -9,6 +9,7 @@ import {
   Zap,
   Sparkles,
   HelpCircle,
+  Bot,
 } from 'lucide-react';
 import { APP_VERSION } from '../version';
 import { useI18n } from '../i18n';
@@ -22,6 +23,7 @@ interface Props {
   onOpenBenchmark: () => void;
   onOpenAiCoThink: () => void;
   onOpenFaq: () => void;
+  onOpenMcp: () => void;
   totalCapsules: number;
   /** Real rebuild time of the in-memory index (ms) from vaultStore.scanStats. */
   scanDurationMs?: number;
@@ -33,6 +35,7 @@ export const Navbar: React.FC<Props> = ({
   onOpenBenchmark,
   onOpenAiCoThink,
   onOpenFaq,
+  onOpenMcp,
   totalCapsules,
   scanDurationMs,
 }) => {
@@ -112,6 +115,17 @@ export const Navbar: React.FC<Props> = ({
         >
           <Sparkles className="w-3.5 h-3.5 text-cyan-200" />
           <span className="hidden sm:inline">Co-Think</span>
+        </button>
+
+        {/* Connect AI Agent (MCP) Button */}
+        <button
+          type="button"
+          onClick={onOpenMcp}
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-900/80 hover:bg-slate-800 text-indigo-300 hover:text-indigo-200 border border-indigo-500/40 hover:border-indigo-500/60 text-[11px] font-mono transition-all shadow whitespace-nowrap"
+          title={t('nav.mcp')}
+        >
+          <Bot className="w-3.5 h-3.5 text-indigo-400" />
+          <span>MCP</span>
         </button>
 
         {/* Language switch */}
