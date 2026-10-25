@@ -164,16 +164,17 @@ deliberately narrower: local-first storage you can trust for decades.
 The **native AppImage** (recommended, Linux):
 
 ```bash
-chmod +x CapsuleCraft_native_1.7.0-x86_64.AppImage
-./CapsuleCraft_native_1.7.0-x86_64.AppImage            # default vault...
-./CapsuleCraft_native_1.7.0-x86_64.AppImage /path/to/vault   # ...or your folder
+chmod +x CapsuleCraft_1.7.0_amd64.AppImage
+./CapsuleCraft_1.7.0_amd64.AppImage            # default vault...
+./CapsuleCraft_1.7.0_amd64.AppImage /path/to/vault   # ...or your folder
 ```
 
 It needs only glibc and an X11 or Wayland desktop — no WebKitGTK, no WebView2,
 nothing else. Every GitHub release also carries `SHA256SUMS.txt`.
 
-Legacy web/Tauri builds (Windows MSI / NSIS, Linux AppImage / deb — these do
-need `libwebkit2gtk-4.1-0`) are still published for parity.
+Legacy web/Tauri builds (Windows MSI / NSIS, Linux deb) are still published for
+parity (on Linux those need `libwebkit2gtk-4.1-0`). The Linux **AppImage** is
+the native build — no browser engine, no webview libraries.
 
 > First launch shows an empty vault and the built-in **FAQ**. Press `F1`,
 > use the `ⓘ FAQ` button or ⌘K → FAQ. No demo notes are ever created.

@@ -166,16 +166,17 @@ CapsuleCraft нарочно уже: локальное хранение, кот�
 **Нативный AppImage** (рекомендуется, Linux):
 
 ```bash
-chmod +x CapsuleCraft_native_1.7.0-x86_64.AppImage
-./CapsuleCraft_native_1.7.0-x86_64.AppImage              # хранилище по умолчанию...
-./CapsuleCraft_native_1.7.0-x86_64.AppImage /path/to/vault   # ...или ваша папка
+chmod +x CapsuleCraft_1.7.0_amd64.AppImage
+./CapsuleCraft_1.7.0_amd64.AppImage              # хранилище по умолчанию...
+./CapsuleCraft_1.7.0_amd64.AppImage /path/to/vault   # ...или ваша папка
 ```
 
 Нужны только glibc и рабочий стол X11 или Wayland — никаких WebKitGTK,
 WebView2 и прочего. К каждому релизу прилагается `SHA256SUMS.txt`.
 
-Legacy web/Tauri-сборки (Windows MSI / NSIS, Linux AppImage / deb — им нужен
-`libwebkit2gtk-4.1-0`) продолжают публиковаться для паритета.
+Legacy web/Tauri-сборки (Windows MSI / NSIS, Linux deb) продолжают публиковаться
+для паритета (в Linux им нужен `libwebkit2gtk-4.1-0`). Linux **AppImage** —
+это нативная сборка: без браузерного движка и webview-библиотек.
 
 > При первом запуске — пустое хранилище и встроенный **FAQ**: клавиша `F1`,
 > кнопка `ⓘ FAQ` или ⌘K → FAQ. Демо-заметки не создаются никогда.
