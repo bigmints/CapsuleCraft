@@ -195,6 +195,7 @@ struct NativeApp {
     imap_config: sync_imap::ImapConfig,
     imap_status: sync_imap::SyncStatus,
     show_cothink_modal: bool,
+    show_faq_modal: bool,
     cothink_mode: cothinker::CoThinkMode,
     cothink_focus: String,
     dragged_page: Option<usize>,
@@ -254,7 +255,10 @@ impl NativeApp {
             status: t(locale, Key::Saved).to_string(),
             status_error: false,
             locale,
-            view: launch.view.unwrap_or(View::Page),
+            view: launch
+                .view
+                .filter(|value| !matches!(value, View::Faq))
+                .unwrap_or(View::Page),
             planning: PlanningState::default(),
             graph: GraphState::new(),
             mail: MailState::default(),
@@ -270,6 +274,7 @@ impl NativeApp {
             imap_config,
             imap_status: sync_imap::SyncStatus::Idle,
             show_cothink_modal: false,
+            show_faq_modal: false,
             cothink_mode: cothinker::CoThinkMode::Critique,
             cothink_focus: String::new(),
             dragged_page: None,
@@ -285,6 +290,7 @@ impl NativeApp {
             last_write: Instant::now(),
         }
         .with_links();
+        app.show_faq_modal = matches!(launch.view, Some(View::Faq));
         app.watcher = watch::VaultWatch::start(&app.vault.dir);
         app
     }
@@ -1035,6 +1041,7 @@ struct ShellAction {
     toggle_locale: bool,
     palette: bool,
     connect_mcp: bool,
+    faq: bool,
     open_imap: bool,
     sync_imap: bool,
     import: bool,
@@ -1055,6 +1062,7 @@ impl ShellAction {
         self.toggle_locale |= other.toggle_locale;
         self.palette |= other.palette;
         self.connect_mcp |= other.connect_mcp;
+        self.faq |= other.faq;
         self.open_imap |= other.open_imap;
         self.sync_imap |= other.sync_imap;
         self.import |= other.import;
@@ -1072,6 +1080,7 @@ struct EditorAction {
     new_subpage: bool,
     new_page: bool,
     open_vault: bool,
+    faq: bool,
     cothink: bool,
     view: Option<View>,
     /// Title of a page that a `[[link]]` points at but which does not exist.
@@ -1087,6 +1096,7 @@ impl EditorAction {
         self.new_subpage |= other.new_subpage;
         self.new_page |= other.new_page;
         self.open_vault |= other.open_vault;
+        self.faq |= other.faq;
         self.cothink |= other.cothink;
         self.view = other.view.or(self.view);
         self.create_page = other.create_page.or_else(|| self.create_page.take());
@@ -1128,6 +1138,9 @@ impl eframe::App for NativeApp {
         let (cmd, shift) = ctx.input(|i| (i.modifiers.command, i.modifiers.shift));
         if cmd && shift && ctx.input(|i| i.key_pressed(egui::Key::A)) {
             self.show_cothink_modal = true;
+        }
+        if ctx.input(|i| i.key_pressed(egui::Key::F1)) {
+            self.show_faq_modal = true;
         }
         if cmd && shift && ctx.input(|i| i.key_pressed(egui::Key::S)) {
             self.trigger_imap_sync();
@@ -1326,6 +1339,9 @@ impl eframe::App for NativeApp {
                                 ),
                             }
                         }
+                        View::Faq => {
+                            // The content area stays empty; the FAQ overlay carries the view.
+                        }
                     });
             });
 
@@ -1384,6 +1400,9 @@ impl eframe::App for NativeApp {
         if editor.cothink {
             self.show_cothink_modal = true;
         }
+        if editor.faq {
+            self.show_faq_modal = true;
+        }
         if shell.save || view_action.request_save {
             self.save_selected();
         }
@@ -1409,6 +1428,9 @@ impl eframe::App for NativeApp {
         if shell.connect_mcp {
             self.show_mcp_modal = true;
         }
+        if shell.faq {
+            self.show_faq_modal = true;
+        }
         if shell.open_imap {
             self.show_imap_modal = true;
         }
@@ -1427,6 +1449,7 @@ impl eframe::App for NativeApp {
         self.draw_mcp_modal(&ctx);
         self.draw_imap_modal(&ctx);
         self.draw_cothink_modal(&ctx);
+        self.draw_faq_modal(&ctx);
         self.draw_toast(&ctx);
 
         if self.dirty && self.last_edit.elapsed() > Duration::from_millis(750) {
@@ -1463,6 +1486,7 @@ impl NativeApp {
             }
             PaletteCommand::DeletePage => self.confirm_delete = true,
             PaletteCommand::ConnectMcp => self.show_mcp_modal = true,
+            PaletteCommand::Faq => self.show_faq_modal = true,
             PaletteCommand::CoThink => self.show_cothink_modal = true,
             PaletteCommand::CoThinkMode(mode) => {
                 self.cothink_mode = mode;
@@ -1702,6 +1726,105 @@ impl NativeApp {
 
         if close {
             self.show_mcp_modal = false;
+        }
+    }
+
+    /// Built-in FAQ: storage, format, search, data transfer. Nothing leaves the machine.
+    fn draw_faq_modal(&mut self, ctx: &egui::Context) {
+        if !self.show_faq_modal {
+            return;
+        }
+
+        let mut close = false;
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            close = true;
+        }
+
+        egui::Area::new(egui::Id::new("faq-modal"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(ctx.content_rect().min)
+            .show(ctx, |ui| {
+                let (rect, resp) = ui.allocate_exact_size(ctx.content_rect().size(), Sense::click());
+                if resp.clicked() {
+                    close = true;
+                }
+                ui.painter()
+                    .rect_filled(rect, 0.0, egui::Color32::from_black_alpha(150));
+
+                let panel = Rect::from_center_size(rect.center(), vec2(720.0, 620.0));
+                ui.painter().rect(
+                    panel,
+                    theme::RADIUS,
+                    theme::PANEL,
+                    Stroke::new(1.0, theme::LINE_STRONG),
+                    egui::StrokeKind::Inside,
+                );
+
+                let mut body = ui.new_child(
+                    UiBuilder::new()
+                        .max_rect(panel.shrink(24.0))
+                        .layout(Layout::top_down(Align::Min)),
+                );
+
+                body.label(
+                    RichText::new(t(self.locale, Key::FaqTitle))
+                        .family(theme::medium())
+                        .size(19.0)
+                        .color(theme::INK),
+                );
+                body.add_space(2.0);
+                body.add(
+                    egui::Label::new(
+                        RichText::new(t(self.locale, Key::FaqSubtitle))
+                            .size(12.0)
+                            .color(theme::MUTED),
+                    )
+                    .wrap(),
+                );
+                body.add_space(12.0);
+
+                let pairs = [
+                    (Key::FaqQ1, Key::FaqA1),
+                    (Key::FaqQ2, Key::FaqA2),
+                    (Key::FaqQ3, Key::FaqA3),
+                    (Key::FaqQ4, Key::FaqA4),
+                    (Key::FaqQ5, Key::FaqA5),
+                    (Key::FaqQ6, Key::FaqA6),
+                    (Key::FaqQ7, Key::FaqA7),
+                    (Key::FaqQ8, Key::FaqA8),
+                ];
+                egui::ScrollArea::vertical()
+                    .max_height(panel.height() - 175.0)
+                    .auto_shrink([false, false])
+                    .show(&mut body, |ui| {
+                        for (question, answer) in pairs {
+                            ui.label(
+                                RichText::new(t(self.locale, question))
+                                    .family(theme::medium())
+                                    .size(13.5)
+                                    .color(theme::INK),
+                            );
+                            ui.add_space(3.0);
+                            ui.add(
+                                egui::Label::new(
+                                    RichText::new(t(self.locale, answer))
+                                        .size(12.5)
+                                        .color(theme::MUTED),
+                                )
+                                .wrap(),
+                            );
+                            ui.add_space(12.0);
+                        }
+                    });
+
+                body.add_space(6.0);
+                if primary_button(&mut body, t(self.locale, Key::FaqCloseShort), 30.0).clicked() {
+                    close = true;
+                }
+            });
+
+        if close {
+            self.show_faq_modal = false;
         }
     }
 
@@ -2181,6 +2304,18 @@ fn draw_titlebar(
     }
     right_ui.add_space(8.0);
 
+    if ghost(
+        right_ui,
+        Icon::Info,
+        Some("FAQ"),
+        t(locale, Key::FaqTitle),
+        true,
+        26.0,
+    )
+    .clicked()
+    {
+        action.faq = true;
+    }
     if ghost(
         right_ui,
         Icon::Command,
@@ -3915,10 +4050,14 @@ fn draw_empty_state(ui: &mut Ui, action: &mut EditorAction, locale: Locale) {
                 );
                 ui.add_space(22.0);
                 ui.horizontal(|ui| {
-                    let total = 280.0;
+                    let total = 420.0;
                     ui.add_space((ui.available_width() - total) / 2.0);
                     if primary_button(ui, t(locale, Key::CreateFirstPage), 34.0).clicked() {
                         action.new_page = true;
+                    }
+                    ui.add_space(8.0);
+                    if secondary_button(ui, Some(Icon::Info), t(locale, Key::Faq), 34.0).clicked() {
+                        action.faq = true;
                     }
                     ui.add_space(8.0);
                     if secondary_button(ui, Some(Icon::Folder), t(locale, Key::ChangeFolder), 34.0)

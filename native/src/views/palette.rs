@@ -47,6 +47,7 @@ pub enum Command {
     CoThinkMode(crate::cothinker::CoThinkMode),
     OpenImapSync,
     SyncImapNow,
+    Faq,
 }
 
 pub fn commands(locale: Locale) -> Vec<(Command, PaletteCommand)> {
@@ -226,6 +227,22 @@ pub fn commands(locale: Locale) -> Vec<(Command, PaletteCommand)> {
                     "синхронизация".into(),
                 ],
                 shortcut: Some("Ctrl Shift S".into()),
+            },
+        ),
+        (
+            Command::Faq,
+            PaletteCommand {
+                id: "faq",
+                title: t(locale, Key::Faq).into(),
+                hint: t(locale, Key::FaqSubtitle).into(),
+                group: t(locale, Key::PaletteActions).into(),
+                keywords: vec![
+                    "faq".into(),
+                    "помощь".into(),
+                    "вопросы".into(),
+                    "eml".into(),
+                ],
+                shortcut: None,
             },
         ),
         (

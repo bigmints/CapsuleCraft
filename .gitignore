@@ -41,3 +41,6 @@ coverage/
 native/packaging/AppDir/
 native/packaging/*.AppImage
 native/packaging/SHA256SUMS.txt
+
+# Local vault contents (seed script output — never commit demo notes)
+vault/

@@ -23,6 +23,7 @@ pub enum View {
     Threads,
     Mime,
     Mail,
+    Faq,
 }
 
 impl View {
@@ -36,7 +37,6 @@ impl View {
             View::Mail,
         ]
     }
-
     pub fn key(self) -> Key {
         match self {
             View::Page => Key::NavPage,
@@ -45,6 +45,7 @@ impl View {
             View::Threads => Key::NavThreads,
             View::Mime => Key::NavMime,
             View::Mail => Key::NavPreview,
+            View::Faq => Key::Faq,
         }
     }
 
@@ -56,6 +57,7 @@ impl View {
             View::Threads => Icon::Mail,
             View::Mime => Icon::Code,
             View::Mail => Icon::Mail,
+            View::Faq => Icon::Info,
         }
     }
 

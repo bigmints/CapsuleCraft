@@ -124,6 +124,7 @@ fn parse_view(value: &str) -> Option<View> {
         "threads" => Some(View::Threads),
         "mime" => Some(View::Mime),
         "mail" | "email" => Some(View::Mail),
+        "faq" | "help" => Some(View::Faq),
         _ => None,
     }
 }
@@ -169,6 +170,14 @@ mod tests {
         assert_eq!(launch.view, Some(View::Graph));
         assert_eq!(launch.page, Some(3));
         assert_eq!(launch.frames, 12);
+    }
+
+    #[test]
+    fn faq_is_a_view_and_snapshot_target() {
+        let launch = parse(&args(&["--view", "faq"]));
+        assert_eq!(launch.view, Some(View::Faq));
+        let alias = parse(&args(&["--view", "help"]));
+        assert_eq!(alias.view, Some(View::Faq));
     }
 
     #[test]
