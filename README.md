@@ -13,7 +13,7 @@ no SQL, no document store, no cloud, no lock-in. Files you can open in any mail 
 [![Release](https://img.shields.io/github/v/release/kostyk348/CapsuleCraft?sort=semver&color=0ea5e9&label=release)](https://github.com/kostyk348/CapsuleCraft/releases)
 [![CI](https://github.com/kostyk348/CapsuleCraft/actions/workflows/ci.yml/badge.svg)](https://github.com/kostyk348/CapsuleCraft/actions/workflows/ci.yml)
 [![engine tests](https://img.shields.io/badge/engine%20tests-151%20passing-22c55e)](https://github.com/kostyk348/CapsuleCraft/actions/workflows/ci.yml)
-[![native tests](https://img.shields.io/badge/native%20tests-69%20passing-22c55e)](native/)
+[![native tests](https://img.shields.io/badge/native%20tests-97%20passing-22c55e)](native/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Tauri](https://img.shields.io/badge/Tauri-2-FFC131?logo=tauri&logoColor=black)](https://v2.tauri.app/)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev/)
@@ -219,11 +219,12 @@ Prebuilt installers are attached to every [release](https://github.com/kostyk348
 |---|---|
 | `CapsuleCraft_*_x64_en-US.msi` | Windows Installer package |
 | `CapsuleCraft_*_x64-setup.exe` | NSIS installer |
-| `CapsuleCraft_*_amd64.AppImage` | Linux — portable, `chmod +x` and run |
+| `CapsuleCraft_native_*_x86_64.AppImage` | Linux — **native egui**, no webview dependencies (glibc only) |
+| `CapsuleCraft_*_amd64.AppImage` | Linux — portable (legacy Tauri/web build), `chmod +x` and run |
 | `CapsuleCraft_*_amd64.deb` | Linux — Debian / Ubuntu package |
 
 - Windows requires Microsoft Edge **WebView2 Runtime** (preinstalled on Windows 10/11; otherwise [download it](https://developer.microsoft.com/microsoft-edge/webview2/)).
-- Linux builds target **glibc 2.35+** (built on Ubuntu 22.04); WebKitGTK 4.1 is a runtime dependency (`sudo apt install libwebkit2gtk-4.1-0`), the AppImage bundles most libraries.
+- The **native AppImage** (above) needs only **glibc ≥ 2.17** and an X11 or Wayland desktop — no WebKitGTK, no WebView2.
 - The installers are currently **unsigned**, so SmartScreen may warn: *More info → Run anyway*.
 - `SHA256SUMS.txt` is published for every artifact.
 
@@ -363,7 +364,7 @@ Inside it: `vault/` with one `.eml` per capsule, and `vault.json` as a cached in
 `v1.5.0` — two shells over one format. The web/Tauri app is usable end-to-end and the
 engine is covered by a vitest suite (MIME round-trip, BM25 ranking, content-aware offline
 AI, CSV analytics, phantom-attachment regression, editor helpers). The native egui shell
-is an experimental second front end, covered by its own cargo tests (69 unit tests:
+is an experimental second front end, covered by its own cargo tests (97 unit tests:
 links, search, planning, history, i18n, CLI, watch). Known rough edges:
 
 - no code signing of installers (Windows SmartScreen warns);

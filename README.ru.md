@@ -13,7 +13,7 @@
 [![Release](https://img.shields.io/github/v/release/kostyk348/CapsuleCraft?sort=semver&color=0ea5e9&label=release)](https://github.com/kostyk348/CapsuleCraft/releases)
 [![CI](https://github.com/kostyk348/CapsuleCraft/actions/workflows/ci.yml/badge.svg)](https://github.com/kostyk348/CapsuleCraft/actions/workflows/ci.yml)
 [![тесты движка](https://img.shields.io/badge/тесты%20движка-151%20passing-22c55e)](https://github.com/kostyk348/CapsuleCraft/actions/workflows/ci.yml)
-[![тесты native](https://img.shields.io/badge/тесты%20native-69%20passing-22c55e)](native/)
+[![тесты native](https://img.shields.io/badge/тесты%20native-97%20passing-22c55e)](native/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Tauri](https://img.shields.io/badge/Tauri-2-FFC131?logo=tauri&logoColor=black)](https://v2.tauri.app/)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev/)
@@ -220,11 +220,12 @@ JSON-часть — структурированный блочный холст
 |---|---|
 | `CapsuleCraft_*_x64_en-US.msi` | Пакет Windows Installer |
 | `CapsuleCraft_*_x64-setup.exe` | Инсталлятор NSIS |
-| `CapsuleCraft_*_amd64.AppImage` | Linux — портативный, `chmod +x` и запуск |
+| `CapsuleCraft_native_*_x86_64.AppImage` | Linux — **native egui**, без webview-зависимостей (только glibc) |
+| `CapsuleCraft_*_amd64.AppImage` | Linux — портативный (legacy Tauri/web-сборка), `chmod +x` и запуск |
 | `CapsuleCraft_*_amd64.deb` | Linux — пакет Debian / Ubuntu |
 
 - Windows требует **WebView2 Runtime** от Microsoft Edge (предустановлен в Windows 10/11; иначе [скачайте](https://developer.microsoft.com/microsoft-edge/webview2/)).
-- Linux-сборки ориентированы на **glibc 2.35+** (собраны на Ubuntu 22.04); WebKitGTK 4.1 — рантайм-зависимость (`sudo apt install libwebkit2gtk-4.1-0`), AppImage вшивает большинство библиотек.
+- **Native AppImage** (выше) требует только **glibc ≥ 2.17** и рабочий стол X11 или Wayland — никаких WebKitGTK и WebView2.
 - Инсталляторы пока **не подписаны** — SmartScreen может предупредить: *More info → Run anyway*.
 - `SHA256SUMS.txt` публикуется для каждого артефакта.
 
@@ -332,7 +333,7 @@ src-tauri/                Rust-оболочка: файловый IO, диало
 
 ## 📊 Статус
 
-`v1.5.0` — две оболочки над одним форматом. Веб-приложение (Tauri) работоспособно от начала до конца, движок покрыт suite'ом vitest (MIME round-trip, ранжирование BM25, контент-зависимый офлайн-ИИ, CSV-аналитика, регрессия фантомных вложений, хелперы редактора). Native-оболочка на egui — экспериментальный второй фронтенд со своими cargo-тестами (69 unit-тестов: ссылки, поиск, планирование, история, i18n, CLI, слежение за папкой). Известные шероховатости:
+`v1.5.0` — две оболочки над одним форматом. Веб-приложение (Tauri) работоспособно от начала до конца, движок покрыт suite'ом vitest (MIME round-trip, ранжирование BM25, контент-зависимый офлайн-ИИ, CSV-аналитика, регрессия фантомных вложений, хелперы редактора). Native-оболочка на egui — экспериментальный второй фронтенд со своими cargo-тестами (97 unit-тестов: ссылки, поиск, планирование, история, i18n, CLI, слежение за папкой). Известные шероховатости:
 
 - инсталляторы не подписаны кодовой подписью (SmartScreen предупреждает);
 - Python/Rust-ячейки хранятся и версионируются, но не исполняются офлайн (WASM-интерпретаторы не вшиты);

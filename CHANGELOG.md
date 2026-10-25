@@ -3,6 +3,17 @@
 All notable changes to CapsuleCraft are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow [SemVer](https://semver.org/).
 
+## [1.6.0] — 2026-10-25 — Native standalone AppImage
+
+### Added
+- **Native standalone AppImage** (`CapsuleCraft_native_1.6.0-x86_64.AppImage`, ~8 MB): the egui shell packaged with linuxdeploy with **zero bundled libraries** — the binary depends only on `libc` / `libm` / `libgcc_s` (present on every Linux with glibc ≥ 2.17) plus an X11 or Wayland desktop. No WebKitGTK, no WebView2, no runtime package installs.
+- `SHA256SUMS.txt` published with the artifact.
+
+### Changed
+- **Related pages by meaning** (from master evolution): the page sidebar ranks capsules by tf-idf cosine similarity over the existing BM25 index, and the page tree gained hierarchy drag & drop.
+- Native cargo test suite grew to **97 unit tests** (from 69 at v1.5.0).
+- README installers table now separates the **native** AppImage (no webview) from the legacy Tauri/web AppImage (which still needs `libwebkit2gtk-4.1-0`).
+
 ## [1.5.0] — 2026-10-23 — CapsuleCraft
 
 ### Changed

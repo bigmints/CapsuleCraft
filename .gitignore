@@ -36,3 +36,8 @@ desktop.ini
 
 # Test / coverage
 coverage/
+
+# Native packaging artifacts (AppImage build products)
+native/packaging/AppDir/
+native/packaging/*.AppImage
+native/packaging/SHA256SUMS.txt
