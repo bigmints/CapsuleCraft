@@ -35,6 +35,7 @@ pub enum Icon {
     Tag,
     Globe,
     Close,
+    Sidebar,
 }
 
 fn at(rect: Rect, x: f32, y: f32) -> Pos2 {
@@ -280,6 +281,15 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
         Icon::Close => {
             line(&[(0.28, 0.28), (0.72, 0.72)]);
             line(&[(0.72, 0.28), (0.28, 0.72)]);
+        }
+        Icon::Sidebar => {
+            p.rect_stroke(
+                Rect::from_min_max(at(rect, 0.16, 0.2), at(rect, 0.84, 0.8)),
+                1.5,
+                stroke,
+                egui::StrokeKind::Inside,
+            );
+            line(&[(0.42, 0.2), (0.42, 0.8)]);
         }
     }
 }
