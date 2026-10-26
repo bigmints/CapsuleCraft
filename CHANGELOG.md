@@ -3,6 +3,18 @@
 All notable changes to CapsuleCraft are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow [SemVer](https://semver.org/).
 
+## [1.8.0] — 2026-10-26 — Two-tier header, Zen mode, macOS builds
+
+### Added
+- **Native two-tier header and Zen focus mode** (PR #12 by [@kobaltgit](https://github.com/kobaltgit)): a brand bar plus section tabs (Page / Planning / Graph / Threads / MIME / Email), Standard vs Zen layout, a wide canvas mode for the editor, and persistent UI state (`native/src/ui_state.rs`) so the shell reopens the way you left it.
+- **macOS arm64 builds in CI**: an ad-hoc-signed native `CapsuleCraft_native_*_arm64.app.zip` (egui shell) plus a legacy Tauri `.dmg`. `SHA256SUMS-macos.txt` is published next to them.
+- **AppImage hardening**: built on Ubuntu 22.04 (glibc 2.35), bundles the X11/xcb/xkbcommon/wayland client libraries that winit loads through `dlopen`, ships AppStream metadata (`appdata.xml`), and CI fails the build if the AppDir contains broken symlinks.
+- **Contributors** section in both READMEs.
+
+### Fixed
+- **IMAP settings modal**: the four buttons no longer overflow the 520 px panel — *Test connection* / *Sync now* and *Close* / *Save* now sit on two rows.
+- **AppImage no longer dies in minimal sandboxes** (`libxkbcommon-x11.so could not be loaded`): `cp -a` had copied library symlinks without their targets. The AppImageHub catalog now reports **Test passed**.
+
 ## [1.7.0] — 2026-10-25 — Built-in FAQ, no demo content
 
 ### Added

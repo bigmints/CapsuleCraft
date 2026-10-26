@@ -166,17 +166,21 @@ CapsuleCraft нарочно уже: локальное хранение, кот�
 **Нативный AppImage** (рекомендуется, Linux):
 
 ```bash
-chmod +x CapsuleCraft_1.7.0_amd64.AppImage
-./CapsuleCraft_1.7.0_amd64.AppImage              # хранилище по умолчанию...
-./CapsuleCraft_1.7.0_amd64.AppImage /path/to/vault   # ...или ваша папка
+chmod +x CapsuleCraft_1.8.0_amd64.AppImage
+./CapsuleCraft_1.8.0_amd64.AppImage              # хранилище по умолчанию...
+./CapsuleCraft_1.8.0_amd64.AppImage /path/to/vault   # ...или ваша папка
 ```
 
 Нужны только glibc и рабочий стол X11 или Wayland — никаких WebKitGTK,
 WebView2 и прочего. К каждому релизу прилагается `SHA256SUMS.txt`.
 
-Legacy web/Tauri-сборки (Windows MSI / NSIS, Linux deb) продолжают публиковаться
-для паритета (в Linux им нужен `libwebkit2gtk-4.1-0`). Linux **AppImage** —
-это нативная сборка: без браузерного движка и webview-библиотек.
+**Нативное приложение для macOS** (arm64) — `CapsuleCraft_native_1.8.0_arm64.app.zip`:
+распакуйте, перетащите `CapsuleCraft.app` в «Программы». Подпись ad-hoc; если
+Gatekeeper блокирует первый запуск: `xattr -d com.apple.quarantine CapsuleCraft.app`.
+
+Legacy web/Tauri-сборки (Windows MSI / NSIS, Linux deb, macOS dmg) продолжают
+публиковаться для паритета (в Linux им нужен `libwebkit2gtk-4.1-0`). Linux
+**AppImage** — это нативная сборка: без браузерного движка и webview-библиотек.
 
 > При первом запуске — пустое хранилище и встроенный **FAQ**: клавиша `F1`,
 > кнопка `ⓘ FAQ` или ⌘K → FAQ. Демо-заметки не создаются никогда.
@@ -236,6 +240,7 @@ npx vitest run      # 151 тестов
 
 | Версия | Что | Когда |
 |---|---|---|
+| **v1.8.0** | Двухуровневый хедер, Zen-режим, широкий холст; сборки macOS arm64; укрепление AppImage | 2026-10-26 |
 | **v1.7.0** | Встроенный FAQ в оболочке; нигде нет демо-заметок; обновлённый README | 2026-10-25 |
 | **v1.6.0** | Нативный автономный AppImage (без вшитых библиотек) | 2026-10-25 |
 | **v1.5.0** | Переименование в CapsuleCraft; native egui shell | 2026-10-23 |
@@ -253,11 +258,11 @@ npx vitest run      # 151 тестов
 
 ## Роадмап
 
-- ✅ v1.0 – v1.7 (текущий milestone)
+- ✅ v1.0 – v1.8 (текущий milestone)
 - ⬜ Нативное исполнение кода (REPL / табличные формулы JS)
 - ⬜ Воспроизведение аудио в native shell
 - ⬜ GPG-шифрование капсул
-- ⬜ Сборки macOS в CI
+- ✅ Сборки macOS в CI (arm64)
 - ⬜ Опциональная E2E-шифрованная синхронизация vault (tamper/censor-proof, всё ещё zero-cloud)
 
 ## Участие в разработке

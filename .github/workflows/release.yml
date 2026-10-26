@@ -163,6 +163,72 @@ jobs:
           sha256sum "$FILE" | awk '{print $1"  "$2}' > SHA256SUMS.txt
           gh release upload "$TAG" SHA256SUMS.txt --clobber --repo "$GITHUB_REPOSITORY"
 
+  # Native macOS bundle: the same egui shell assembled into a .app with an
+  # ad-hoc signature, so an unzipped local launch is not blocked outright.
+  native-macos:
+    name: Native macOS app (arm64)
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: native
+
+      - name: Build native shell
+        run: cargo build --release --manifest-path native/Cargo.toml
+
+      - name: Assemble .app bundle
+        run: |
+          set -e
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          APP=CapsuleCraft.app
+          rm -rf "$APP"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          install -m 0755 native/target/release/capsuleos-native "$APP/Contents/MacOS/capsuleos-native"
+          cp src-tauri/icons/icon.icns "$APP/Contents/Resources/capsulecraft.icns"
+          printf '%s\n' \
+            '<?xml version="1.0" encoding="UTF-8"?>' \
+            '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
+            '<plist version="1.0">' \
+            '<dict>' \
+            '  <key>CFBundleName</key><string>CapsuleCraft</string>' \
+            '  <key>CFBundleDisplayName</key><string>CapsuleCraft</string>' \
+            '  <key>CFBundleIdentifier</key><string>com.capsuleos.capsulecraft</string>' \
+            '  <key>CFBundleExecutable</key><string>capsuleos-native</string>' \
+            '  <key>CFBundleIconFile</key><string>capsulecraft</string>' \
+            '  <key>CFBundlePackageType</key><string>APPL</string>' \
+            "  <key>CFBundleShortVersionString</key><string>${VERSION}</string>" \
+            "  <key>CFBundleVersion</key><string>${VERSION}</string>" \
+            '  <key>LSMinimumSystemVersion</key><string>11.0</string>' \
+            '  <key>NSHighResolutionCapable</key><true/>' \
+            '</dict>' \
+            '</plist>' \
+            > "$APP/Contents/Info.plist"
+          codesign --force --deep --sign - "$APP"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" \
+            "CapsuleCraft_native_${VERSION}_arm64.app.zip"
+          shasum -a 256 "CapsuleCraft_native_${VERSION}_arm64.app.zip" \
+            | awk '{print $1"  "$2}' > SHA256SUMS-macos.txt
+
+      - name: Upload macOS app to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          gh release upload "$TAG" \
+            "CapsuleCraft_native_${VERSION}_arm64.app.zip" \
+            SHA256SUMS-macos.txt \
+            --clobber --repo "$GITHUB_REPOSITORY"
+
   build:
     name: ${{ matrix.name }}
     strategy:
@@ -172,9 +238,15 @@ jobs:
           - platform: windows-latest
             name: Windows x64 (msi + nsis)
             cache-key: windows-x64
+            bundles: msi,nsis
           - platform: ubuntu-22.04
             name: Linux x64 (deb + rpm)
             cache-key: linux-x64
+            bundles: deb,rpm
+          - platform: macos-latest
+            name: macOS arm64 (app + dmg)
+            cache-key: macos-arm64
+            bundles: app,dmg
     runs-on: ${{ matrix.platform }}
     steps:
       - name: Checkout
@@ -218,10 +290,21 @@ jobs:
         with:
           tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
           releaseName: ${{ startsWith(github.ref, 'refs/tags/v') && format('CapsuleCraft {0}', github.ref_name) || '' }}
+          args: --bundles ${{ matrix.bundles }}
           releaseBody: |
             ## CapsuleCraft ${{ github.ref_name }}
 
-            Zero-DB, pure-MIME multimodal workspace. Native desktop builds (Tauri 2 + React 19).
+            Zero-DB, pure-MIME workspace. Native egui desktop builds plus legacy web/Tauri installers.
+
+            ### Linux x64
+            - `CapsuleCraft_*_amd64.AppImage` — native shell, no webview; `chmod +x` and run
+            - `CapsuleCraft_*_amd64.deb`, `CapsuleCraft-*_x86_64.rpm` — legacy Tauri packages (need `libwebkit2gtk-4.1-0`)
+
+            Built on Ubuntu 22.04 (glibc 2.35+). The AppImage bundles the fonts/rendering and X11/xkbcommon libraries it needs.
+
+            ### macOS (arm64)
+            - `CapsuleCraft_native_*_arm64.app.zip` — native shell, ad-hoc signed; unzip and drag `CapsuleCraft.app` to Applications
+            - `CapsuleCraft_*_aarch64.dmg` — legacy Tauri package
 
             ### Windows x64
             - `CapsuleCraft_*_x64_en-US.msi` — Windows Installer package
@@ -229,14 +312,9 @@ jobs:
 
             Requires Microsoft Edge WebView2 Runtime (preinstalled on Windows 10/11).
 
-            ### Linux x64
-            - `CapsuleCraft_*_amd64.AppImage` — portable, `chmod +x` and run
-            - `CapsuleCraft_*_amd64.deb` — Debian / Ubuntu package
-
-            Built on Ubuntu 22.04 (glibc 2.35+). WebKitGTK 4.1 is a runtime dependency on Linux (`sudo apt install libwebkit2gtk-4.1-0`), AppImage bundles most libraries.
-
             ### Data location
             - Windows: `%APPDATA%\com.capsuleos.app\vault\`
+            - macOS: `~/Library/Application Support/com.capsuleos.app/vault/`
             - Linux: `~/.local/share/com.capsuleos.app/vault/`
 
             One `.eml` file per capsule.

@@ -165,17 +165,21 @@ deliberately narrower: local-first storage you can trust for decades.
 The **native AppImage** (recommended, Linux):
 
 ```bash
-chmod +x CapsuleCraft_1.7.0_amd64.AppImage
-./CapsuleCraft_1.7.0_amd64.AppImage            # default vault...
-./CapsuleCraft_1.7.0_amd64.AppImage /path/to/vault   # ...or your folder
+chmod +x CapsuleCraft_1.8.0_amd64.AppImage
+./CapsuleCraft_1.8.0_amd64.AppImage            # default vault...
+./CapsuleCraft_1.8.0_amd64.AppImage /path/to/vault   # ...or your folder
 ```
 
 It needs only glibc and an X11 or Wayland desktop — no WebKitGTK, no WebView2,
 nothing else. Every GitHub release also carries `SHA256SUMS.txt`.
 
-Legacy web/Tauri builds (Windows MSI / NSIS, Linux deb) are still published for
-parity (on Linux those need `libwebkit2gtk-4.1-0`). The Linux **AppImage** is
-the native build — no browser engine, no webview libraries.
+The **native macOS app** (arm64) ships as `CapsuleCraft_native_1.8.0_arm64.app.zip`:
+unzip it, drag `CapsuleCraft.app` into Applications. It is ad-hoc signed; if
+Gatekeeper blocks the first launch, run `xattr -d com.apple.quarantine CapsuleCraft.app`.
+
+Legacy web/Tauri builds (Windows MSI / NSIS, Linux deb, macOS dmg) are still
+published for parity (on Linux those need `libwebkit2gtk-4.1-0`). The Linux
+**AppImage** is the native build — no browser engine, no webview libraries.
 
 > First launch shows an empty vault and the built-in **FAQ**. Press `F1`,
 > use the `ⓘ FAQ` button or ⌘K → FAQ. No demo notes are ever created.
@@ -235,6 +239,7 @@ npx vitest run      # 151 tests
 
 | Version | What | When |
 |---|---|---|
+| **v1.8.0** | Two-tier header, Zen focus mode, wide canvas; macOS arm64 builds; AppImage hardening | 2026-10-26 |
 | **v1.7.0** | Built-in FAQ in the shell; no demo notes anywhere; README redrawn | 2026-10-25 |
 | **v1.6.0** | Native standalone AppImage (zero bundled libraries) | 2026-10-25 |
 | **v1.5.0** | Renamed to CapsuleCraft; native egui shell | 2026-10-23 |
@@ -252,11 +257,11 @@ are not GPG-encrypted.
 
 ## Roadmap
 
-- ✅ v1.0 – v1.7 (current milestone)
+- ✅ v1.0 – v1.8 (current milestone)
 - ⬜ Native code execution (REPL / JS table formulas)
 - ⬜ Audio playback in the native shell
 - ⬜ GPG-encrypted capsules
-- ⬜ macOS native builds in CI
+- ✅ macOS native builds in CI (arm64)
 - ⬜ Optional end-to-end-encrypted vault sync (tamper/censor-proof, still zero-cloud)
 
 ## Contributing
