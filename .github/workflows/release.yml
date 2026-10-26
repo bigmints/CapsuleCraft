@@ -19,6 +19,96 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The recommended Linux artifact: the native egui shell as a standalone,
+  # zero-dependency AppImage. Built on ubuntu-22.04 so the bundled binary
+  # references glibc 2.35 (not a rolling-distro glibc), which keeps the
+  # package self-contained per the appimage.github.io catalog checks.
+  native-appimage:
+    name: Native AppImage (zero-dep, ubuntu-22.04)
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: native
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential curl file \
+            libxkbcommon-dev libxkbcommon-x11-dev \
+            libxcb1-dev libx11-dev libx11-xcb-dev \
+            libwayland-dev \
+            libfontconfig1-dev libfreetype6-dev \
+            libssl-dev
+
+      - name: Build native shell
+        run: cargo build --release --manifest-path native/Cargo.toml
+
+      - name: Assemble AppDir
+        run: |
+          set -e
+          APPDIR=native/packaging/AppDir
+          rm -rf "$APPDIR"
+          mkdir -p "$APPDIR"/usr/bin \
+                   "$APPDIR"/usr/share/applications \
+                   "$APPDIR"/usr/share/icons/hicolor/256x256/apps
+          install -m 0755 native/target/release/capsuleos-native "$APPDIR"/usr/bin/capsuleos-native
+          cp src-tauri/icons/128x128@2x.png \
+             "$APPDIR"/usr/share/icons/hicolor/256x256/apps/capsulecraft.png
+          ln -s usr/bin/capsuleos-native "$APPDIR"/AppRun
+          ln -s capsulecraft.png "$APPDIR"/.DirIcon
+          printf '%s\n' \
+            '[Desktop Entry]' \
+            'Name=CapsuleCraft' \
+            'GenericName=Knowledge base as mail' \
+            'Comment=Your knowledge base is a folder of emails (.eml). Offline, zero DB.' \
+            'Exec=capsuleos-native' \
+            'Icon=capsulecraft' \
+            'Categories=Office;TextEditor;Development;' \
+            'Keywords=notes;knowledge;eml;email;offline;' \
+            'StartupWMClass=capsuleos-native' \
+            'Type=Application' \
+            'Terminal=false' \
+            > native/packaging/AppDir/usr/share/applications/capsulecraft.desktop
+
+      - name: Package AppImage (linuxdeploy, bundles shared libs)
+        run: |
+          set -e
+          curl -sSL -o linuxdeploy.AppImage \
+            https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          chmod +x linuxdeploy.AppImage
+          export VERSION="${GITHUB_REF#refs/tags/v}"
+          export APPIMAGE_EXTRACT_AND_RUN=1
+          ./linuxdeploy.AppImage \
+            --appdir native/packaging/AppDir \
+            -d native/packaging/AppDir/usr/share/applications/capsulecraft.desktop \
+            -i native/packaging/AppDir/usr/share/icons/hicolor/256x256/apps/capsulecraft.png \
+            --output appimage
+          FILE="CapsuleCraft_${VERSION}_amd64.AppImage"
+          mv -f CapsuleCraft_${VERSION}_amd64.AppImage "$FILE" 2>/dev/null || true
+          test -f "$FILE" || { ls; echo "ubuntu: linuxdeploy artifact missing"; exit 1; }
+
+      - name: Upload AppImage and SHA256SUMS to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          FILE="CapsuleCraft_${VERSION}_amd64.AppImage"
+          gh release upload "$TAG" "$FILE" --clobber --repo "$GITHUB_REPOSITORY"
+          sha256sum "$FILE" | awk '{print $1"  "$2}' > SHA256SUMS.txt
+          gh release upload "$TAG" SHA256SUMS.txt --clobber --repo "$GITHUB_REPOSITORY"
+
   build:
     name: ${{ matrix.name }}
     strategy:
