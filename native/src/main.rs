@@ -1937,16 +1937,10 @@ impl NativeApp {
                     body.add_space(8.0);
                 }
 
-                // Buttons row
-                body.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if secondary_button(ui, Some(Icon::Close), t(self.locale, Key::Close), 28.0).clicked() {
-                        close = true;
-                    }
-                    ui.add_space(8.0);
-                    if primary_button(ui, t(self.locale, Key::ImapSaveSettings), 28.0).clicked() {
-                        save_cfg = true;
-                    }
-                    ui.add_space(8.0);
+                // Buttons: two rows, so "Sync Now" cannot overflow the 520px
+                // panel when IMAP is enabled (all four in one row simply do
+                // not fit and RenderText/clip pushed it outside the frame).
+                body.with_layout(Layout::left_to_right(Align::Center), |ui| {
                     if secondary_button(ui, None, t(self.locale, Key::ImapTestConnection), 28.0).clicked() {
                         test_conn = true;
                     }
@@ -1955,6 +1949,16 @@ impl NativeApp {
                         if secondary_button(ui, Some(Icon::Reload), t(self.locale, Key::ImapSyncNow), 28.0).clicked() {
                             sync_now = true;
                         }
+                    }
+                });
+                body.add_space(10.0);
+                body.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if secondary_button(ui, Some(Icon::Close), t(self.locale, Key::Close), 28.0).clicked() {
+                        close = true;
+                    }
+                    ui.add_space(8.0);
+                    if primary_button(ui, t(self.locale, Key::ImapSaveSettings), 28.0).clicked() {
+                        save_cfg = true;
                     }
                 });
             });

@@ -265,6 +265,11 @@ npx vitest run      # 151 тестов
 PR приветствуются — см. [`CONTRIBUTING.md`](CONTRIBUTING.md). Изменения
 отслеживаются в [`CHANGELOG.md`](CHANGELOG.md).
 
+## Контрибьюторы
+
+- **Konstantin** ([@kostyk348](https://github.com/kostyk348)) — автор, архитектура, native shell, релизы
+- **kobaltGIT** ([@kobaltgit](https://github.com/kobaltgit)) — нативный UI и MIME-парсер, слежение за vault, офлайн Co-Thinker, MCP-сервер, импорт из Obsidian, drag & drop иерархии, IMAP-синхронизация; текущий редизайн GUI (двухуровневый хедер, Zen-режим, широкий холст)
+
 ## Лицензия
 
 MIT — см. [`LICENSE`](LICENSE).

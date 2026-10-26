@@ -264,6 +264,11 @@ are not GPG-encrypted.
 PRs welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md). Changes are tracked in
 [`CHANGELOG.md`](CHANGELOG.md).
 
+## Contributors
+
+- **Konstantin** ([@kostyk348](https://github.com/kostyk348)) — creator, architecture, native shell, releases
+- **kobaltGIT** ([@kobaltgit](https://github.com/kobaltgit)) — native UI and MIME parser, live vault watching, offline Co-Thinker, MCP server, Obsidian importer, hierarchy drag & drop, IMAP sync; current GUI redesign (two-tier header, Zen focus mode, wide canvas)
+
 ## License
 
 MIT — see [`LICENSE`](LICENSE).
