@@ -48,6 +48,12 @@ pub enum Command {
     OpenImapSync,
     SyncImapNow,
     Faq,
+    ToggleZenMode,
+    ToggleSidebar,
+    ZoomIn,
+    ZoomOut,
+    ResetZoom,
+    ToggleWideCanvas,
 }
 
 pub fn commands(locale: Locale) -> Vec<(Command, PaletteCommand)> {
@@ -243,6 +249,107 @@ pub fn commands(locale: Locale) -> Vec<(Command, PaletteCommand)> {
                     "eml".into(),
                 ],
                 shortcut: None,
+            },
+        ),
+        (
+            Command::ToggleZenMode,
+            PaletteCommand {
+                id: "zen_mode",
+                title: t(locale, Key::CommandZenMode).into(),
+                hint: "F11 / Esc".into(),
+                group: t(locale, Key::PaletteActions).into(),
+                keywords: vec![
+                    "zen".into(),
+                    "focus".into(),
+                    "fullscreen".into(),
+                    "дзэн".into(),
+                    "фокус".into(),
+                ],
+                shortcut: Some("F11".into()),
+            },
+        ),
+        (
+            Command::ToggleSidebar,
+            PaletteCommand {
+                id: "toggle_sidebar",
+                title: t(locale, Key::CommandToggleSidebar).into(),
+                hint: "Ctrl \\".into(),
+                group: t(locale, Key::PaletteActions).into(),
+                keywords: vec![
+                    "sidebar".into(),
+                    "toggle".into(),
+                    "панель".into(),
+                    "боковая".into(),
+                ],
+                shortcut: Some("Ctrl \\".into()),
+            },
+        ),
+        (
+            Command::ZoomIn,
+            PaletteCommand {
+                id: "zoom_in",
+                title: t(locale, Key::CommandZoomIn).into(),
+                hint: "+10%".into(),
+                group: t(locale, Key::PaletteActions).into(),
+                keywords: vec![
+                    "zoom".into(),
+                    "in".into(),
+                    "scale".into(),
+                    "масштаб".into(),
+                    "увеличить".into(),
+                ],
+                shortcut: Some("Ctrl +".into()),
+            },
+        ),
+        (
+            Command::ZoomOut,
+            PaletteCommand {
+                id: "zoom_out",
+                title: t(locale, Key::CommandZoomOut).into(),
+                hint: "-10%".into(),
+                group: t(locale, Key::PaletteActions).into(),
+                keywords: vec![
+                    "zoom".into(),
+                    "out".into(),
+                    "scale".into(),
+                    "масштаб".into(),
+                    "уменьшить".into(),
+                ],
+                shortcut: Some("Ctrl -".into()),
+            },
+        ),
+        (
+            Command::ResetZoom,
+            PaletteCommand {
+                id: "reset_zoom",
+                title: t(locale, Key::CommandResetZoom).into(),
+                hint: "110%".into(),
+                group: t(locale, Key::PaletteActions).into(),
+                keywords: vec![
+                    "zoom".into(),
+                    "reset".into(),
+                    "default".into(),
+                    "масштаб".into(),
+                    "сброс".into(),
+                ],
+                shortcut: Some("Ctrl 0".into()),
+            },
+        ),
+        (
+            Command::ToggleWideCanvas,
+            PaletteCommand {
+                id: "wide_canvas",
+                title: t(locale, Key::CommandWideCanvas).into(),
+                hint: "Wide / Standard".into(),
+                group: t(locale, Key::PaletteActions).into(),
+                keywords: vec![
+                    "canvas".into(),
+                    "wide".into(),
+                    "width".into(),
+                    "холст".into(),
+                    "широкий".into(),
+                ],
+                shortcut: Some("Ctrl Shift W".into()),
             },
         ),
         (

@@ -203,7 +203,7 @@ fn install_fonts(ctx: &egui::Context) {
         .cloned()
         .unwrap_or_default();
 
-    let faces: [Face<'_>; 7] = [
+    let faces: [Face<'_>; 8] = [
         (
             "Inter",
             INTER,
@@ -221,6 +221,12 @@ fn install_fonts(ctx: &egui::Context) {
             INTER,
             &[(*b"wght", 600.0), (*b"opsz", 14.0)],
             semibold(),
+        ),
+        (
+            "Inter-Display",
+            INTER,
+            &[(*b"wght", 700.0), (*b"opsz", 32.0)],
+            FontFamily::Name("inter-display".into()),
         ),
         (
             "Archivo-Display",
@@ -251,6 +257,38 @@ fn install_fonts(ctx: &egui::Context) {
         stack.extend(fallback.iter().cloned());
         fonts.families.insert(family, stack);
     }
+
+    // Display stack: Archivo for Latin display, then Inter-Display (wght 700, opsz 32)
+    // for seamless Cyrillic headings, then Inter-SemiBold and Inter.
+    let mut display_stack = vec![
+        "Archivo-Display".to_string(),
+        "Inter-Display".to_string(),
+        "Inter-SemiBold".to_string(),
+        "Inter".to_string(),
+    ];
+    display_stack.extend(fallback.iter().cloned());
+    fonts.families.insert(display(), display_stack);
+
+    // Monospace fallbacks: include Inter so non-ASCII glyphs do not fall through to system fonts.
+    let mut mono_stack = vec!["GeistMono".to_string(), "Inter".to_string()];
+    mono_stack.extend(fallback.iter().cloned());
+    fonts.families.insert(FontFamily::Monospace, mono_stack);
+
+    let mut mono_m_stack = vec![
+        "GeistMono-Medium".to_string(),
+        "GeistMono".to_string(),
+        "Inter".to_string(),
+    ];
+    mono_m_stack.extend(fallback.iter().cloned());
+    fonts.families.insert(mono(), mono_m_stack);
+
+    let mut mono_b_stack = vec![
+        "GeistMono-SemiBold".to_string(),
+        "GeistMono".to_string(),
+        "Inter".to_string(),
+    ];
+    mono_b_stack.extend(fallback.iter().cloned());
+    fonts.families.insert(mono_bold(), mono_b_stack);
 
     ctx.set_fonts(fonts);
 }

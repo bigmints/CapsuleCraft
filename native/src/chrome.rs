@@ -11,7 +11,8 @@ const RESIZE_EDGE: f32 = 5.0;
 const BUTTON_WIDTH: f32 = 46.0;
 const CLOSE_RED: Color32 = Color32::from_rgb(0xc4, 0x2b, 0x1c);
 
-pub const TITLEBAR_HEIGHT: f32 = 40.0;
+pub const TITLEBAR_HEIGHT: f32 = 32.0;
+pub const WORKSPACE_STRIP_HEIGHT: f32 = 34.0;
 
 pub fn custom_caption_buttons() -> bool {
     !cfg!(target_os = "macos")
@@ -30,6 +31,23 @@ pub fn title_bar_drag(ui: &mut Ui) {
     let r = ui.max_rect();
     let rect = Rect::from_min_max(r.min + vec2(RESIZE_EDGE, RESIZE_EDGE), r.max - vec2(RESIZE_EDGE, 0.0));
     let resp = ui.interact(rect, ui.scope_id().with("title-bar-drag"), Sense::click_and_drag());
+    if resp.drag_started_by(egui::PointerButton::Primary) {
+        ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
+    }
+    if resp.double_clicked() {
+        let maximized = ui.input(|i| i.viewport().maximized.unwrap_or(false));
+        ui.ctx()
+            .send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
+    }
+}
+
+/// Dragging a specific title-bar rectangle moves the window; double-click maximizes.
+pub fn title_bar_drag_rect(ui: &mut Ui, rect: Rect) {
+    if rect.width() <= 10.0 || rect.height() <= 10.0 {
+        return;
+    }
+    let edge_rect = Rect::from_min_max(rect.min + vec2(0.0, RESIZE_EDGE), rect.max);
+    let resp = ui.interact(edge_rect, ui.scope_id().with("title-bar-drag-rect"), Sense::click_and_drag());
     if resp.drag_started_by(egui::PointerButton::Primary) {
         ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
     }

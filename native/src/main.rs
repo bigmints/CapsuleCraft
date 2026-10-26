@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 //! CapsuleCraft native egui prototype.
 //!
 //! A separate binary, not a rewrite of the React app. It opens the same `.eml`
@@ -32,6 +34,7 @@ mod vault;
 mod views;
 mod watch;
 mod sync_imap;
+mod ui_state;
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -42,14 +45,14 @@ use std::time::{Duration, Instant};
 use base64::Engine as _;
 use eframe::egui::{
     self, pos2, vec2, Align, Align2, Color32, FontFamily, FontId, Frame, Galley, Label, Layout,
-    Margin, Pos2, Rect, Response, RichText, ScrollArea, Sense, Stroke, TextEdit, Ui, UiBuilder,
-    Vec2,
+    Margin, Rect, Response, RichText, ScrollArea, Sense, Stroke, TextEdit, Ui, UiBuilder,
 };
 use i18n::{t, Key, Locale};
 use icons::Icon;
 use mime::{block_type, new_block_id, Attachment, Capsule};
 use serde_json::{json, Value};
-use vault::{default_vault_dir, PageTree, Vault};
+use ui_state::UiState;
+use vault::{PageTree, Vault};
 use views::graph_view::GraphState;
 use views::mail_view::MailState;
 use views::palette::{Command as PaletteCommand, PaletteState};
@@ -127,14 +130,19 @@ fn main() -> eframe::Result<()> {
         ..Default::default()
     };
 
-    eframe::run_native(
+    let result = eframe::run_native(
         "CapsuleCraft",
         options,
         Box::new(move |cc| {
             theme::apply(&cc.egui_ctx);
             Ok(Box::new(NativeApp::new(launch)))
         }),
-    )
+    );
+    if let Err(err) = result {
+        eprintln!("CapsuleCraft error: {err}");
+        std::process::exit(1);
+    }
+    std::process::exit(0);
 }
 
 // ---------------------------------------------------------------------------
@@ -221,6 +229,10 @@ struct NativeApp {
     external_pending: bool,
     /// When the app itself last wrote to the vault, to ignore its own events.
     last_write: Instant,
+    /// Persistent UI state (zoom, sidebar geometry, canvas layout).
+    ui_state: UiState,
+    /// Zen focus mode (immersive document writing).
+    zen_mode: bool,
 }
 
 struct SnapshotJob {
@@ -288,6 +300,8 @@ impl NativeApp {
             watcher: None,
             external_pending: false,
             last_write: Instant::now(),
+            ui_state: UiState::load(),
+            zen_mode: false,
         }
         .with_links();
         app.show_faq_modal = matches!(launch.view, Some(View::Faq));
@@ -1049,6 +1063,8 @@ struct ShellAction {
     export_page: bool,
     delete_page: bool,
     reparent: Option<(usize, Option<String>)>,
+    toggle_sidebar: bool,
+    toggle_zen: bool,
 }
 
 impl ShellAction {
@@ -1070,6 +1086,8 @@ impl ShellAction {
         self.export_page |= other.export_page;
         self.delete_page |= other.delete_page;
         self.reparent = other.reparent.or_else(|| self.reparent.take());
+        self.toggle_sidebar |= other.toggle_sidebar;
+        self.toggle_zen |= other.toggle_zen;
     }
 }
 
@@ -1087,6 +1105,7 @@ struct EditorAction {
     create_page: Option<String>,
     /// Previous subject of the page being renamed, so links can follow it.
     rename_from: Option<String>,
+    toggle_wide: bool,
 }
 
 impl EditorAction {
@@ -1101,6 +1120,7 @@ impl EditorAction {
         self.view = other.view.or(self.view);
         self.create_page = other.create_page.or_else(|| self.create_page.take());
         self.rename_from = other.rename_from.or_else(|| self.rename_from.take());
+        self.toggle_wide |= other.toggle_wide;
     }
 }
 
@@ -1122,6 +1142,9 @@ impl eframe::App for NativeApp {
         self.drive_snapshot(&ctx);
         self.poll_watcher();
 
+        // Apply persistent zoom factor
+        ctx.set_zoom_factor(self.ui_state.zoom_factor);
+
         // Drag and drop: `.eml` files land in the vault folder untouched.
         let dropped: Vec<PathBuf> = ctx.input(|i| {
             i.raw
@@ -1136,6 +1159,37 @@ impl eframe::App for NativeApp {
         self.draw_drop_hint(&ctx);
 
         let (cmd, shift) = ctx.input(|i| (i.modifiers.command, i.modifiers.shift));
+        if ctx.input(|i| i.key_pressed(egui::Key::F11))
+            || (cmd && shift && ctx.input(|i| i.key_pressed(egui::Key::F)))
+        {
+            self.toggle_zen_mode();
+        }
+        if cmd && ctx.input(|i| i.key_pressed(egui::Key::Backslash)) {
+            self.toggle_sidebar();
+        }
+        if cmd && shift && ctx.input(|i| i.key_pressed(egui::Key::W)) {
+            self.toggle_wide_canvas();
+        }
+        if cmd && (ctx.input(|i| i.key_pressed(egui::Key::Plus)) || ctx.input(|i| i.key_pressed(egui::Key::Equals))) {
+            self.zoom_in(&ctx);
+        }
+        if cmd && ctx.input(|i| i.key_pressed(egui::Key::Minus)) {
+            self.zoom_out(&ctx);
+        }
+        if cmd && ctx.input(|i| i.key_pressed(egui::Key::Num0)) {
+            self.reset_zoom(&ctx);
+        }
+
+        let modals_open = self.palette.open
+            || self.confirm_delete
+            || self.show_mcp_modal
+            || self.show_imap_modal
+            || self.show_cothink_modal
+            || self.show_faq_modal;
+        if self.zen_mode && !modals_open && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.toggle_zen_mode();
+        }
+
         if cmd && shift && ctx.input(|i| i.key_pressed(egui::Key::A)) {
             self.show_cothink_modal = true;
         }
@@ -1189,8 +1243,13 @@ impl eframe::App for NativeApp {
                 }
             }
         }
-        if ctx.input(|i| i.viewport().close_requested()) && !self.save_selected() {
-            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+        if ctx.input(|i| i.viewport().close_requested()) {
+            self.ui_state.save();
+            if !self.save_selected() {
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            } else {
+                std::process::exit(0);
+            }
         }
 
         let tree = PageTree::build(&self.vault.capsules);
@@ -1198,31 +1257,67 @@ impl eframe::App for NativeApp {
         // Links are resolved before the document borrows its page mutably.
         let link_context = self.current_link_context();
 
-        egui::Panel::top("titlebar")
-            .exact_size(chrome::TITLEBAR_HEIGHT)
-            .frame(
-                Frame::new()
-                    .fill(theme::CHROME)
-                    .inner_margin(Margin::same(0)),
-            )
-            .show(ui, |ui| {
-                shell.absorb(draw_titlebar(
-                    ui,
-                    &self.vault,
-                    self.dirty,
-                    &self.status,
-                    self.status_error,
-                    &self.imap_config,
-                    &self.imap_status,
-                    self.view,
-                    self.locale,
-                ));
-            });
+        let hover_top = ctx
+            .input(|i| i.pointer.hover_pos())
+            .map(|p| p.y < chrome::TITLEBAR_HEIGHT)
+            .unwrap_or(false);
+        let show_titlebar = !self.zen_mode || hover_top;
 
-        let sidebar_action = {
-            egui::Panel::left("sidebar")
-                .exact_size(SIDEBAR_WIDTH)
-                .resizable(false)
+        if show_titlebar {
+            egui::Panel::top("titlebar")
+                .exact_size(chrome::TITLEBAR_HEIGHT)
+                .frame(
+                    Frame::new()
+                        .fill(theme::CHROME)
+                        .inner_margin(Margin::same(0)),
+                )
+                .show(ui, |ui| {
+                    shell.absorb(draw_titlebar(
+                        ui,
+                        &self.vault,
+                        self.dirty,
+                        &self.status,
+                        self.status_error,
+                        &self.imap_config,
+                        &self.imap_status,
+                        self.locale,
+                        self.ui_state.sidebar_collapsed,
+                        self.zen_mode,
+                    ));
+                });
+        }
+
+        let mut editor = EditorAction::default();
+
+        if !self.zen_mode {
+            egui::Panel::top("workspace_strip")
+                .exact_size(chrome::WORKSPACE_STRIP_HEIGHT)
+                .frame(
+                    Frame::new()
+                        .fill(theme::CHROME)
+                        .inner_margin(Margin::same(0)),
+                )
+                .show(ui, |ui| {
+                    let (chosen, strip_editor) = draw_workspace_strip(
+                        ui,
+                        self.view,
+                        self.locale,
+                        self.selected,
+                        &self.vault.capsules,
+                        self.ui_state.wide_canvas,
+                    );
+                    if let Some(v) = chosen {
+                        shell.view = Some(v);
+                    }
+                    editor.absorb(strip_editor);
+                });
+        }
+
+        let sidebar_action = if !self.zen_mode && !self.ui_state.sidebar_collapsed {
+            let sidebar_resp = egui::Panel::left("sidebar")
+                .default_size(self.ui_state.sidebar_width)
+                .size_range(220.0..=480.0)
+                .resizable(true)
                 .frame(
                     Frame::new()
                         .fill(theme::CHROME)
@@ -1242,12 +1337,18 @@ impl eframe::App for NativeApp {
                         self.watcher.is_some(),
                         self.locale,
                     )
-                })
-                .inner
+                });
+            let new_w = sidebar_resp.response.rect.width();
+            if (new_w - self.ui_state.sidebar_width).abs() > 0.5 {
+                self.ui_state.sidebar_width = new_w.clamp(220.0, 480.0);
+                self.ui_state.save();
+            }
+            sidebar_resp.inner
+        } else {
+            ShellAction::default()
         };
         shell.absorb(sidebar_action);
 
-        let mut editor = EditorAction::default();
         let mut view_action = ViewAction::default();
         egui::CentralPanel::default()
             .frame(
@@ -1263,21 +1364,23 @@ impl eframe::App for NativeApp {
                     .inner_margin(Margin::same(0))
                     .show(ui, |ui| match self.view {
                         View::Page => {
-                            editor.absorb(draw_content_header(
-                                ui,
-                                self.selected,
-                                &self.vault.capsules,
-                                &tree,
-                                self.locale,
-                            ));
                             match self.selected {
                                 Some(index) if index < self.vault.capsules.len() => {
+                                    let ancestors: Vec<(usize, String)> = tree
+                                        .ancestors(index)
+                                        .into_iter()
+                                        .filter_map(|idx| {
+                                            self.vault.capsules.get(idx).map(|c| (idx, c.subject.clone()))
+                                        })
+                                        .collect();
                                     editor.absorb(draw_document(
                                         ui,
                                         &mut self.vault.capsules[index],
+                                        &ancestors,
                                         self.locale,
                                         &link_context,
                                         self.document_scroll,
+                                        self.ui_state.wide_canvas,
                                     ));
                                 }
                                 _ => draw_empty_state(ui, &mut editor, self.locale),
@@ -1437,12 +1540,21 @@ impl eframe::App for NativeApp {
         if shell.sync_imap {
             self.trigger_imap_sync();
         }
+        if shell.toggle_sidebar {
+            self.toggle_sidebar();
+        }
+        if shell.toggle_zen {
+            self.toggle_zen_mode();
+        }
+        if editor.toggle_wide {
+            self.toggle_wide_canvas();
+        }
 
         // Command palette: a pure overlay; the shell performs whatever it picks.
         if let Some(command) =
             views::palette::draw(&ctx, &self.vault.capsules, self.locale, &mut self.palette)
         {
-            self.run_command(command);
+            self.run_command(&ctx, command);
         }
 
         self.draw_confirm_delete(&ctx);
@@ -1462,7 +1574,52 @@ impl eframe::App for NativeApp {
 }
 
 impl NativeApp {
-    fn run_command(&mut self, command: PaletteCommand) {
+    fn toggle_zen_mode(&mut self) {
+        self.zen_mode = !self.zen_mode;
+        if self.zen_mode {
+            self.toast(t(self.locale, Key::ZenModeEntered));
+        } else {
+            self.toast(t(self.locale, Key::ZenModeExited));
+        }
+    }
+
+    fn toggle_sidebar(&mut self) {
+        self.ui_state.toggle_sidebar();
+        self.ui_state.save();
+    }
+
+    fn zoom_in(&mut self, ctx: &egui::Context) {
+        let zoom = self.ui_state.zoom_in();
+        ctx.set_zoom_factor(zoom);
+        self.ui_state.save();
+        let pct = (zoom * 100.0).round() as u32;
+        self.toast(format!("{}: {}%", t(self.locale, Key::ZoomLevel), pct));
+    }
+
+    fn zoom_out(&mut self, ctx: &egui::Context) {
+        let zoom = self.ui_state.zoom_out();
+        ctx.set_zoom_factor(zoom);
+        self.ui_state.save();
+        let pct = (zoom * 100.0).round() as u32;
+        self.toast(format!("{}: {}%", t(self.locale, Key::ZoomLevel), pct));
+    }
+
+    fn reset_zoom(&mut self, ctx: &egui::Context) {
+        let zoom = self.ui_state.reset_zoom();
+        ctx.set_zoom_factor(zoom);
+        self.ui_state.save();
+        let pct = (zoom * 100.0).round() as u32;
+        self.toast(format!("{}: {}%", t(self.locale, Key::ZoomLevel), pct));
+    }
+
+    fn toggle_wide_canvas(&mut self) {
+        let wide = self.ui_state.toggle_wide_canvas();
+        self.ui_state.save();
+        let label = if wide { "Wide" } else { "Standard (960px)" };
+        self.toast(format!("{}: {}", t(self.locale, Key::CommandWideCanvas), label));
+    }
+
+    fn run_command(&mut self, ctx: &egui::Context, command: PaletteCommand) {
         match command {
             PaletteCommand::NewPage => self.new_page(None),
             PaletteCommand::SavePage => {
@@ -1494,6 +1651,12 @@ impl NativeApp {
             }
             PaletteCommand::OpenImapSync => self.show_imap_modal = true,
             PaletteCommand::SyncImapNow => self.trigger_imap_sync(),
+            PaletteCommand::ToggleZenMode => self.toggle_zen_mode(),
+            PaletteCommand::ToggleSidebar => self.toggle_sidebar(),
+            PaletteCommand::ZoomIn => self.zoom_in(ctx),
+            PaletteCommand::ZoomOut => self.zoom_out(ctx),
+            PaletteCommand::ResetZoom => self.reset_zoom(ctx),
+            PaletteCommand::ToggleWideCanvas => self.toggle_wide_canvas(),
         }
     }
 
@@ -2281,17 +2444,17 @@ fn draw_titlebar(
     status_error: bool,
     imap_config: &sync_imap::ImapConfig,
     imap_status: &sync_imap::SyncStatus,
-    view: View,
     locale: Locale,
+    sidebar_collapsed: bool,
+    zen_mode: bool,
 ) -> ShellAction {
     let mut action = ShellAction::default();
-    chrome::title_bar_drag(ui);
 
     let total_rect = ui.max_rect();
 
     // 1. Right utility controls: rendered first with right-to-left layout so they
     // are guaranteed visible, anchored, and have strict layout boundaries.
-    let right_width = if chrome::custom_caption_buttons() { 360.0 } else { 240.0 };
+    let right_width = if chrome::custom_caption_buttons() { 450.0 } else { 340.0 };
     let right_rect = Rect::from_min_max(
         pos2((total_rect.right() - right_width).max(total_rect.left()), total_rect.top()),
         total_rect.right_bottom(),
@@ -2306,39 +2469,52 @@ fn draw_titlebar(
     if chrome::custom_caption_buttons() {
         chrome::caption_buttons(right_ui, chrome::TITLEBAR_HEIGHT);
     }
-    right_ui.add_space(8.0);
+    right_ui.add_space(6.0);
 
-    if ghost(
+    if zen_mode {
+        if ghost(
+            right_ui,
+            Icon::Close,
+            Some("Zen"),
+            t(locale, Key::ZenModeEntered),
+            true,
+            26.0,
+        )
+        .clicked()
+        {
+            action.toggle_zen = true;
+        }
+        right_ui.add_space(4.0);
+    }
+
+    if icon_button(
         right_ui,
         Icon::Info,
-        Some("FAQ"),
-        t(locale, Key::FaqTitle),
+        &format!("{} (F1)", t(locale, Key::FaqTitle)),
         true,
-        26.0,
+        false,
     )
     .clicked()
     {
         action.faq = true;
     }
-    if ghost(
+    if icon_button(
         right_ui,
         Icon::Command,
-        Some("K"),
-        t(locale, Key::PaletteHint),
+        &format!("{} (Ctrl+K)", t(locale, Key::PaletteHint)),
         true,
-        26.0,
+        false,
     )
     .clicked()
     {
         action.palette = true;
     }
-    if ghost(
+    if icon_button(
         right_ui,
         Icon::Code,
-        Some("MCP"),
         t(locale, Key::ConnectMcp),
         true,
-        26.0,
+        false,
     )
     .clicked()
     {
@@ -2353,13 +2529,12 @@ fn draw_titlebar(
             _ => (theme::ACCENT, t(locale, Key::ImapSynced)),
         }
     };
-    let imap_resp = ghost(
+    let imap_resp = icon_button(
         right_ui,
         Icon::Mail,
-        Some("IMAP"),
         imap_hint,
         true,
-        26.0,
+        false,
     );
     // Draw status dot on the IMAP icon
     let dot_pos = pos2(imap_resp.rect.left() + 7.0, imap_resp.rect.top() + 7.0);
@@ -2411,45 +2586,58 @@ fn draw_titlebar(
     right_ui.horizontal(|ui| {
         let (dot, _) = ui.allocate_exact_size(vec2(6.0, 6.0), Sense::hover());
         ui.painter().circle_filled(dot.center(), 2.5, dot_color);
-        let label = ui.label(
-            RichText::new(text)
-                .family(theme::mono())
-                .size(9.5)
-                .color(if status_error {
-                    theme::BAD
-                } else if dirty {
-                    theme::BADGE_BETA
-                } else {
-                    theme::FAINT
-                }),
-        );
-        if status_error {
-            label.on_hover_text(status);
+        if total_rect.width() >= 1150.0 || status_error || dirty {
+            let label = ui.label(
+                RichText::new(text)
+                    .family(theme::mono())
+                    .size(9.5)
+                    .color(if status_error {
+                        theme::BAD
+                    } else if dirty {
+                        theme::BADGE_BETA
+                    } else {
+                        theme::FAINT
+                    }),
+            );
+            if status_error {
+                label.on_hover_text(status);
+            }
         }
     });
 
     let right_used_left = right_ui.min_rect().left().min(total_rect.right() - 20.0);
 
-    // 2. Left side: Brand, vault switcher, and navigation tabs.
+    // 2. Left side: Sidebar toggle, Brand, and Vault switcher.
     // Constrained so it never extends past `right_used_left`.
     let left_rect = Rect::from_min_max(
         total_rect.left_top(),
-        pos2(right_used_left.max(total_rect.left()), total_rect.bottom()),
+        pos2((right_used_left - 12.0).max(total_rect.left()), total_rect.bottom()),
     );
     let mut bar = ui.new_child(
         UiBuilder::new()
             .max_rect(left_rect)
             .layout(Layout::left_to_right(Align::Center)),
     );
-    let ui = &mut bar;
-    ui.spacing_mut().item_spacing.x = 6.0;
-    ui.add_space(chrome::leading_inset() + 12.0);
+    let ui_left = &mut bar;
+    ui_left.spacing_mut().item_spacing.x = 6.0;
+    ui_left.add_space(chrome::leading_inset() + 12.0);
+
+    let sidebar_hint = format!("{} (Ctrl + \\)", t(locale, Key::CommandToggleSidebar));
+    if icon_button(ui_left, Icon::Sidebar, &sidebar_hint, true, !sidebar_collapsed).clicked() {
+        action.toggle_sidebar = true;
+    }
+
+    ui_left.add_space(4.0);
+    let (divider, _) = ui_left.allocate_exact_size(vec2(1.0, 18.0), Sense::hover());
+    ui_left.painter()
+        .vline(divider.center().x, divider.y_range(), theme::hairline());
+    ui_left.add_space(6.0);
 
     // Mark: a capsule outline with one filled end.
-    let (mark, _) = ui.allocate_exact_size(vec2(24.0, 24.0), Sense::hover());
+    let (mark, _) = ui_left.allocate_exact_size(vec2(24.0, 24.0), Sense::hover());
     let mark_rect = Rect::from_center_size(mark.center(), vec2(20.0, 20.0));
-    if let Some(texture) = brand::texture(ui.ctx()) {
-        ui.painter().image(
+    if let Some(texture) = brand::texture(ui_left.ctx()) {
+        ui_left.painter().image(
             texture.id(),
             mark_rect,
             Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
@@ -2457,33 +2645,33 @@ fn draw_titlebar(
         );
     } else {
         // Vector fallback: two dots in a capsule outline.
-        ui.painter().rect_stroke(
+        ui_left.painter().rect_stroke(
             mark_rect,
             egui::CornerRadius::same(6),
             Stroke::new(1.5, theme::ACCENT),
             egui::StrokeKind::Inside,
         );
-        ui.painter().circle_filled(
+        ui_left.painter().circle_filled(
             mark_rect.center() + vec2(-3.2, 0.0),
             2.0,
             theme::ACCENT,
         );
-        ui.painter().circle_filled(
+        ui_left.painter().circle_filled(
             mark_rect.center() + vec2(3.2, 0.0),
             2.0,
             theme::fade(theme::ACCENT, 0.35),
         );
     }
 
-    ui.label(
+    ui_left.label(
         RichText::new(t(locale, Key::AppName))
             .family(theme::display())
             .size(15.0)
             .color(theme::INK),
     );
 
-    let (badge_rect, _) = ui.allocate_exact_size(vec2(45.0, 16.0), Sense::hover());
-    ui.painter().rect(
+    let (badge_rect, _) = ui_left.allocate_exact_size(vec2(45.0, 16.0), Sense::hover());
+    ui_left.painter().rect(
         badge_rect,
         theme::RADIUS,
         theme::WASH,
@@ -2491,36 +2679,39 @@ fn draw_titlebar(
         egui::StrokeKind::Inside,
     );
     let badge = caps(
-        ui,
+        ui_left,
         "NATIVE",
         8.0,
         theme::mono_bold(),
         1.0,
         theme::FAINT,
     );
-    ui.painter()
+    ui_left.painter()
         .galley(badge_rect.center() - badge.size() / 2.0, badge, theme::FAINT);
 
-    ui.add_space(8.0);
-    let (divider, _) = ui.allocate_exact_size(vec2(1.0, 18.0), Sense::hover());
-    ui.painter()
+    ui_left.add_space(8.0);
+    let (divider, _) = ui_left.allocate_exact_size(vec2(1.0, 18.0), Sense::hover());
+    ui_left.painter()
         .vline(divider.center().x, divider.y_range(), theme::hairline());
-    ui.add_space(6.0);
+    ui_left.add_space(6.0);
 
-    if vault_switcher(ui, vault).clicked() {
+    if vault_switcher(ui_left, vault).clicked() {
         action.open_vault = true;
     }
 
-    ui.add_space(6.0);
-    let (divider, _) = ui.allocate_exact_size(vec2(1.0, 18.0), Sense::hover());
-    ui.painter()
-        .vline(divider.center().x, divider.y_range(), theme::hairline());
-    ui.add_space(6.0);
-
-    // Workspace views. The page editor is one view among six.
-    if let Some(chosen) = views::nav(ui, view, locale) {
-        action.view = Some(chosen);
+    // 3. Middle drag area: only the empty space between the left and right groups
+    // acts as window drag handle, preventing any click collisions.
+    let left_used_right = ui_left.min_rect().right();
+    let drag_rect = Rect::from_min_max(
+        pos2(left_used_right + 4.0, total_rect.top()),
+        pos2(right_used_left - 4.0, total_rect.bottom()),
+    );
+    if drag_rect.is_positive() && drag_rect.width() > 10.0 {
+        chrome::title_bar_drag_rect(ui, drag_rect);
     }
+
+    ui.painter()
+        .hline(total_rect.x_range(), total_rect.bottom() - 0.5, theme::hairline());
 
     action
 }
@@ -2585,6 +2776,8 @@ fn draw_sidebar(
 ) -> ShellAction {
     let mut action = ShellAction::default();
     let outer = ui.max_rect();
+    ui.allocate_rect(outer, Sense::hover());
+    ui.set_min_width(outer.width());
     let inner = outer.shrink2(vec2(14.0, 8.0));
     let header_h = 122.0;
     let footer_h = 122.0;
@@ -2641,6 +2834,33 @@ fn draw_sidebar(
             FontId::new(9.0, theme::mono()),
             theme::FAINT,
         );
+
+        let collapse_rect = Rect::from_center_size(
+            pos2(rect.right() - 35.0, rect.center().y),
+            vec2(22.0, 22.0),
+        );
+        let collapse = header
+            .interact(collapse_rect, header.scope_id().with("collapse-sidebar"), Sense::click())
+            .on_hover_text(format!("{} (Ctrl + \\)", t(locale, Key::CommandToggleSidebar)))
+            .on_hover_cursor(egui::CursorIcon::PointingHand);
+        if collapse.hovered() {
+            header
+                .painter()
+                .rect_filled(collapse_rect, theme::RADIUS, theme::WASH);
+        }
+        icons::paint(
+            header.painter(),
+            Rect::from_center_size(collapse_rect.center(), vec2(12.0, 12.0)),
+            Icon::Sidebar,
+            if collapse.hovered() {
+                theme::INK
+            } else {
+                theme::FAINT
+            },
+        );
+        if collapse.clicked() {
+            action.toggle_sidebar = true;
+        }
 
         let plus_rect = Rect::from_center_size(
             pos2(rect.right() - 11.0, rect.center().y),
@@ -2816,6 +3036,7 @@ fn draw_sidebar(
                             *score,
                             snippet.as_deref(),
                             search,
+                            locale,
                         ) {
                             action.select = Some(*index);
                         }
@@ -3145,7 +3366,11 @@ fn draw_page_nodes(
         );
 
         let title_x = rect.left() + indent + 40.0;
-        let title = truncate_chars(&capsule.subject, 34);
+        let title = if capsule.subject.trim().is_empty() {
+            t(locale, Key::Untitled).to_string()
+        } else {
+            capsule.subject.clone()
+        };
         let font = FontId::new(
             12.5,
             if is_selected {
@@ -3160,7 +3385,7 @@ fn draw_page_nodes(
         );
         ui.painter()
             .with_clip_rect(clip)
-            .text(pos2(title_x, rect.center().y), Align2::LEFT_CENTER, title, font, ink);
+            .text(pos2(title_x, rect.center().y), Align2::LEFT_CENTER, &title, font, ink);
 
         if !capsule.native {
             icons::paint(
@@ -3217,9 +3442,9 @@ fn draw_page_nodes(
         } else if is_valid_drop_target {
             response.on_hover_text(format!("{} «{}»", t(locale, Key::MakeChildOf), capsule.subject))
         } else if !capsule.native {
-            response.on_hover_text("Imported email — read-only in the native prototype")
+            response.on_hover_text(format!("{} (read-only)", capsule.subject))
         } else {
-            response
+            response.on_hover_text(&capsule.subject)
         };
         let _ = response;
 
@@ -3252,6 +3477,7 @@ fn draw_search_row(
     score: f32,
     snippet: Option<&str>,
     query: &str,
+    locale: Locale,
 ) -> bool {
     let capsule = &capsules[index];
     let (rect, response) = ui.allocate_exact_size(
@@ -3285,7 +3511,11 @@ fn draw_search_row(
         Icon::Doc,
         ink,
     );
-    let title = truncate_chars(&capsule.subject, 24);
+    let title = if capsule.subject.trim().is_empty() {
+        t(locale, Key::Untitled).to_string()
+    } else {
+        capsule.subject.clone()
+    };
     let title_clip = Rect::from_min_max(
         pos2(rect.left() + 30.0, rect.top()),
         pos2(rect.right() - 34.0, rect.top() + 24.0),
@@ -3293,7 +3523,7 @@ fn draw_search_row(
     ui.painter().with_clip_rect(title_clip).text(
         pos2(rect.left() + 30.0, rect.top() + 15.0),
         Align2::LEFT_CENTER,
-        title,
+        &title,
         FontId::new(12.5, theme::medium()),
         ink,
     );
@@ -3353,39 +3583,35 @@ fn draw_search_row(
         );
     }
     let response = if capsule.native {
-        response
+        response.on_hover_text(&capsule.subject)
     } else {
-        response.on_hover_text("Imported email — read-only in the native prototype")
+        response.on_hover_text(format!("{} (read-only)", capsule.subject))
     };
     response.clicked()
 }
 
 // ---------------------------------------------------------------------------
-// Content panel: header, empty state, document
+// Workspace Strip: tier 2 toolbar with views tabs and contextual actions
 // ---------------------------------------------------------------------------
 
-fn draw_content_header(
+fn draw_workspace_strip(
     ui: &mut Ui,
+    view: View,
+    locale: Locale,
     selected: Option<usize>,
     capsules: &[Capsule],
-    tree: &PageTree,
-    locale: Locale,
-) -> EditorAction {
-    let mut action = EditorAction::default();
-    let (rect, _) = ui.allocate_exact_size(
-        vec2(ui.available_width(), 48.0),
-        Sense::hover(),
-    );
-    ui.painter()
-        .hline(rect.x_range(), rect.bottom() - 0.5, theme::hairline());
+    wide_canvas: bool,
+) -> (Option<View>, EditorAction) {
+    let mut chosen_view = None;
+    let mut editor_action = EditorAction::default();
 
-    let header_rect = rect.shrink2(vec2(22.0, 0.0));
+    let total_rect = ui.max_rect();
 
-    // 1. First render right action buttons to calculate exact width reserved
-    let right_reserve_w = 320.0;
+    // 1. Right context actions
+    let right_width = 400.0;
     let right_rect = Rect::from_min_max(
-        pos2((header_rect.right() - right_reserve_w).max(header_rect.left()), header_rect.top()),
-        header_rect.right_bottom(),
+        pos2((total_rect.right() - right_width).max(total_rect.left()), total_rect.top()),
+        total_rect.right_bottom(),
     );
     let mut right_bar = ui.new_child(
         UiBuilder::new()
@@ -3394,124 +3620,131 @@ fn draw_content_header(
     );
     let right_ui = &mut right_bar;
     right_ui.spacing_mut().item_spacing.x = 4.0;
+    right_ui.add_space(12.0);
 
-    let Some(index) = selected.filter(|index| *index < capsules.len()) else {
-        let mut left_bar = ui.new_child(
-            UiBuilder::new()
-                .max_rect(header_rect)
-                .layout(Layout::left_to_right(Align::Center)),
-        );
-        let left_ui = &mut left_bar;
-        left_ui.spacing_mut().item_spacing.x = 7.0;
-        let _ = hud(left_ui, t(locale, Key::Vault), theme::MUTED);
-        left_ui.label(
-            RichText::new(t(locale, Key::NoPageSelected))
-                .size(12.0)
-                .color(theme::FAINT),
-        );
-        return action;
-    };
-    let capsule = &capsules[index];
+    if view == View::Page {
+        if let Some(index) = selected.filter(|i| *i < capsules.len()) {
+            let capsule = &capsules[index];
 
-    let info = ghost(
-        right_ui,
-        Icon::Info,
-        Some(t(locale, Key::Info)),
-        t(locale, Key::MimeAndPage),
-        true,
-        30.0,
-    );
-    egui::Popup::menu(&info)
-        .frame(popover_frame())
-        .align(egui::RectAlign::BOTTOM_END)
-        .show(|ui| info_popover(ui, capsule));
+            let info = ghost(
+                right_ui,
+                Icon::Info,
+                Some(t(locale, Key::Info)),
+                t(locale, Key::MimeAndPage),
+                true,
+                26.0,
+            );
+            egui::Popup::menu(&info)
+                .frame(popover_frame())
+                .align(egui::RectAlign::BOTTOM_END)
+                .show(|ui| info_popover(ui, capsule));
 
-    if ghost(
-        right_ui,
-        Icon::Command,
-        Some(t(locale, Key::CoThink)),
-        t(locale, Key::CoThinkHint),
-        true,
-        30.0,
-    )
-    .clicked()
-    {
-        action.cothink = true;
+            if ghost(
+                right_ui,
+                Icon::Plus,
+                Some(t(locale, Key::NewSubpage)),
+                t(locale, Key::NewSubpageHint),
+                true,
+                26.0,
+            )
+            .clicked()
+            {
+                editor_action.new_subpage = true;
+            }
+
+            let wide_hint = format!("{} (Ctrl+Shift+W)", t(locale, Key::CommandWideCanvas));
+            if ghost(
+                right_ui,
+                Icon::Table,
+                Some(if wide_canvas { "Wide" } else { "Standard" }),
+                &wide_hint,
+                true,
+                26.0,
+            )
+            .clicked()
+            {
+                editor_action.toggle_wide = true;
+            }
+
+            if ghost(
+                right_ui,
+                Icon::Command,
+                Some(t(locale, Key::CoThink)),
+                t(locale, Key::CoThinkHint),
+                true,
+                26.0,
+            )
+            .clicked()
+            {
+                editor_action.cothink = true;
+            }
+        }
     }
 
-    if ghost(
-        right_ui,
-        Icon::Plus,
-        Some(t(locale, Key::NewSubpage)),
-        t(locale, Key::NewSubpageHint),
-        true,
-        30.0,
-    )
-    .clicked()
-    {
-        action.new_subpage = true;
-    }
+    let right_used_left = right_ui.min_rect().left().min(total_rect.right() - 12.0);
 
-    let right_used_left = right_ui.min_rect().left().min(header_rect.right() - 20.0);
-
-    // 2. Render left breadcrumbs and subject constrained by right_used_left
+    // 2. Left side: The 6 Navigation tabs
     let left_rect = Rect::from_min_max(
-        header_rect.left_top(),
-        pos2((right_used_left - 12.0).max(header_rect.left()), header_rect.bottom()),
+        pos2(total_rect.left(), total_rect.top()),
+        pos2((right_used_left - 8.0).max(total_rect.left()), total_rect.bottom()),
     );
-    let mut bar = ui.new_child(
+    let mut left_bar = ui.new_child(
         UiBuilder::new()
             .max_rect(left_rect)
             .layout(Layout::left_to_right(Align::Center)),
     );
-    let ui = &mut bar;
-    ui.spacing_mut().item_spacing.x = 7.0;
-    let _ = hud(ui, t(locale, Key::Vault), theme::MUTED);
+    let left_ui = &mut left_bar;
+    left_ui.spacing_mut().item_spacing.x = 4.0;
+    left_ui.add_space(12.0);
 
-    let ancestors = tree.ancestors(index);
-    let skip = ancestors.len().saturating_sub(2);
-    if skip > 0 {
-        ui.label(RichText::new("…").size(12.0).color(theme::FAINT));
-        let _ = chevron(ui, theme::FAINT);
+    if let Some(chosen) = views::nav(left_ui, view, locale) {
+        chosen_view = Some(chosen);
     }
-    for ancestor in &ancestors[skip..] {
-        if let Some(parent) = capsules.get(*ancestor) {
-            if crumb_button(ui, &truncate_chars(&parent.subject, 18)).clicked() {
-                action.select = Some(*ancestor);
+
+    // Bottom hairline separator
+    ui.painter()
+        .hline(total_rect.x_range(), total_rect.bottom() - 0.5, theme::hairline());
+
+    (chosen_view, editor_action)
+}
+
+fn draw_breadcrumbs(
+    ui: &mut Ui,
+    ancestors: &[(usize, String)],
+    locale: Locale,
+    action: &mut EditorAction,
+) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        let _ = hud(ui, t(locale, Key::Vault), theme::MUTED);
+
+        let skip = ancestors.len().saturating_sub(4);
+        if skip > 0 {
+            ui.label(RichText::new("…").size(11.5).color(theme::FAINT));
+            let _ = chevron(ui, theme::FAINT);
+        }
+        for (ancestor_idx, subject) in &ancestors[skip..] {
+            let label = if subject.is_empty() {
+                t(locale, Key::Untitled).to_string()
+            } else {
+                subject.clone()
+            };
+            if crumb_button(ui, &truncate_chars(&label, 24)).clicked() {
+                action.select = Some(*ancestor_idx);
             }
             let _ = chevron(ui, theme::FAINT);
         }
-    }
-
-    let subject_str = if capsule.subject.is_empty() {
-        t(locale, Key::Untitled).to_string()
-    } else {
-        capsule.subject.clone()
-    };
-    let remaining_w = ui.available_width().max(40.0) - if !capsule.native { 70.0 } else { 0.0 };
-    let font_subject = FontId::new(12.5, theme::medium());
-    let truncated_subject = truncate_to_width(ui, &subject_str, font_subject, remaining_w);
-
-    ui.label(
-        RichText::new(truncated_subject)
-            .family(theme::medium())
-            .size(12.5)
-            .color(theme::INK),
-    );
-    if !capsule.native {
-        ui.add_space(3.0);
-        let _ = tag_chip(ui, t(locale, Key::ReadOnly), theme::BADGE_BETA);
-    }
-
-    action
+    });
 }
 
 fn draw_document(
     ui: &mut Ui,
     capsule: &mut Capsule,
+    ancestors: &[(usize, String)],
     locale: Locale,
     link_context: &LinkContext,
     scroll: Option<f32>,
+    wide_canvas: bool,
 ) -> EditorAction {
     let mut action = EditorAction::default();
     let mut area = ScrollArea::vertical().id_salt("document");
@@ -3522,8 +3755,15 @@ fn draw_document(
         .auto_shrink([false, false])
         .show(ui, |ui| {
             let available = ui.available_width();
-            let content_w = (available - 96.0).clamp(320.0, CONTENT_MAX_WIDTH);
-            let pad = ((available - content_w) / 2.0).max(28.0);
+            let (content_w, pad) = if wide_canvas {
+                let w = (available - 96.0).max(480.0);
+                let p = ((available - w) / 2.0).max(48.0);
+                (w, p)
+            } else {
+                let w = (available - 96.0).clamp(480.0, 960.0);
+                let p = ((available - w) / 2.0).max(28.0);
+                (w, p)
+            };
             ui.horizontal(|ui| {
                 ui.add_space(pad);
                 ui.allocate_ui_with_layout(
@@ -3531,7 +3771,10 @@ fn draw_document(
                     Layout::top_down(Align::Min),
                     |ui| {
                         ui.set_width(content_w);
-                        ui.add_space(40.0);
+                        ui.add_space(24.0);
+
+                        draw_breadcrumbs(ui, ancestors, locale, &mut action);
+                        ui.add_space(12.0);
 
                         if capsule.native {
                             // Strip newlines if pasted or typed, ensuring subject remains single-concept
@@ -3615,6 +3858,12 @@ fn draw_document(
                             for index in 0..block_count {
                                 let mut block = capsule.blocks[index].clone();
                                 let kind = block_type(&block).to_string();
+
+                                // Eliminate duplicate title: if block 0 is an H1 with identical subject text, skip rendering it.
+                                if index == 0 && is_duplicate_heading(&block, &capsule.subject) {
+                                    continue;
+                                }
+
                                 let (changed, op) = draw_block_row(
                                     ui,
                                     &mut block,
@@ -6195,6 +6444,51 @@ fn set_block_text(block: &mut Value, text: String) {
     mime::set_block_text(block, text)
 }
 
-// Keep unused-import warnings honest while the prototype is small.
-#[allow(dead_code)]
-fn _vec2(_: Vec2, _: Pos2) {}
+pub(crate) fn is_duplicate_heading(block: &Value, subject: &str) -> bool {
+    let kind = block_type(block);
+    if kind != "heading" {
+        return false;
+    }
+    let level = block
+        .get("data")
+        .and_then(|data| data.get("level"))
+        .and_then(Value::as_u64)
+        .unwrap_or(1);
+    let text = mime::block_data_text(block);
+    let text_norm = text.trim();
+    let subj_norm = subject.trim();
+    level == 1 && (text_norm == subj_norm || text_norm.to_lowercase() == subj_norm.to_lowercase())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_duplicate_heading_detection() {
+        let h1_matching = json!({
+            "type": "heading",
+            "data": { "level": 1, "text": "Моя первая заметка" }
+        });
+        assert!(is_duplicate_heading(&h1_matching, "Моя первая заметка"));
+        assert!(is_duplicate_heading(&h1_matching, "  моя первая заметка  "));
+
+        let h2_same_text = json!({
+            "type": "heading",
+            "data": { "level": 2, "text": "Моя первая заметка" }
+        });
+        assert!(!is_duplicate_heading(&h2_same_text, "Моя первая заметка"));
+
+        let h1_different_text = json!({
+            "type": "heading",
+            "data": { "level": 1, "text": "Другой заголовок" }
+        });
+        assert!(!is_duplicate_heading(&h1_different_text, "Моя первая заметка"));
+
+        let text_block = json!({
+            "type": "paragraph",
+            "data": { "text": "Моя первая заметка" }
+        });
+        assert!(!is_duplicate_heading(&text_block, "Моя первая заметка"));
+    }
+}
