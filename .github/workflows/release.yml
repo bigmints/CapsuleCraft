@@ -94,8 +94,10 @@ jobs:
             -i native/packaging/AppDir/usr/share/icons/hicolor/256x256/apps/capsulecraft.png \
             --output appimage
           FILE="CapsuleCraft_${VERSION}_amd64.AppImage"
-          mv -f CapsuleCraft_${VERSION}_amd64.AppImage "$FILE" 2>/dev/null || true
-          test -f "$FILE" || { ls; echo "ubuntu: linuxdeploy artifact missing"; exit 1; }
+          OUT=$(find . -maxdepth 1 -name '*.AppImage' ! -name 'linuxdeploy*' -print -quit)
+          [ -n "$OUT" ] || { ls; echo "linuxdeploy produced no AppImage"; exit 1; }
+          mv -f "$OUT" "$FILE"
+          test -f "$FILE"
 
       - name: Upload AppImage and SHA256SUMS to the release
         env:
