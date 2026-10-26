@@ -16,6 +16,7 @@ every note, task and dataset is a plain, RFC 5322 `.eml` file on your disk.**
 [![No DB](https://img.shields.io/badge/database-none-orange)](#why-eml)
 [![Offline](https://img.shields.io/badge/offline--first-success)](#strengths)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](CONTRIBUTING.md)
+[![Listed on Remade](https://remade.wiki/badges/listed-on-remade.svg)](https://remade.wiki/projects/capsulecraft/)
 
 [English](README.md) · **Русский**
 
