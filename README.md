@@ -173,13 +173,18 @@ chmod +x CapsuleCraft_1.8.0_amd64.AppImage
 It needs only glibc and an X11 or Wayland desktop — no WebKitGTK, no WebView2,
 nothing else. Every GitHub release also carries `SHA256SUMS.txt`.
 
+The **native Windows app** (x64) ships as `CapsuleCraft_native_1.8.0_x64.zip`:
+unzip it and run `CapsuleCraft.exe`. Standalone native egui shell, zero dependencies,
+no WebView2 or installer required.
+
 The **native macOS app** (arm64) ships as `CapsuleCraft_native_1.8.0_arm64.app.zip`:
 unzip it, drag `CapsuleCraft.app` into Applications. It is ad-hoc signed; if
 Gatekeeper blocks the first launch, run `xattr -d com.apple.quarantine CapsuleCraft.app`.
 
 Legacy web/Tauri builds (Windows MSI / NSIS, Linux deb, macOS dmg) are still
 published for parity (on Linux those need `libwebkit2gtk-4.1-0`). The Linux
-**AppImage** is the native build — no browser engine, no webview libraries.
+**AppImage**, Windows **portable zip**, and macOS **.app** are the recommended
+native builds — no browser engine, no webview libraries.
 
 > First launch shows an empty vault and the built-in **FAQ**. Press `F1`,
 > use the `ⓘ FAQ` button or ⌘K → FAQ. No demo notes are ever created.
