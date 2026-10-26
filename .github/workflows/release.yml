@@ -48,7 +48,13 @@ jobs:
             libxcb1-dev libx11-dev libx11-xcb-dev \
             libwayland-dev \
             libfontconfig1-dev libfreetype6-dev \
-            libssl-dev
+            libssl-dev \
+            libxkbcommon-x11-0 libxkbcommon0 \
+            libx11-6 libx11-xcb1 libxcb1 \
+            libxcursor1 libxrandr2 libxi6 \
+            libxfixes3 libxrender1 libxext6 \
+            libxau6 libxdmcp6 \
+            libwayland-client0
 
       - name: Build native shell
         run: cargo build --release --manifest-path native/Cargo.toml
@@ -59,6 +65,7 @@ jobs:
           APPDIR=native/packaging/AppDir
           rm -rf "$APPDIR"
           mkdir -p "$APPDIR"/usr/bin \
+                   "$APPDIR"/usr/lib \
                    "$APPDIR"/usr/share/applications \
                    "$APPDIR"/usr/share/icons/hicolor/256x256/apps
           install -m 0755 native/target/release/capsuleos-native "$APPDIR"/usr/bin/capsuleos-native
@@ -66,6 +73,20 @@ jobs:
              "$APPDIR"/usr/share/icons/hicolor/256x256/apps/capsulecraft.png
           ln -s usr/bin/capsuleos-native "$APPDIR"/AppRun
           ln -s capsulecraft.png "$APPDIR"/.DirIcon
+          # winit/x11-dl/xkbcommon-dl load these with dlopen() at runtime, which
+          # linuxdeploy cannot see (no DT_NEEDED). Bundle them (plus transitive
+          # deps)explicitly so the app works in minimal/firejail environments.
+          LIB=/usr/lib/x86_64-linux-gnu
+          for f in \
+            libxkbcommon.so.0 libxkbcommon-x11.so.0 \
+            libX11.so.6 libX11-xcb.so.1 libxcb.so.1 \
+            libXcursor.so.2 libXrandr.so.2 libXi.so.6 \
+            libXfixes.so.3 libXrender.so.1 libXext.so.6 \
+            libXau.so.6 libXdmcp.so.6 \
+            libwayland-client.so.0 libffi.so.8 \
+            ; do
+            cp -a "$LIB/$f" "$APPDIR"/usr/lib/ || echo "WARN: missing $LIB/$f"
+          done
           printf '%s\n' \
             '[Desktop Entry]' \
             'Name=CapsuleCraft' \
