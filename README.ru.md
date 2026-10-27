@@ -166,19 +166,19 @@ CapsuleCraft нарочно уже: локальное хранение, кот�
 **Нативный AppImage** (рекомендуется, Linux):
 
 ```bash
-chmod +x CapsuleCraft_1.8.0_amd64.AppImage
-./CapsuleCraft_1.8.0_amd64.AppImage              # хранилище по умолчанию...
-./CapsuleCraft_1.8.0_amd64.AppImage /path/to/vault   # ...или ваша папка
+chmod +x CapsuleCraft_1.8.1_amd64.AppImage
+./CapsuleCraft_1.8.1_amd64.AppImage              # хранилище по умолчанию...
+./CapsuleCraft_1.8.1_amd64.AppImage /path/to/vault   # ...или ваша папка
 ```
 
 Нужны только glibc и рабочий стол X11 или Wayland — никаких WebKitGTK,
 WebView2 и прочего. К каждому релизу прилагается `SHA256SUMS.txt`.
 
-**Нативное приложение для Windows** (x64) — `CapsuleCraft_native_1.8.0_x64.zip`:
+**Нативное приложение для Windows** (x64) — `CapsuleCraft_native_1.8.1_x64.zip`:
 распакуйте в любую папку и запустите `CapsuleCraft.exe`. Автономный нативный egui-клиент
 без WebView2 и без необходимости установки.
 
-**Нативное приложение для macOS** (arm64) — `CapsuleCraft_native_1.8.0_arm64.app.zip`:
+**Нативное приложение для macOS** (arm64) — `CapsuleCraft_native_1.8.1_arm64.app.zip`:
 распакуйте, перетащите `CapsuleCraft.app` в «Программы». Подпись ad-hoc; если
 Gatekeeper блокирует первый запуск: `xattr -d com.apple.quarantine CapsuleCraft.app`.
 
@@ -238,13 +238,14 @@ cargo test          # 98 unit-тестов
 
 # legacy web engine
 npm ci
-npx vitest run      # 151 тестов
+npx vitest run      # 172 теста
 ```
 
 ## Релизы
 
 | Версия | Что | Когда |
 |---|---|---|
+| **v1.8.1** | Пересобран релизный конвейер: нативная portable-сборка Windows, релиз создаётся заранее (артефакты больше не теряются), единый `SHA256SUMS.txt`, тесты нативного ядра в CI | 2026-10-27 |
 | **v1.8.0** | Двухуровневый хедер, Zen-режим, широкий холст; сборки macOS arm64; укрепление AppImage | 2026-10-26 |
 | **v1.7.0** | Встроенный FAQ в оболочке; нигде нет демо-заметок; обновлённый README | 2026-10-25 |
 | **v1.6.0** | Нативный автономный AppImage (без вшитых библиотек) | 2026-10-25 |

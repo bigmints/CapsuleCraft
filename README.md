@@ -165,19 +165,19 @@ deliberately narrower: local-first storage you can trust for decades.
 The **native AppImage** (recommended, Linux):
 
 ```bash
-chmod +x CapsuleCraft_1.8.0_amd64.AppImage
-./CapsuleCraft_1.8.0_amd64.AppImage            # default vault...
-./CapsuleCraft_1.8.0_amd64.AppImage /path/to/vault   # ...or your folder
+chmod +x CapsuleCraft_1.8.1_amd64.AppImage
+./CapsuleCraft_1.8.1_amd64.AppImage            # default vault...
+./CapsuleCraft_1.8.1_amd64.AppImage /path/to/vault   # ...or your folder
 ```
 
 It needs only glibc and an X11 or Wayland desktop — no WebKitGTK, no WebView2,
 nothing else. Every GitHub release also carries `SHA256SUMS.txt`.
 
-The **native Windows app** (x64) ships as `CapsuleCraft_native_1.8.0_x64.zip`:
+The **native Windows app** (x64) ships as `CapsuleCraft_native_1.8.1_x64.zip`:
 unzip it and run `CapsuleCraft.exe`. Standalone native egui shell, zero dependencies,
 no WebView2 or installer required.
 
-The **native macOS app** (arm64) ships as `CapsuleCraft_native_1.8.0_arm64.app.zip`:
+The **native macOS app** (arm64) ships as `CapsuleCraft_native_1.8.1_arm64.app.zip`:
 unzip it, drag `CapsuleCraft.app` into Applications. It is ad-hoc signed; if
 Gatekeeper blocks the first launch, run `xattr -d com.apple.quarantine CapsuleCraft.app`.
 
@@ -237,13 +237,14 @@ cargo test          # 98 unit tests
 
 # legacy web engine
 npm ci
-npx vitest run      # 151 tests
+npx vitest run      # 172 tests
 ```
 
 ## Releases
 
 | Version | What | When |
 |---|---|---|
+| **v1.8.1** | Release pipeline rebuilt: native Windows portable build, pre-created release (no more lost artifacts), unified `SHA256SUMS.txt`, native test job in CI | 2026-10-27 |
 | **v1.8.0** | Two-tier header, Zen focus mode, wide canvas; macOS arm64 builds; AppImage hardening | 2026-10-26 |
 | **v1.7.0** | Built-in FAQ in the shell; no demo notes anywhere; README redrawn | 2026-10-25 |
 | **v1.6.0** | Native standalone AppImage (zero bundled libraries) | 2026-10-25 |

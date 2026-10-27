@@ -209,6 +209,8 @@ jobs:
             'Terminal=false' \
             > native/packaging/AppDir/usr/share/applications/capsulecraft.desktop
           mkdir -p native/packaging/AppDir/usr/share/metainfo
+          VERSION="${{ needs.create-release.outputs.version }}"
+          RELDATE="$(date -u +%Y-%m-%d)"
           printf '%s\n' \
             '<?xml version="1.0" encoding="UTF-8"?>' \
             '<component type="desktop-application">' \
@@ -228,7 +230,7 @@ jobs:
             '    <category>Utility</category>' \
             '  </categories>' \
             '  <releases>' \
-            '    <release version="1.8.0" date="2026-10-26"/>' \
+            "    <release version=\"${VERSION}\" date=\"${RELDATE}\"/>" \
             '  </releases>' \
             '</component>' \
             > native/packaging/AppDir/usr/share/metainfo/com.capsuleos.CapsuleCraft.appdata.xml
@@ -433,6 +435,10 @@ jobs:
       - name: Generate unified SHA256SUMS and publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NATIVE_WINDOWS: ${{ needs.native-windows.result }}
+          NATIVE_APPIMAGE: ${{ needs.native-appimage.result }}
+          NATIVE_MACOS: ${{ needs.native-macos.result }}
+          TAURI_BUILD: ${{ needs.build.result }}
         run: |
           set -e
           TAG="${{ needs.create-release.outputs.tag }}"
@@ -444,13 +450,33 @@ jobs:
 
           cd release-assets
           rm -f SHA256SUMS*
-          
+
           if ls * >/dev/null 2>&1; then
             echo "Calculating checksums for all release assets:"
             sha256sum * | tee ../SHA256SUMS.txt
             gh release upload "$TAG" ../SHA256SUMS.txt --clobber --repo "$GITHUB_REPOSITORY"
           fi
           cd ..
+
+          # Guard: never publish a release whose artifact set is incomplete.
+          # (v1.8.0 shipped without the AppImage and macOS bundle because the
+          # native jobs died on a 404; the release was published anyway.)
+          INCOMPLETE=0
+          for job in "native-windows=$NATIVE_WINDOWS" \
+                     "native-appimage=$NATIVE_APPIMAGE" \
+                     "native-macos=$NATIVE_MACOS" \
+                     "tauri=$TAURI_BUILD"; do
+            name="${job%%=*}"
+            result="${job#*=}"
+            if [ "$result" != "success" ]; then
+              echo "::error::build job '$name' finished as '$result'"
+              INCOMPLETE=1
+            fi
+          done
+          if [ "$INCOMPLETE" -ne 0 ]; then
+            echo "Artifact set is incomplete — leaving $TAG as a draft."
+            exit 1
+          fi
 
           if [ "${{ github.event_name }}" != "workflow_dispatch" ] || [ "${{ inputs.draft }}" = "false" ]; then
             echo "Publishing release $TAG..."

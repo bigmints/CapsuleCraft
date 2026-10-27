@@ -3,6 +3,24 @@
 All notable changes to CapsuleCraft are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow [SemVer](https://semver.org/).
 
+## [1.8.1] — 2026-10-27 — Release pipeline that does not lose artifacts
+
+A patch release. No application code changed: this ships the rebuilt release
+pipeline from PR #13 and republishes v1.8.0's artifacts, which were lost to a
+race condition. The app you get is v1.8.0.
+
+### Added
+- **Native Windows portable build** (PR #13): `CapsuleCraft_native_<version>_x64.zip` — the egui shell compiled on `windows-latest`, no WebView2, no installer. Windows users no longer get only the legacy Tauri build.
+- **Native test job in CI** (PR #13): `cargo check` plus the full `cargo test -j 1` suite for `native/` on every pull request and push to `main`.
+
+### Fixed
+- **Artifacts no longer race the release**: `create-release` runs first and guarantees the GitHub Release exists, so the fast native jobs (`native-appimage`, `native-macos`, `native-windows`) can upload instead of failing on a 404. This is why v1.8.0 shipped without its AppImage and macOS bundle.
+- **One authoritative `SHA256SUMS.txt`**: a single `finalize-release` job downloads every asset, hashes all of them once, uploads the file and then publishes the draft. Previously each job overwrote the checksums with its own partial list.
+- **macOS Tauri job no longer fails on upload**: the artifact step uses `if-no-files-found: warn` and covers `.dmg`, so the missing `*.msi`/`*.deb` masks stop killing the run.
+- **AppStream metadata is no longer hardcoded** (introduced in PR #13): the generated `appdata.xml` takes `<release version=... date=...>` from the tag and the build date instead of a frozen `1.8.0 / 2026-10-26`.
+- **An incomplete release can no longer be published**: `finalize-release` fails when any build job did not succeed and leaves the release as a draft, instead of publishing a half-empty release (as happened with v1.8.0).
+- **Version drift in the manifests**: `src-tauri/Cargo.toml` still said `1.5.0` and `package-lock.json` said `1.4.0`; both now match `package.json`, `tauri.conf.json` and `native/Cargo.toml`.
+
 ## [1.8.0] — 2026-10-26 — Two-tier header, Zen mode, macOS builds
 
 ### Added
