@@ -29,6 +29,7 @@ mod mcp;
 mod mime;
 mod modals;
 mod planning;
+pub mod rich_text;
 mod search;
 mod snapshot;
 mod theme;
