@@ -19,13 +19,115 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Pre-flight step: ensures the GitHub Release exists before any parallel
+  # builder attempts to upload assets to it. This eliminates the race condition
+  # where fast native builders finish before tauri-action creates the release.
+  create-release:
+    name: Prepare GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.vars.outputs.tag }}
+      version: ${{ steps.vars.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve tag and version
+        id: vars
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="v$(node -p "require('./package.json').version")"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          VERSION="${TAG#v}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure GitHub Release exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          TAG="${{ steps.vars.outputs.tag }}"
+          NOTES="docs/releases/${TAG}.md"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG already exists."
+          else
+            echo "Creating draft release $TAG..."
+            if [ -f "$NOTES" ]; then
+              gh release create "$TAG" \
+                --title "CapsuleCraft $TAG" \
+                --draft \
+                --notes-file "$NOTES" \
+                --repo "$GITHUB_REPOSITORY"
+            else
+              gh release create "$TAG" \
+                --title "CapsuleCraft $TAG" \
+                --draft \
+                --generate-notes \
+                --repo "$GITHUB_REPOSITORY"
+            fi
+          fi
+
+  # Native Windows shell: standalone egui executable packaged as a zero-dependency
+  # portable zip. Runs natively without WebView2 runtime or installer required.
+  native-windows:
+    name: Native Windows app (x64)
+    needs: create-release
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: native
+
+      - name: Build native shell
+        run: cargo build --release --manifest-path native/Cargo.toml
+
+      - name: Package Windows portable zip
+        shell: pwsh
+        run: |
+          $Version = "${{ needs.create-release.outputs.version }}"
+          $OutDir = "CapsuleCraft_native_${Version}_x64"
+          New-Item -ItemType Directory -Path $OutDir -Force
+          Copy-Item native/target/release/capsuleos-native.exe "$OutDir/CapsuleCraft.exe"
+          Copy-Item README.md, LICENSE "$OutDir/"
+          Compress-Archive -Path "$OutDir/*" -DestinationPath "${OutDir}.zip" -Force
+          Get-Item "${OutDir}.zip"
+
+      - name: Upload Windows native zip to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $Tag = "${{ needs.create-release.outputs.tag }}"
+          $Version = "${{ needs.create-release.outputs.version }}"
+          $ZipName = "CapsuleCraft_native_${Version}_x64.zip"
+          gh release upload $Tag $ZipName --clobber --repo $env:GITHUB_REPOSITORY
+
+      - name: Upload as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: capsulecraft-native-windows-x64
+          path: CapsuleCraft_native_*_x64.zip
+
   # The recommended Linux artifact: the native egui shell as a standalone,
   # zero-dependency AppImage. Built on ubuntu-22.04 so the bundled binary
   # references glibc 2.35 (not a rolling-distro glibc), which keeps the
   # package self-contained per the appimage.github.io catalog checks.
   native-appimage:
     name: Native AppImage (zero-dep, ubuntu-22.04)
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: create-release
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
@@ -75,7 +177,7 @@ jobs:
           ln -s capsulecraft.png "$APPDIR"/.DirIcon
           # winit/x11-dl/xkbcommon-dl load these with dlopen() at runtime, which
           # linuxdeploy cannot see (no DT_NEEDED). Bundle them (plus transitive
-          # deps)explicitly so the app works in minimal/firejail environments.
+          # deps) explicitly so the app works in minimal/firejail environments.
           LIB=/usr/lib/x86_64-linux-gnu
           for f in \
             libxkbcommon.so.0 libxkbcommon-x11.so.0 \
@@ -87,8 +189,7 @@ jobs:
             ; do
             cp -L "$LIB/$f" "$APPDIR"/usr/lib/ || echo "WARN: missing $LIB/$f"
           done
-          # cp -a copied symlinks without their targets on ubuntu-22.04; make
-          # sure nothing inside the AppImage points at a missing file.
+          # Make sure nothing inside the AppImage points at a missing file.
           if find "$APPDIR"/usr/lib -xtype l | grep -q .; then
             echo "ERROR: broken symlinks in AppDir/usr/lib:"
             find "$APPDIR"/usr/lib -xtype l -printf '%p -> %l\n'
@@ -127,7 +228,7 @@ jobs:
             '    <category>Utility</category>' \
             '  </categories>' \
             '  <releases>' \
-            '    <release version="1.7.0" date="2026-10-25"/>' \
+            '    <release version="1.8.0" date="2026-10-26"/>' \
             '  </releases>' \
             '</component>' \
             > native/packaging/AppDir/usr/share/metainfo/com.capsuleos.CapsuleCraft.appdata.xml
@@ -138,7 +239,7 @@ jobs:
           curl -sSL -o linuxdeploy.AppImage \
             https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
           chmod +x linuxdeploy.AppImage
-          export VERSION="${GITHUB_REF#refs/tags/v}"
+          export VERSION="${{ needs.create-release.outputs.version }}"
           export APPIMAGE_EXTRACT_AND_RUN=1
           ./linuxdeploy.AppImage \
             --appdir native/packaging/AppDir \
@@ -151,23 +252,28 @@ jobs:
           mv -f "$OUT" "$FILE"
           test -f "$FILE"
 
-      - name: Upload AppImage and SHA256SUMS to the release
+      - name: Upload AppImage to the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
-          TAG="${GITHUB_REF#refs/tags/}"
-          VERSION="${GITHUB_REF#refs/tags/v}"
+          TAG="${{ needs.create-release.outputs.tag }}"
+          VERSION="${{ needs.create-release.outputs.version }}"
           FILE="CapsuleCraft_${VERSION}_amd64.AppImage"
           gh release upload "$TAG" "$FILE" --clobber --repo "$GITHUB_REPOSITORY"
-          sha256sum "$FILE" | awk '{print $1"  "$2}' > SHA256SUMS.txt
-          gh release upload "$TAG" SHA256SUMS.txt --clobber --repo "$GITHUB_REPOSITORY"
+
+      - name: Upload as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: capsulecraft-native-appimage
+          path: CapsuleCraft_*_amd64.AppImage
 
   # Native macOS bundle: the same egui shell assembled into a .app with an
   # ad-hoc signature, so an unzipped local launch is not blocked outright.
   native-macos:
     name: Native macOS app (arm64)
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: create-release
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
     steps:
       - name: Checkout
@@ -187,7 +293,7 @@ jobs:
       - name: Assemble .app bundle
         run: |
           set -e
-          VERSION="${GITHUB_REF#refs/tags/v}"
+          VERSION="${{ needs.create-release.outputs.version }}"
           APP=CapsuleCraft.app
           rm -rf "$APP"
           mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
@@ -214,23 +320,29 @@ jobs:
           codesign --force --deep --sign - "$APP"
           ditto -c -k --sequesterRsrc --keepParent "$APP" \
             "CapsuleCraft_native_${VERSION}_arm64.app.zip"
-          shasum -a 256 "CapsuleCraft_native_${VERSION}_arm64.app.zip" \
-            | awk '{print $1"  "$2}' > SHA256SUMS-macos.txt
 
       - name: Upload macOS app to the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
-          TAG="${GITHUB_REF#refs/tags/}"
-          VERSION="${GITHUB_REF#refs/tags/v}"
+          TAG="${{ needs.create-release.outputs.tag }}"
+          VERSION="${{ needs.create-release.outputs.version }}"
           gh release upload "$TAG" \
             "CapsuleCraft_native_${VERSION}_arm64.app.zip" \
-            SHA256SUMS-macos.txt \
             --clobber --repo "$GITHUB_REPOSITORY"
 
+      - name: Upload as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: capsulecraft-native-macos
+          path: CapsuleCraft_native_*_arm64.app.zip
+
+  # Legacy Tauri / Web bundles for parity
   build:
     name: ${{ matrix.name }}
+    needs: create-release
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     strategy:
       fail-fast: false
       matrix:
@@ -288,69 +400,59 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
-          releaseName: ${{ startsWith(github.ref, 'refs/tags/v') && format('CapsuleCraft {0}', github.ref_name) || '' }}
+          tagName: ${{ needs.create-release.outputs.tag }}
+          releaseName: CapsuleCraft ${{ needs.create-release.outputs.tag }}
           args: --bundles ${{ matrix.bundles }}
-          releaseBody: |
-            ## CapsuleCraft ${{ github.ref_name }}
-
-            Zero-DB, pure-MIME workspace. Native egui desktop builds plus legacy web/Tauri installers.
-
-            ### Linux x64
-            - `CapsuleCraft_*_amd64.AppImage` — native shell, no webview; `chmod +x` and run
-            - `CapsuleCraft_*_amd64.deb`, `CapsuleCraft-*_x86_64.rpm` — legacy Tauri packages (need `libwebkit2gtk-4.1-0`)
-
-            Built on Ubuntu 22.04 (glibc 2.35+). The AppImage bundles the fonts/rendering and X11/xkbcommon libraries it needs.
-
-            ### macOS (arm64)
-            - `CapsuleCraft_native_*_arm64.app.zip` — native shell, ad-hoc signed; unzip and drag `CapsuleCraft.app` to Applications
-            - `CapsuleCraft_*_aarch64.dmg` — legacy Tauri package
-
-            ### Windows x64
-            - `CapsuleCraft_*_x64_en-US.msi` — Windows Installer package
-            - `CapsuleCraft_*_x64-setup.exe` — NSIS installer
-
-            Requires Microsoft Edge WebView2 Runtime (preinstalled on Windows 10/11).
-
-            ### Data location
-            - Windows: `%APPDATA%\com.capsuleos.app\vault\`
-            - macOS: `~/Library/Application Support/com.capsuleos.app/vault/`
-            - Linux: `~/.local/share/com.capsuleos.app/vault/`
-
-            One `.eml` file per capsule.
-          releaseDraft: ${{ github.event_name == 'workflow_dispatch' && inputs.draft || false }}
+          releaseDraft: true
           prerelease: false
 
       - name: Upload installers as workflow artifacts
         uses: actions/upload-artifact@v4
         with:
           name: capsuleos-${{ matrix.cache-key }}
-          if-no-files-found: error
+          if-no-files-found: warn
           path: |
             src-tauri/target/release/bundle/msi/*.msi
             src-tauri/target/release/bundle/nsis/*.exe
             src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/rpm/*.rpm
+            src-tauri/target/release/bundle/dmg/*.dmg
 
-      - name: Checksums (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
+  # Finalization step: runs once all parallel build jobs have finished.
+  # Downloads all release assets, computes a single authoritative SHA256SUMS.txt,
+  # uploads it to the release, and publishes the draft.
+  finalize-release:
+    name: Finalize Release (Checksums & Publish)
+    needs: [create-release, native-windows, native-appimage, native-macos, build]
+    if: always() && needs.create-release.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate unified SHA256SUMS and publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          Get-ChildItem src-tauri/target/release/bundle -Recurse -Include *.msi,*.exe |
-            ForEach-Object { "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)" } |
-            Set-Content -Path src-tauri/target/release/bundle/SHA256SUMS.txt
-          Get-Content src-tauri/target/release/bundle/SHA256SUMS.txt
+          set -e
+          TAG="${{ needs.create-release.outputs.tag }}"
+          [ -n "$TAG" ] || TAG="${GITHUB_REF#refs/tags/}"
 
-      - name: Checksums (Linux)
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          cd src-tauri/target/release/bundle
-          find . -type f \( -name "*.deb" -o -name "*.rpm" \) -printf "%P\n" |
-            xargs -r -I{} sha256sum "{}" > SHA256SUMS.txt
-          cat SHA256SUMS.txt
+          echo "Downloading all assets for release $TAG..."
+          mkdir -p release-assets
+          gh release download "$TAG" --dir release-assets --repo "$GITHUB_REPOSITORY" || true
 
-      - name: Upload checksums
-        uses: actions/upload-artifact@v4
-        with:
-          name: capsuleos-${{ matrix.cache-key }}-checksums
-          path: src-tauri/target/release/bundle/SHA256SUMS.txt
+          cd release-assets
+          rm -f SHA256SUMS*
+          
+          if ls * >/dev/null 2>&1; then
+            echo "Calculating checksums for all release assets:"
+            sha256sum * | tee ../SHA256SUMS.txt
+            gh release upload "$TAG" ../SHA256SUMS.txt --clobber --repo "$GITHUB_REPOSITORY"
+          fi
+          cd ..
+
+          if [ "${{ github.event_name }}" != "workflow_dispatch" ] || [ "${{ inputs.draft }}" = "false" ]; then
+            echo "Publishing release $TAG..."
+            gh release edit "$TAG" --draft=false --repo "$GITHUB_REPOSITORY"
+          fi

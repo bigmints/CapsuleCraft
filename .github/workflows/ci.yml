@@ -72,3 +72,32 @@ jobs:
 
       - name: Clippy
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+
+  native:
+    name: Native egui shell (cargo test -j 1)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential curl \
+            libxkbcommon-dev libxkbcommon-x11-dev \
+            libxcb1-dev libx11-dev libx11-xcb-dev \
+            libwayland-dev \
+            libfontconfig1-dev libfreetype6-dev \
+            libssl-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: native
+
+      - name: Cargo check
+        run: cargo check --manifest-path native/Cargo.toml
+
+      - name: Cargo test
+        run: cargo test --manifest-path native/Cargo.toml -j 1

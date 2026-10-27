@@ -174,13 +174,18 @@ chmod +x CapsuleCraft_1.8.0_amd64.AppImage
 Нужны только glibc и рабочий стол X11 или Wayland — никаких WebKitGTK,
 WebView2 и прочего. К каждому релизу прилагается `SHA256SUMS.txt`.
 
+**Нативное приложение для Windows** (x64) — `CapsuleCraft_native_1.8.0_x64.zip`:
+распакуйте в любую папку и запустите `CapsuleCraft.exe`. Автономный нативный egui-клиент
+без WebView2 и без необходимости установки.
+
 **Нативное приложение для macOS** (arm64) — `CapsuleCraft_native_1.8.0_arm64.app.zip`:
 распакуйте, перетащите `CapsuleCraft.app` в «Программы». Подпись ad-hoc; если
 Gatekeeper блокирует первый запуск: `xattr -d com.apple.quarantine CapsuleCraft.app`.
 
 Legacy web/Tauri-сборки (Windows MSI / NSIS, Linux deb, macOS dmg) продолжают
-публиковаться для паритета (в Linux им нужен `libwebkit2gtk-4.1-0`). Linux
-**AppImage** — это нативная сборка: без браузерного движка и webview-библиотек.
+публиковаться для паритета (в Linux им нужен `libwebkit2gtk-4.1-0`). Нативные сборки
+для Linux (**AppImage**), Windows (**zip**) и macOS (**.app**) — это рекомендуемый
+выбор: без браузерного движка и webview-библиотек.
 
 > При первом запуске — пустое хранилище и встроенный **FAQ**: клавиша `F1`,
 > кнопка `ⓘ FAQ` или ⌘K → FAQ. Демо-заметки не создаются никогда.
