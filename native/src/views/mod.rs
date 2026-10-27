@@ -2,12 +2,17 @@
 //! module here. Each view draws inside the content card and reports what the
 //! user did, so the shell stays the only owner of the vault and app state.
 
+pub mod document_view;
 pub mod graph_view;
 pub mod mail_view;
 pub mod mime_view;
 pub mod palette;
 pub mod planning_view;
+pub mod sidebar_view;
 pub mod threads_view;
+
+pub use document_view::{draw_document, draw_empty_state, EditorAction, LinkContext};
+pub use sidebar_view::{draw_sidebar, vault_switcher};
 
 use egui::{pos2, vec2, Align, Color32, FontId, Frame, Layout, Margin, Response, RichText, Sense, Ui};
 
