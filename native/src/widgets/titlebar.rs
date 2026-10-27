@@ -33,6 +33,7 @@ pub fn draw_titlebar(
     locale: Locale,
     sidebar_collapsed: bool,
     zen_mode: bool,
+    icon_style: brand::BrandIconStyle,
 ) -> ShellAction {
     let mut action = ShellAction::default();
 
@@ -219,10 +220,14 @@ pub fn draw_titlebar(
         .vline(divider.center().x, divider.y_range(), theme::hairline());
     ui_left.add_space(6.0);
 
-    // Mark: a capsule outline with one filled end.
-    let (mark, _) = ui_left.allocate_exact_size(vec2(24.0, 24.0), Sense::hover());
+    // Mark: clickable to toggle brand icon style (Mascot / Minimal Document)
+    let (mark, mark_resp) = ui_left.allocate_exact_size(vec2(24.0, 24.0), Sense::click());
+    let mark_resp = mark_resp.on_hover_text(t(locale, Key::CommandToggleIconStyle));
+    if mark_resp.clicked() {
+        action.toggle_icon_style = true;
+    }
     let mark_rect = Rect::from_center_size(mark.center(), vec2(20.0, 20.0));
-    if let Some(texture) = brand::texture(ui_left.ctx()) {
+    if let Some(texture) = brand::texture(ui_left.ctx(), icon_style) {
         ui_left.painter().image(
             texture.id(),
             mark_rect,

@@ -198,6 +198,8 @@ strings! {
     CommandZoomOut => ("Уменьшить масштаб", "Zoom out"),
     CommandResetZoom => ("Сбросить масштаб", "Reset zoom"),
     CommandWideCanvas => ("Широкий холст", "Toggle wide canvas"),
+    CommandToggleIconStyle => ("Сменить стиль иконки (Маскот / Документ)", "Toggle app icon style (Mascot / Document)"),
+    IconStyleToast => ("Стиль иконки изменен (окно обновится при перезапуске)", "App icon style changed (applies to window on restart)"),
     ZoomLevel => ("Масштаб", "Zoom"),
     UndoEmpty => ("История пуста", "Nothing to undo"),
     RedoEmpty => ("Нечего повторять", "Nothing to redo"),
