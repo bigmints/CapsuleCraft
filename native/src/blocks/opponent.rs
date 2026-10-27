@@ -48,6 +48,9 @@ pub fn draw_opponent_block(ui: &mut Ui, block: &mut Value, locale: Locale) -> bo
                 .unwrap_or("")
                 .to_string();
             let rows = criticism.lines().count().max(2);
+            let mut layouter = |ui: &Ui, buffer: &dyn egui::TextBuffer, wrap: f32| {
+                crate::links::layout(ui, buffer.as_str(), 13.5, wrap)
+            };
             let response = ui.add(
                 TextEdit::multiline(&mut criticism)
                     .font(FontId::new(13.5, FontFamily::Proportional))
@@ -56,6 +59,7 @@ pub fn draw_opponent_block(ui: &mut Ui, block: &mut Value, locale: Locale) -> bo
                     .margin(Margin::same(0))
                     .desired_width(f32::INFINITY)
                     .desired_rows(rows)
+                    .layouter(&mut layouter)
                     .hint_text(t(locale, Key::Critique)),
             );
             if response.changed() {

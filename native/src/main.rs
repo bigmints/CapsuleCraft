@@ -29,6 +29,7 @@ mod mcp;
 mod mime;
 mod modals;
 mod planning;
+pub mod rich_text;
 mod search;
 mod snapshot;
 mod theme;
@@ -126,7 +127,8 @@ fn main() -> eframe::Result<()> {
         .with_decorations(false)
         .with_resizable(true)
         .with_title("CapsuleCraft");
-    if let Some(icon) = brand::window_icon() {
+    let initial_ui_state = UiState::load();
+    if let Some(icon) = brand::window_icon(initial_ui_state.icon_style) {
         viewport = viewport.with_icon(Arc::new(icon));
     }
     let options = eframe::NativeOptions {
@@ -1068,6 +1070,7 @@ pub(crate) struct ShellAction {
     pub(crate) export_page: bool,
     pub(crate) delete_page: bool,
     pub(crate) reparent: Option<(usize, Option<String>)>,
+    pub(crate) toggle_icon_style: bool,
     pub(crate) toggle_sidebar: bool,
     pub(crate) toggle_zen: bool,
 }
@@ -1091,6 +1094,7 @@ impl ShellAction {
         self.export_page |= other.export_page;
         self.delete_page |= other.delete_page;
         self.reparent = other.reparent.or_else(|| self.reparent.take());
+        self.toggle_icon_style |= other.toggle_icon_style;
         self.toggle_sidebar |= other.toggle_sidebar;
         self.toggle_zen |= other.toggle_zen;
     }
@@ -1244,6 +1248,7 @@ impl eframe::App for NativeApp {
                         self.locale,
                         self.ui_state.sidebar_collapsed,
                         self.zen_mode,
+                        self.ui_state.icon_style,
                     ));
                 });
         }
@@ -1504,6 +1509,9 @@ impl eframe::App for NativeApp {
         if shell.toggle_sidebar {
             self.toggle_sidebar();
         }
+        if shell.toggle_icon_style {
+            self.toggle_icon_style();
+        }
         if shell.toggle_zen {
             self.toggle_zen_mode();
         }
@@ -1618,6 +1626,12 @@ impl NativeApp {
         self.ui_state.save();
     }
 
+    fn toggle_icon_style(&mut self) {
+        self.ui_state.toggle_icon_style();
+        self.ui_state.save();
+        self.toast(t(self.locale, Key::IconStyleToast));
+    }
+
     fn zoom_in(&mut self, ctx: &egui::Context) {
         let zoom = self.ui_state.zoom_in();
         ctx.set_zoom_factor(zoom);
@@ -1687,6 +1701,7 @@ impl NativeApp {
             PaletteCommand::ZoomOut => self.zoom_out(ctx),
             PaletteCommand::ResetZoom => self.reset_zoom(ctx),
             PaletteCommand::ToggleWideCanvas => self.toggle_wide_canvas(),
+            PaletteCommand::ToggleIconStyle => self.toggle_icon_style(),
         }
     }
 

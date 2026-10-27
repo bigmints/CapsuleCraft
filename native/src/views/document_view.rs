@@ -5,7 +5,7 @@ use egui::{
 };
 use serde_json::json;
 
-use crate::blocks::{add_block_menu, draw_block_row, BlockOp};
+use crate::blocks::{add_block_menu, draw_block_row, BlockKind, BlockOp};
 use crate::caps;
 use crate::crumb_button;
 use crate::dot_sep;
@@ -246,6 +246,49 @@ pub fn draw_document(
                                             block["data"]["level"] = json!(level);
                                             action.changed = true;
                                         }
+                                    }
+                                    BlockOp::TransformTo(target) => {
+                                        if let Some(block) = capsule.blocks.get_mut(index) {
+                                            crate::blocks::transform_block(block, target, locale);
+                                            action.changed = true;
+                                        }
+                                    }
+                                    BlockOp::InsertBelow(kind, text) => {
+                                        let mut new_b = kind.block(locale);
+                                        crate::mime::set_block_text(&mut new_b, text);
+                                        if index + 1 <= capsule.blocks.len() {
+                                            capsule.blocks.insert(index + 1, new_b);
+                                        } else {
+                                            capsule.blocks.push(new_b);
+                                        }
+                                        action.changed = true;
+                                    }
+                                    BlockOp::SplitParagraph {
+                                        before,
+                                        target_kind,
+                                        target_level,
+                                        target_text,
+                                        after,
+                                    } => {
+                                        let mut new_blocks = Vec::new();
+                                        if !before.is_empty() {
+                                            let mut b_before = BlockKind::Text.block(locale);
+                                            crate::mime::set_block_text(&mut b_before, before);
+                                            new_blocks.push(b_before);
+                                        }
+                                        let mut b_target = target_kind.block(locale);
+                                        crate::mime::set_block_text(&mut b_target, target_text);
+                                        if let Some(lvl) = target_level {
+                                            b_target["data"]["level"] = json!(lvl);
+                                        }
+                                        new_blocks.push(b_target);
+                                        if !after.is_empty() {
+                                            let mut b_after = BlockKind::Text.block(locale);
+                                            crate::mime::set_block_text(&mut b_after, after);
+                                            new_blocks.push(b_after);
+                                        }
+                                        capsule.blocks.splice(index..=index, new_blocks);
+                                        action.changed = true;
                                     }
                                     _ => {}
                                 }
