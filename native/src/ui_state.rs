@@ -9,6 +9,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::brand::BrandIconStyle;
 use crate::vault;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -21,6 +22,9 @@ pub struct UiState {
     pub sidebar_collapsed: bool,
     /// Wide canvas mode for documents (1120 px max vs 780 px standard).
     pub wide_canvas: bool,
+    /// Active brand icon style (mascot or minimal document).
+    #[serde(default)]
+    pub icon_style: BrandIconStyle,
 }
 
 impl Default for UiState {
@@ -30,6 +34,7 @@ impl Default for UiState {
             sidebar_width: 280.0,
             sidebar_collapsed: false,
             wide_canvas: false,
+            icon_style: BrandIconStyle::default(),
         }
     }
 }
@@ -85,6 +90,11 @@ impl UiState {
         self.wide_canvas = !self.wide_canvas;
         self.wide_canvas
     }
+
+    pub fn toggle_icon_style(&mut self) -> BrandIconStyle {
+        self.icon_style = self.icon_style.toggle();
+        self.icon_style
+    }
 }
 
 #[cfg(test)]
@@ -98,6 +108,7 @@ mod tests {
         assert_eq!(state.sidebar_width, 280.0);
         assert!(!state.sidebar_collapsed);
         assert!(!state.wide_canvas);
+        assert_eq!(state.icon_style, BrandIconStyle::Document);
     }
 
     #[test]
@@ -124,6 +135,7 @@ mod tests {
             sidebar_width: 320.0,
             sidebar_collapsed: true,
             wide_canvas: true,
+            icon_style: BrandIconStyle::Mascot,
         };
         let json = serde_json::to_string(&state).unwrap();
         let decoded: UiState = serde_json::from_str(&json).unwrap();

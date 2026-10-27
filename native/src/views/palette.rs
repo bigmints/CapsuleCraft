@@ -54,6 +54,7 @@ pub enum Command {
     ZoomOut,
     ResetZoom,
     ToggleWideCanvas,
+    ToggleIconStyle,
 }
 
 pub fn commands(locale: Locale) -> Vec<(Command, PaletteCommand)> {
@@ -350,6 +351,25 @@ pub fn commands(locale: Locale) -> Vec<(Command, PaletteCommand)> {
                     "широкий".into(),
                 ],
                 shortcut: Some("Ctrl Shift W".into()),
+            },
+        ),
+        (
+            Command::ToggleIconStyle,
+            PaletteCommand {
+                id: "toggle_icon_style",
+                title: t(locale, Key::CommandToggleIconStyle).into(),
+                hint: "Mascot / Document".into(),
+                group: t(locale, Key::PaletteActions).into(),
+                keywords: vec![
+                    "icon".into(),
+                    "brand".into(),
+                    "mascot".into(),
+                    "document".into(),
+                    "логотип".into(),
+                    "иконка".into(),
+                    "маскот".into(),
+                ],
+                shortcut: None,
             },
         ),
         (
